@@ -1609,49 +1609,11 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 }
 
 static lv_obj_t *endless_shuffle_switch;
-static lv_obj_t *stop_after_switch;
-static playback_mode_t mode_before_stop_after = PLAYBACK_MODE_NORMAL;
-static bool stop_after_syncing;
-
-static void stop_after_refresh(void) {
-	if (!stop_after_switch) {
-		return;
-	}
-	bool on = playlist_get_mode() == PLAYBACK_MODE_STOP_AFTER;
-	if (lv_obj_has_state(stop_after_switch, LV_STATE_CHECKED) == on) {
-		return;
-	}
-	stop_after_syncing = true;
-	if (on) {
-		lv_obj_add_state(stop_after_switch, LV_STATE_CHECKED);
-	} else {
-		lv_obj_remove_state(stop_after_switch, LV_STATE_CHECKED);
-	}
-	stop_after_syncing = false;
-}
 
 static void endless_shuffle_cb(lv_event_t *e) {
 	(void)e;
 	config_set_bool("player", "endless_shuffle", lv_obj_has_state(endless_shuffle_switch, LV_STATE_CHECKED));
 	config_save();
-}
-
-static void stop_after_cb(lv_event_t *e) {
-	(void)e;
-	if (stop_after_syncing) {
-		return;
-	}
-	if (lv_obj_has_state(stop_after_switch, LV_STATE_CHECKED)) {
-		playback_mode_t current = playlist_get_mode();
-		if (current != PLAYBACK_MODE_STOP_AFTER) {
-			mode_before_stop_after = current;
-		}
-		playlist_set_mode(PLAYBACK_MODE_STOP_AFTER);
-	} else if (playlist_get_mode() == PLAYBACK_MODE_STOP_AFTER) {
-		playlist_set_mode(mode_before_stop_after == PLAYBACK_MODE_STOP_AFTER ? PLAYBACK_MODE_NORMAL
-																			 : mode_before_stop_after);
-	}
-	stop_after_refresh();
 }
 
 // The sleep timer for music, which is the card, Tidal and Qobuz: one transport,
@@ -1681,7 +1643,6 @@ static void playback_loaded_cb(lv_event_t *e) {
 	(void)e;
 	settingsrow_duration_set_minutes(&sleep_row, sleeptimer_minutes(SLEEPTIMER_MUSIC));
 	sleep_refresh();
-	stop_after_refresh();
 }
 
 // Where "add to queue" puts a track: right after the one playing, or at the end
@@ -1731,11 +1692,6 @@ static void build_playback_page(gui_config_t *cfg) {
 	if (musicsettings_endless_shuffle()) {
 		lv_obj_add_state(endless_shuffle_switch, LV_STATE_CHECKED);
 	}
-
-	// Play the current track and stop, instead of going on to the next one.
-	settingsrow_toggle(container, "musicsettings_stop_after_track", &stop_after_switch, stop_after_cb);
-	option_note(container, "musicsettings_stop_after_track_note");
-	stop_after_refresh();
 
 	// The sleep timer, directly under it, with its two wheels revealed by the
 	// switch the way the screensaver's two pills are.
