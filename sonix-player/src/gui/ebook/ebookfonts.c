@@ -146,11 +146,26 @@ static void fallbacks_open(int size, bool japanese, bool korean) {
 		}
 
 		// Regular-preferred chain: use the regular face when available, else
-		// the bold one. Bold-preferred chain: the opposite.
+		// the bold one. Bold-preferred chain: the opposite. If the same face
+		// would be used in both chains, open a separate instance so each chain
+		// remains an independent linked list (lv_font_t::fallback is a single
+		// pointer).
 		lv_font_t *reg_choice = reg ? reg : bld;
 		lv_font_t *bold_choice = bld ? bld : reg;
+		lv_font_t *bold_dup = NULL;
+		if (reg_choice == bold_choice) {
+			bold_dup = open_font_path(reg ? reg_path : bold_path, size);
+			if (bold_dup) {
+				bold_choice = bold_dup;
+			} else {
+				// Cannot build an independent bold chain node; attach only to
+				// the regular chain and keep bold chain as-is.
+				bold_choice = NULL;
+			}
+		}
 
 		if (reg_choice) {
+			reg_choice->fallback = NULL;
 			if (!fallback_regular_head) {
 				fallback_regular_head = reg_choice;
 			} else {
@@ -159,13 +174,45 @@ static void fallbacks_open(int size, bool japanese, bool korean) {
 			reg_tail = reg_choice;
 		}
 		if (bold_choice) {
+			bold_choice->fallback = NULL;
 			if (!fallback_bold_head) {
 				fallback_bold_head = bold_choice;
 			} else {
 				bold_tail->fallback = bold_choice;
 			}
 			bold_tail = bold_choice;
+			if (bold_dup) {
+				// Track the duplicate for cleanup by hanging it off the unused
+				// slot of this script when possible, else delete via the chain
+				// walk at close time is not enough because we only stored reg/bld.
+				// Store duplicate in script_bold when bld was NULL, else in
+				// script_regular when reg was NULL (the opposite slot is free).
+				if (!bld) {
+					script_bold[i] = bold_dup;
+				} else if (!reg) {
+					script_regular[i] = bold_dup;
+				} else {
+					// Both original slots occupied (should not happen when
+					// reg_choice == bold_choice), but keep it deletable: prefer
+					// attaching as tail-owned only is unsafe. Fall back: put in
+					// script_bold slot? no slot free; close will leak in this
+					// impossible case, so delete duplicate and skip bold chain.
+					lv_freetype_font_delete(bold_dup);
+					if (bold_tail == bold_dup) {
+						// unreachable given logic
+					}
+					bold_choice = NULL;
+				}
+			}
 		}
+	}
+
+	// Ensure chain tails terminate.
+	if (reg_tail) {
+		reg_tail->fallback = NULL;
+	}
+	if (bold_tail) {
+		bold_tail->fallback = NULL;
 	}
 }
 
