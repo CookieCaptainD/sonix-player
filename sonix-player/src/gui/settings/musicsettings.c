@@ -1610,13 +1610,24 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 
 static lv_obj_t *endless_shuffle_switch;
 static lv_obj_t *stop_after_switch;
+static playback_mode_t mode_before_stop_after = PLAYBACK_MODE_NORMAL;
+static bool stop_after_syncing;
 
 static void stop_after_refresh(void) {
 	if (!stop_after_switch) {
 		return;
 	}
-	lv_obj_set_state(stop_after_switch, LV_STATE_CHECKED,
-					 playlist_get_mode() == PLAYBACK_MODE_STOP_AFTER);
+	bool on = playlist_get_mode() == PLAYBACK_MODE_STOP_AFTER;
+	if (lv_obj_has_state(stop_after_switch, LV_STATE_CHECKED) == on) {
+		return;
+	}
+	stop_after_syncing = true;
+	if (on) {
+		lv_obj_add_state(stop_after_switch, LV_STATE_CHECKED);
+	} else {
+		lv_obj_remove_state(stop_after_switch, LV_STATE_CHECKED);
+	}
+	stop_after_syncing = false;
 }
 
 static void endless_shuffle_cb(lv_event_t *e) {
@@ -1627,8 +1638,19 @@ static void endless_shuffle_cb(lv_event_t *e) {
 
 static void stop_after_cb(lv_event_t *e) {
 	(void)e;
-	playlist_set_mode(lv_obj_has_state(stop_after_switch, LV_STATE_CHECKED) ? PLAYBACK_MODE_STOP_AFTER
-																			 : PLAYBACK_MODE_NORMAL);
+	if (stop_after_syncing) {
+		return;
+	}
+	if (lv_obj_has_state(stop_after_switch, LV_STATE_CHECKED)) {
+		playback_mode_t current = playlist_get_mode();
+		if (current != PLAYBACK_MODE_STOP_AFTER) {
+			mode_before_stop_after = current;
+		}
+		playlist_set_mode(PLAYBACK_MODE_STOP_AFTER);
+	} else if (playlist_get_mode() == PLAYBACK_MODE_STOP_AFTER) {
+		playlist_set_mode(mode_before_stop_after == PLAYBACK_MODE_STOP_AFTER ? PLAYBACK_MODE_NORMAL
+																			 : mode_before_stop_after);
+	}
 	stop_after_refresh();
 }
 
