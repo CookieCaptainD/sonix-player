@@ -80,7 +80,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Soundfield** - make the stereo image narrower (down to mono) or wider.
 - **Crossfeed** - mixes a bit of each channel into the other, like speakers do.
 - **Channel balance** and **Mono audio**.
-- The EQ, PEQ and MSEB also work on radio and streaming.
+- The EQ, PEQ and MSEB also work on radio, streaming and the USB DAC (not on DSD).
 - **DAC settings** - 4 digital filters, DRE, NOS, high gain, and gain compensation for DSD.
 - **DSD** - played natively, or converted to PCM when the output cannot take it (for example over Bluetooth).
 
@@ -91,7 +91,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Volume limit** - a maximum volume for each output.
 - **Volume steps** - how much one press of the volume key changes the volume.
 - **Line out** - the jack goes to a fixed level for an amplifier, and your volume comes back when you turn it off.
-- **USB DAC** - connect the player to a computer and it becomes its sound card, from 32 kHz to 384 kHz. You can choose whether it charges at the same time.
+- **USB DAC** - connect the player to a computer and it becomes its sound card, from 32 kHz to 384 kHz. The switch on its page applies the equaliser, PEQ and MSEB to what the computer plays, and the buttons beside it open the equaliser and the PEQ. You can choose whether it charges at the same time.
 - **USB audio out** - plug a USB DAC or USB-C headphones into the player.
 
 ## Streaming
