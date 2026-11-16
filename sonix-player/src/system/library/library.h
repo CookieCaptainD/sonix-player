@@ -322,6 +322,10 @@ size_t library_track_places(const char *const *paths, size_t count, library_plac
 // saved before albums were told apart still means.
 #define LIBRARY_ALBUM_KEY_SEP '\x1f'
 
+// The longest album value: a 255-byte album name, the separator, a 9-character
+// key and the terminator. Buffers that hold a whole value use this, not 256.
+#define LIBRARY_ALBUM_VALUE_MAX 320
+
 // The part of such a value a person reads: the name, without the key.
 void library_album_title(const char *value, char *out, size_t size);
 
@@ -568,7 +572,7 @@ typedef struct {
 	library_filter_t filter;
 	library_order_t order;
 	bool desc;
-	char value[256];
+	char value[LIBRARY_ALBUM_VALUE_MAX];
 } library_index_spec_t;
 void library_index_describe(const library_index_t *ix, library_index_spec_t *out);
 

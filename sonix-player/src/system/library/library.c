@@ -2543,7 +2543,7 @@ struct library_index {
 	library_list_t kind;
 	library_filter_t filter;
 	library_order_t order;
-	char value[256];
+	char value[LIBRARY_ALBUM_VALUE_MAX];
 
 	bool desc; // the list reads backwards; the rows are always stored ascending
 	gen_domain_t domain;
@@ -3242,7 +3242,7 @@ int library_index_find_name(const library_index_t *ix, const char *name) {
 	// An album is one row of ALBUM_GROUP_TABLE per name and key, so a value
 	// with a key finds its own record and a name alone the first of that name.
 	const char *sql;
-	char album[256];
+	char album[LIBRARY_ALBUM_VALUE_MAX];
 	const char *key = NULL;
 	switch (ix->kind) {
 	case LIBRARY_LIST_ALBUMS: {

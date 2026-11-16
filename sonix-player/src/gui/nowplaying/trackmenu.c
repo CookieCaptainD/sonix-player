@@ -1786,7 +1786,7 @@ static void open_album_cb(void *user) {
 		return;
 	}
 
-	char album[256];
+	char album[LIBRARY_ALBUM_VALUE_MAX];
 	if (!library_track_album_value(state.current_file, album, sizeof(album)) || !album[0]) {
 		gui_notify_popup("trackmenu_no_album");
 		return;
