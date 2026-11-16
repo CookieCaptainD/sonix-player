@@ -179,11 +179,15 @@ this order:
 
 1. **Exact value.** Build `album + '\x1f' + album_key` and ask for the album
    snapshot. This is the normal case and uses the album index.
-2. **Same key, unique.** The key is derived from the folded album artist (or
-   the folder). If the album name alone changed case or accent, the key is
-   still the same. Enumerate albums with that exact `album_key`; accept only
-   when exactly one exists and it is corroborated by the stored artist, the
-   stored folder, or (when both are empty) the stored title.
+2. **Same key and folded album name, unique.** The key is derived from the
+   folded album artist (or the folder), so every album by one artist shares it;
+   a key alone does not identify an album. If the album name alone changed case
+   or accent, the key is still the same. Enumerate albums with that exact
+   `album_key`; count only candidates whose album name folds to the stored name
+   and which are corroborated by the stored artist, the stored folder, or (when
+   both are empty) the stored title. Accept only when exactly one such candidate
+   exists. A candidate with a different album name never qualifies, even when
+   its key and artist match.
 3. **First file path.** Ask `library_track_album_value(first_path)`. Accept
    only when the resolved album is corroborated: the resolved artist matches
    the stored artist, or the resolved folder matches the stored folder, or (when

@@ -227,23 +227,28 @@ test `fold` that lowercases and maps `á é í ó ú ü ñ` to their base letter
 Cover these cases, one `CHECK` each:
 
 1. `exact value resolves` → `COLLECTION_RESOLVE_EXACT`.
-2. `same key, one candidate, matching artist resolves` → `KEY`.
+2. `same key, one candidate, same folded album name, matching artist resolves`
+   → `KEY`, using a case/accent variant of the stored name.
 3. `same key, one candidate, no corroboration is missing` → `MISSING`.
-4. `same key, two candidates, one matching artist resolves` → `KEY`.
-5. `first path resolves a renamed album with the same artist` → `PATH`.
-6. `first path resolves a moved album with the same folder` → `PATH`.
-7. `first path to an unrelated album is missing` → `MISSING`.
-8. `name plus folded artist resolves` → `NAME_ARTIST`.
-9. `name plus artist with two matches is missing` → `MISSING`.
-10. `name plus folder resolves uniquely` → `NAME_FOLDER`.
-11. `a single same-named album with a different artist is missing` → `MISSING`
+4. `same key, one candidate, different album name, matching artist is missing`
+   → `MISSING` (wrong-album regression).
+5. `same key, two candidates, one with the stored folded name and corroboration
+   resolves` → `KEY`; the other candidate has a different name.
+6. `first path resolves a renamed album with the same artist` → `PATH`.
+7. `first path resolves a moved album with the same folder` → `PATH`.
+8. `first path to an unrelated album is missing` → `MISSING`.
+9. `name plus folded artist resolves` → `NAME_ARTIST`.
+10. `name plus artist with two matches is missing` → `MISSING`.
+11. `name plus folder resolves uniquely` → `NAME_FOLDER`.
+12. `a single same-named album with a different artist is missing` → `MISSING`
     (proves the unique-name fallback is gone).
-12. `accent-folded name and artist resolve` → `NAME_ARTIST`/`KEY`.
-13. `an item with no key is missing` → `MISSING`.
-14. `exact wins over every fallback` → `EXACT`.
+13. `accent-folded name and artist resolve` → `NAME_ARTIST`/`KEY`.
+14. `an item with no key is missing` → `MISSING`.
+15. `exact wins over every fallback` → `EXACT`.
 
-Include the exact fixtures in the test: the duplicate-name albums, the renamed
-album (same key, different name), the accent pair, and the unrelated album.
+Include the exact fixtures in the test: the duplicate-name albums, the
+wrong-album candidate (same key and artist, different name), the accent pair,
+and the unrelated album.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -260,10 +265,12 @@ In `collections_resolve.c`:
 - Build the exact value with `snprintf` into a `char value[320]`, using
   `LIBRARY_ALBUM_KEY_SEP`; call `lookup->snapshot`; if true, copy to `out` and
   return `EXACT`.
-- **Key step:** call `lookup->keyed(ref->album_key, ...)`; count candidates and
-  count corroborated ones. Accept only if exactly one candidate and exactly one
-  corroborated. Corroboration: folded artist equal (both non-empty), or folded
-  folder equal (both non-empty), or both snapshots empty and folded title equal.
+- **Key step:** call `lookup->keyed(ref->album_key, ...)`; count only candidates
+  whose album name folds to the stored name and which are corroborated. Accept
+  only if exactly one qualifies; zero or multiple matches continue through the
+  remaining fallbacks. Corroboration: folded artist equal (both non-empty), or
+  folded folder equal (both non-empty), or both snapshots empty and folded title
+  equal. A different album name never qualifies, even when key and artist match.
 - **Path step:** if `ref->first_path[0]`, call `lookup->value_for_path`; on
   success call `lookup->snapshot` on the returned value; accept only if
   corroborated.
