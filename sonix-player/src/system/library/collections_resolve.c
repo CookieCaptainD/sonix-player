@@ -8,7 +8,6 @@
 typedef struct {
 	const collection_ref_t *ref;
 	const collection_lookup_t *lookup;
-	int candidates;
 	int matches;
 	collection_snapshot_t match;
 } key_candidates_t;
@@ -48,8 +47,7 @@ static bool corroborated(const collection_ref_t *ref, const collection_snapshot_
 static bool key_candidate(const collection_snapshot_t *snapshot, void *user) {
 	key_candidates_t *candidates = user;
 
-	candidates->candidates++;
-	if (corroborated(candidates->ref, snapshot, candidates->lookup)) {
+	if (folded_equal(candidates->ref->album, snapshot->album, COLLECTION_ALBUM_MAX, candidates->lookup) && corroborated(candidates->ref, snapshot, candidates->lookup)) {
 		candidates->matches++;
 		if (candidates->matches == 1)
 			candidates->match = *snapshot;
@@ -110,7 +108,7 @@ collection_resolve_step_t collection_resolve(const collection_ref_t *ref, const 
 		};
 
 		lookup->keyed(ref->album_key, key_candidate, &candidates);
-		if (candidates.candidates > 0 && candidates.matches == 1) {
+		if (candidates.matches == 1) {
 			copy_match(out, &candidates.match);
 			return COLLECTION_RESOLVE_KEY;
 		}

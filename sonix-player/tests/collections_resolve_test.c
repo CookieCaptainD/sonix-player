@@ -205,22 +205,28 @@ int main(void) {
 	}
 	{
 		fake_lookup_t fake = {0};
-		collection_ref_t ref = make_ref("Old title", "a1b2c3d4", "Artist", "/music/old", "");
-		fake_add(&fake, "Renamed", "a1b2c3d4", "artist", "/music/new", "/music/new/01.flac");
-		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_KEY, "Renamed"), "same key, one candidate, matching artist resolves");
+		collection_ref_t ref = make_ref("Café", "a1b2c3d4", "Artist", "/music/old", "");
+		fake_add(&fake, "CAFE", "a1b2c3d4", "artist", "/music/new", "/music/new/01.flac");
+		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_KEY, "CAFE"), "same key, one candidate, same folded album name, matching artist resolves");
 	}
 	{
 		fake_lookup_t fake = {0};
 		collection_ref_t ref = make_ref("Old title", "a1b2c3d4", "Artist", "/music/old", "");
-		fake_add(&fake, "Renamed", "a1b2c3d4", "Someone else", "/music/new", "/music/new/01.flac");
+		fake_add(&fake, "old title", "a1b2c3d4", "Someone else", "/music/new", "/music/new/01.flac");
 		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_MISSING, NULL), "same key, one candidate, no corroboration is missing");
 	}
 	{
 		fake_lookup_t fake = {0};
-		collection_ref_t ref = make_ref("Old title", "a1b2c3d4", "Artist", "/music/old", "");
-		fake_add(&fake, "Retitled by another artist", "a1b2c3d4", "Someone else", "/music/other", "");
-		fake_add(&fake, "Retitled by stored artist", "a1b2c3d4", "ARTIST", "/music/new", "");
-		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_KEY, "Retitled by stored artist"), "same key, two candidates, one matching artist resolves");
+		collection_ref_t ref = make_ref("Deleted Album", "a1b2c3d4", "Artist", "/music/deleted", "");
+		fake_add(&fake, "Other Album", "a1b2c3d4", "artist", "/music/other", "");
+		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_MISSING, NULL), "same key, one candidate, different album name, matching artist is missing");
+	}
+	{
+		fake_lookup_t fake = {0};
+		collection_ref_t ref = make_ref("Stored Album", "a1b2c3d4", "Artist", "/music/old", "");
+		fake_add(&fake, "Other Album", "a1b2c3d4", "artist", "/music/other", "");
+		fake_add(&fake, "stored album", "a1b2c3d4", "ARTIST", "/music/new", "");
+		CHECK(resolution_is(&ref, &fake, COLLECTION_RESOLVE_KEY, "stored album"), "same key, two candidates, one with the stored folded name and corroboration resolves");
 	}
 	{
 		fake_lookup_t fake = {0};
