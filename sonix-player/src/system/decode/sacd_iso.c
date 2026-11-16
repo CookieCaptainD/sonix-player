@@ -962,11 +962,10 @@ bool sacd_iso_select(sacd_iso_t *s, int area, int track) {
 	if (track < 1 || track > a->track_count) {
 		return false;
 	}
-	if (a->channels < 1 || a->channels > MAX_CHANNELS) {
-		return false;
-	}
-	// The fixed layouts describe two-channel interleaving only.
-	if (a->frame_format != 0 && a->channels != 2) {
+	// v1 is stereo-only: the fixed layouts describe two-channel interleaving
+	// and the output stage is two channels, so a multichannel area is refused
+	// rather than handed to it.
+	if (a->channels != 2) {
 		return false;
 	}
 
