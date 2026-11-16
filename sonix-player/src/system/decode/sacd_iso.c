@@ -602,10 +602,11 @@ sacd_iso_t *sacd_iso_open(const char *path) {
 		if (s->area_count >= SACD_MAX_AREAS) {
 			break;
 		}
-		if (starts[i][0] == 0 || sizes[i] == 0) {
+		if (sizes[i] == 0 ||
+		    (starts[i][0] == 0 && starts[i][1] == 0)) {
 			continue;
 		}
-		if (parse_area(s, starts[i][0], sizes[i])) {
+		if (starts[i][0] != 0 && parse_area(s, starts[i][0], sizes[i])) {
 			continue;
 		}
 		if (starts[i][1] != 0) {
@@ -683,15 +684,6 @@ int sacd_iso_year(const sacd_iso_t *s) {
 // ---------------------------------------------------------------------------
 // DST frames
 // ---------------------------------------------------------------------------
-
-static int dst_sector_count(const unsigned char *sector, int packet_count) {
-	size_t off = 1 + 2 * (size_t)packet_count;
-
-	if (off + 4 > SECTOR_SIZE) {
-		return 0;
-	}
-	return (sector[off + 3] >> 2) & 0x1f;
-}
 
 // Scans sector by sector for the sector that starts `frame`: its first audio
 // packet marked frame_start, whose frame info timecode is the frame wanted.
@@ -774,32 +766,17 @@ static bool find_frame(sacd_iso_t *s, uint32_t frame, uint32_t *lsn,
 			  lsn, sectors);
 }
 
-// Assembles one DST frame's payload (packet by packet, sector by sector) and
-// decodes it. A malformed frame becomes silence.
-static void dst_frame(sacd_iso_t *s, uint32_t frame, size_t frame_bytes) {
-	uint32_t lsn;
-	int sectors = 0;
-	bool have = false;
-
-	if (s->next_valid && s->next_frame == frame) {
-		lsn = s->next_lsn;
-		sectors = s->next_sectors;
-		have = true;
-	}
-	s->next_valid = false;
-	if (!have && !find_frame(s, frame, &lsn, &sectors)) {
-		return;
-	}
-	if (sectors <= 0) {
-		sectors = 1;
-	}
-	if (sectors > MAX_FRAME_SECTORS) {
-		sectors = MAX_FRAME_SECTORS;
-	}
-
+// Copies one frame out of the sectors that hold it. `lsn` may be a sector
+// shared with the previous frame, so packets before the matching frame_start
+// are skipped. Returns false when the frame does not start at that LSN.
+static bool assemble_dst(sacd_iso_t *s, uint32_t frame, uint32_t lsn,
+			 int hint_sectors, size_t frame_bytes) {
+	int sectors = hint_sectors > 0 ? hint_sectors : 1;
+	bool started = false;
+	bool have_span = false;
+	bool next_here = false;
 	size_t total = 0;
 	uint32_t cur = lsn;
-	bool cached = false;
 	int used = 0;
 
 	while (used < sectors) {
@@ -809,11 +786,14 @@ static void dst_frame(sacd_iso_t *s, uint32_t frame, size_t frame_bytes) {
 		unsigned b = s->sector[0];
 		int frame_infos = (b >> 2) & 7;
 		int packets = (b >> 5) & 7;
-		size_t off = 1 + 2 * (size_t)packets + 4 * (size_t)frame_infos;
+		size_t packet_base = 1 + 2 * (size_t)packets;
+		size_t off = packet_base + 4 * (size_t)frame_infos;
 		if (off > SECTOR_SIZE) {
 			break;
 		}
 		size_t data = off;
+		int info_index = 0; // frame infos are indexed per sector
+
 		for (int i = 0; i < packets; i++) {
 			size_t pi = 1 + 2 * (size_t)i;
 			if (pi + 2 > SECTOR_SIZE) {
@@ -825,17 +805,48 @@ static void dst_frame(sacd_iso_t *s, uint32_t frame, size_t frame_bytes) {
 			int type = (int)((w >> 11) & 7);
 			size_t len = w & 0x7ff;
 
-			// A later frame_start packet is the next frame, already
-			// on this sector. Remember where and how long it is.
-			if (starts && total > 0) {
-				s->next_valid = true;
-				s->next_frame = frame + 1;
-				s->next_lsn = cur;
-				s->next_sectors = dst_sector_count(s->sector, packets);
-				cached = true;
-				goto assembled;
+			if (starts && type == 2) {
+				const unsigned char *f = NULL;
+				uint32_t tc = 0;
+				int span = 0;
+
+				if (info_index < frame_infos) {
+					f = s->sector + packet_base +
+					    4 * (size_t)info_index;
+					tc = (uint32_t)f[0] * 60 * FRAME_RATE +
+					     (uint32_t)f[1] * FRAME_RATE + f[2];
+					span = (f[3] >> 2) & 0x1f;
+					info_index++;
+				}
+				if (!started) {
+					// Only this frame's own start begins the
+					// payload; another frame's start is skipped.
+					if (!f || tc != frame) {
+						data += len;
+						if (data > SECTOR_SIZE) {
+							data = SECTOR_SIZE;
+						}
+						continue;
+					}
+					started = true;
+					if (!have_span) {
+						sectors = span > 0 ? span : 1;
+						have_span = true;
+					}
+				} else {
+					// The target is under way and another frame
+					// starts: remember where, and stop. The next
+					// read skips to it by its timecode.
+					s->next_valid = true;
+					s->next_frame = f ? tc : frame + 1;
+					s->next_lsn = cur;
+					s->next_sectors = span;
+					next_here = true;
+					break;
+				}
 			}
-			if (type == 2 && total < s->raw_cap) {
+
+			if (started && type == 2 && total < s->raw_cap) {
 				size_t n = len;
 				if (n > SECTOR_SIZE - data) {
 					n = SECTOR_SIZE - data;
@@ -851,26 +862,54 @@ static void dst_frame(sacd_iso_t *s, uint32_t frame, size_t frame_bytes) {
 				data = SECTOR_SIZE;
 			}
 		}
+
 		used++;
 		cur++;
+		if (next_here) {
+			break;
+		}
 	}
 
-assembled:
-	if (!cached && used >= sectors) {
-		// No next-frame marker: frames are contiguous, so the next one
-		// starts at the sector after this one.
+	if (!started) {
+		return false;
+	}
+	if (!next_here && used >= sectors) {
+		// No later frame_start in range: the next frame starts at the next
+		// sector. Its own frame info will give its true span.
 		s->next_valid = true;
 		s->next_frame = frame + 1;
 		s->next_lsn = cur;
-		s->next_sectors = sectors;
+		s->next_sectors = 0;
 	}
 	if (total == 0 || !s->dst) {
-		return;
+		return true;
 	}
 	int out_len = 0;
 	if (dst_decoder_decode(s->dst, s->raw, (int)total, s->frame, &out_len) != 0 ||
 	    out_len != (int)frame_bytes) {
 		memset(s->frame, 0, frame_bytes);
+	}
+	return true;
+}
+
+// Locates and assembles one DST frame. A malformed frame becomes silence.
+static void dst_frame(sacd_iso_t *s, uint32_t frame, size_t frame_bytes) {
+	uint32_t lsn;
+	int sectors = 0;
+	bool have = false;
+
+	if (s->next_valid && s->next_frame == frame) {
+		lsn = s->next_lsn;
+		sectors = s->next_sectors;
+		have = true;
+	}
+	s->next_valid = false;
+
+	if (have && assemble_dst(s, frame, lsn, sectors, frame_bytes)) {
+		return;
+	}
+	if (find_frame(s, frame, &lsn, &sectors)) {
+		assemble_dst(s, frame, lsn, sectors, frame_bytes);
 	}
 }
 

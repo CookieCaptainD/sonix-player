@@ -17,6 +17,6 @@ python3 tests/make_sacd_iso.py "$ISO_DIR"
 cc -O2 -Wall -Wextra -Isrc -o /tmp/sacd_iso_test \
    tests/sacd_iso_test.c src/system/decode/sacd_iso.c \
    src/system/decode/dst_decoder.c
-for mode in dsd14 dsd16 dst bad; do
+for mode in dsd14 dsd16 dst dst_shared bad; do
 	/tmp/sacd_iso_test "$ISO_DIR/$mode.iso" "$mode"
 done

@@ -14,11 +14,12 @@
 // access list all live in the first sectors of the image and are described in
 // terms of 2048-byte sectors (LSN * 2048).
 //
-// Only the two-channel area is exposed here: the player's output is stereo,
-// and the multichannel area is a second, separate TOC with its own audio.
-// A track is presented as `frames * 4704` bytes per channel -- 588 samples a
-// frame at 64 bits a sample -- read out of the interleaved frame buffer the
-// container hands over.
+// Every area in the master TOC is parsed and exposed; the player normally
+// picks the two-channel one (sacd_iso_stereo_area()), and the multichannel
+// area is a second, separate TOC with its own audio. A track is presented as
+// `frames * 4704` bytes per channel -- 588 samples a frame at 64 bits a
+// sample -- read out of the interleaved frame buffer the container hands
+// over.
 
 #define SACD_MAX_TRACKS 255
 #define SACD_MAX_AREAS 2
