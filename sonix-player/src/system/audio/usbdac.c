@@ -3,6 +3,7 @@
 #include "usbdac.h"
 
 #include "src/system/audio/audio.h"
+#include "src/system/audio/eq.h"
 #include "src/system/core/config.h"
 #include "src/system/core/lang.h"
 #include "src/system/device/power.h"
@@ -441,6 +442,24 @@ bool usbdac_charging_enabled(void) {
 	return charging_cache == 1;
 }
 
+// The processing switch, cached the same way as the charger above: the audio
+// thread reads it on every buffer, and the engine's behaviour must not depend
+// on the config write having succeeded.
+static int dsp_cache = -1;
+
+void usbdac_set_dsp(bool enabled) {
+	dsp_cache = enabled ? 1 : 0;
+	config_set_bool("usb", "dac_dsp", dsp_cache);
+	config_save();
+}
+
+bool usbdac_dsp_enabled(void) {
+	if (dsp_cache < 0) {
+		dsp_cache = config_get_bool("usb", "dac_dsp", true) ? 1 : 0;
+	}
+	return dsp_cache == 1;
+}
+
 // ---------------------------------------------------------------------------
 // The audio thread
 // ---------------------------------------------------------------------------
@@ -579,7 +598,18 @@ static void *audio_main(void *arg) {
 
 		// Eight bytes to a frame, and audio_external_write() counts frames.
 		if (output_open) {
-			audio_external_write(buffer, (int)(got / 8));
+			int frames = (int)(got / 8);
+
+			// The listener's tone shaping, on the stream the computer sends:
+			// the same chain a track from the card goes through, and the same
+			// call the radio path makes. Skipped in DSD, where the payload is
+			// one bit per sample and there is no PCM to filter, and when the
+			// switch on this mode's own page is off.
+			if (!dsd && usbdac_dsp_enabled()) {
+				eq_process_s32((int32_t *)buffer, frames, 2, fmt.rate);
+			}
+
+			audio_external_write(buffer, frames);
 		}
 	}
 

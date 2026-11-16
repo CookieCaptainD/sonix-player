@@ -90,4 +90,19 @@ unsigned usbdac_serial(void);
 void usbdac_set_charging(bool enabled);
 bool usbdac_charging_enabled(void);
 
+// ---------------------------------------------------------------------------
+// Processing
+// ---------------------------------------------------------------------------
+//
+// Whether the stream the computer sends goes through the tone shaping -- the
+// graphic EQ, the parametric one and MSEB -- before it reaches the DAC. On by
+// default: without it the equaliser pages would be reachable in this mode and
+// change nothing. Remembered in config as [usb] dac_dsp.
+//
+// Deliberately not tied to the bit-perfect setting: that one is about local
+// playback and lives on a page this mode's trap makes unreachable, so a user
+// who had it on could open the equaliser here and hear no change at all.
+void usbdac_set_dsp(bool enabled);
+bool usbdac_dsp_enabled(void);
+
 #endif /* USBDAC_H */
