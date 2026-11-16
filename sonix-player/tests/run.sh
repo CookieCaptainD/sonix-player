@@ -26,3 +26,13 @@ cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_sacd_test \
    tests/dsd_sacd_test.c src/system/decode/dsd.c \
    src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
 /tmp/dsd_sacd_test "$ISO_DIR/dsd14.iso"
+
+# Task 4: the tags of a SACD ISO track, read from the image's text sectors.
+# --gc-sections drops the tag readers and decode_detect_format from
+# metadata.c, which are not linked here.
+cc -O2 -Wall -Wextra -I. -D_FILE_OFFSET_BITS=64 -DHOST_BUILD=1 \
+   -ffunction-sections -fdata-sections -Wl,--gc-sections \
+   -o /tmp/metadata_sacd_test tests/metadata_sacd_test.c \
+   src/system/library/metadata.c src/system/decode/sacd_iso.c \
+   src/system/decode/dst_decoder.c
+/tmp/metadata_sacd_test "$ISO_DIR/dsd14.iso"
