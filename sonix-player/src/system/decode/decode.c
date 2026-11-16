@@ -714,7 +714,7 @@ static decode_format_t format_by_name(const char *filepath) {
 decode_format_t decode_detect_format(const char *filepath) {
 	// A track of a SACD ISO is a DSD stream inside the image, decoded by the
 	// DSD path below. The virtual path names the image, not a file to sniff.
-	char iso[512];
+	char iso[600];
 	if (sacd_split_path(filepath, iso, sizeof(iso)) > 0) {
 		return DECODE_FORMAT_DSD;
 	}
@@ -2035,7 +2035,7 @@ static decoder_t *decoder_open_file(const char *filepath, decode_format_t format
 	// A SACD track is a stretch of the image, not a file of its own: what
 	// re-reads the audio by name -- the MP3 index, the bitrate probes -- wants
 	// the image. dsd_open() is given the virtual path and finds the track.
-	char iso[512];
+	char iso[sizeof(dec->file)];
 	if (sacd_split_path(dec->path, iso, sizeof(iso)) > 0) {
 		snprintf(dec->file, sizeof(dec->file), "%s", iso);
 	}
@@ -2488,7 +2488,7 @@ bool decoder_source_span(const decoder_t *dec, char *file, size_t size, double *
 	// A SACD track is not a byte span of an ordinary file: the image holds
 	// several areas and the track is located through the TOC, so there is no
 	// range to hand out.
-	char iso[512];
+	char iso[600];
 	if (sacd_split_path(dec->path, iso, sizeof(iso)) > 0 || sacd_is_iso(dec->path)) {
 		return false;
 	}

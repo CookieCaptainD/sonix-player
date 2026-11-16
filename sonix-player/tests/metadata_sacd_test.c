@@ -75,6 +75,29 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* A .iso that is not a SACD image: refused, and the caller's struct is
+	 * left zeroed rather than holding whatever was in it. */
+	char bad[1200];
+	snprintf(bad, sizeof(bad), "%s", argv[1]);
+	char *slash = strrchr(bad, '/');
+	if (slash) {
+		snprintf(slash + 1, sizeof(bad) - (size_t)(slash + 1 - bad), "bad.iso");
+	} else {
+		snprintf(bad, sizeof(bad), "bad.iso");
+	}
+	song_metadata_t none;
+	memset(&none, 0xA5, sizeof(none));
+	if (metadata_read_sacd(bad, &none)) {
+		printf("FAIL: a non-SACD image was accepted\n");
+		failures++;
+	}
+	song_metadata_t zeroed;
+	memset(&zeroed, 0, sizeof(zeroed));
+	if (memcmp(&none, &zeroed, sizeof(none)) != 0) {
+		printf("FAIL: a failed read left the struct non-zero\n");
+		failures++;
+	}
+
 	if (failures) {
 		printf("%d failure(s)\n", failures);
 		return 1;
