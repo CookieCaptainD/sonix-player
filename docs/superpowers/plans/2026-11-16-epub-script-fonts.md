@@ -334,6 +334,14 @@ PATH="/home/diogo/Downloads/Hiby/fakebin:$PATH" ./sonix_firmware_packer.sh
 
 Expected: `r1.upt` written; the R3 Pro II model is skipped or untouched because no `r3proii_original.upt` is present.
 
+- [ ] **Step 2b: Record the image size**
+
+```bash
+stat -c '%n %s bytes' sonix-packer/r1.upt
+```
+
+Expected on this branch: `51,189,760` bytes (48.8 MiB), rootfs `47,824,896` bytes. The known-good 1.3.0 release is `47,996,928`. If the device rejects the image as too large, the first lever is the unhinted Noto files (about 0.5 MB smaller) or dropping the new scripts' bold faces.
+
 - [ ] **Step 3: Confirm the twelve fonts are inside the packed rootfs**
 
 ```bash
