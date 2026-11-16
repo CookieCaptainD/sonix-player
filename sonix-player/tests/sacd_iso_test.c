@@ -89,9 +89,9 @@ static void test_track(sacd_iso_t *iso, int track, uint32_t frames)
 	}
 	check(sacd_iso_read(iso, chan, 16) == 0, "read past the end");
 
-	/* Seek into the middle of a frame, not on a boundary. */
-	uint64_t half = total / 2;
-	check(sacd_iso_seek(iso, half), "seek to the middle");
+	/* Just past the middle: never on a frame boundary. */
+	uint64_t half = total / 2 + 1;
+	check(sacd_iso_seek(iso, half), "seek into a frame");
 	uint64_t got = sacd_iso_read(iso, chan, 4096);
 	check(got == 4096, "read after a middle seek");
 	if (got > 0) {
@@ -103,6 +103,34 @@ static void test_track(sacd_iso_t *iso, int track, uint32_t frames)
 	check(got == 1024, "read after seeking to the start");
 	if (got > 0) {
 		check_bytes(chan, track, 0, got);
+	}
+
+	free(chan[0]);
+	free(chan[1]);
+}
+
+static void test_deep_seek(sacd_iso_t *iso, int track, uint32_t frames)
+{
+	uint64_t total = (uint64_t)frames * BYTES_PER_FRAME;
+	uint64_t start = total - 2 * BYTES_PER_FRAME;
+	unsigned char *chan[2];
+
+	chan[0] = malloc(2 * BYTES_PER_FRAME);
+	chan[1] = malloc(2 * BYTES_PER_FRAME);
+	if (!chan[0] || !chan[1]) {
+		fail("allocation");
+		free(chan[0]);
+		free(chan[1]);
+		return;
+	}
+
+	/* Frame 13 of the DST fixture is reached through access-list entry 1. */
+	check(sacd_iso_select(iso, 0, track), "deep seek select");
+	check(sacd_iso_seek(iso, start), "deep seek");
+	uint64_t got = sacd_iso_read(iso, chan, 2 * BYTES_PER_FRAME);
+	check(got == 2 * BYTES_PER_FRAME, "deep seek read");
+	if (got > 0) {
+		check_bytes(chan, track, start, got);
 	}
 
 	free(chan[0]);
@@ -155,7 +183,8 @@ static void test_bad(const char *path)
 	sacd_iso_close(iso);
 }
 
-static void test_image(const char *path, int track_count, const uint32_t *frames)
+static void test_image(const char *path, int track_count, const uint32_t *frames,
+		       int deep_seek)
 {
 	sacd_iso_t *iso = sacd_iso_open(path);
 
@@ -183,15 +212,23 @@ static void test_image(const char *path, int track_count, const uint32_t *frames
 
 	for (int i = 0; i < track_count; i++) {
 		char title[32];
+		char performer[32];
 
 		snprintf(title, sizeof(title), "Track %d", i + 1);
+		snprintf(performer, sizeof(performer), "Artist %d", i + 1);
 		check(area->tracks[i].number == i + 1, "track number");
 		check(strcmp(area->tracks[i].title, title) == 0, "track title");
+		check(strcmp(area->tracks[i].performer, performer) == 0,
+		      "track performer");
 		check(area->tracks[i].frames == frames[i], "track frames");
 		check(area->tracks[i].start_lsn >= area->track_start_lsn &&
 		      area->tracks[i].start_lsn <= area->track_end_lsn,
 		      "track start inside the area");
 		test_track(iso, i + 1, frames[i]);
+	}
+
+	if (deep_seek) {
+		test_deep_seek(iso, 1, frames[0]);
 	}
 
 	test_paths(path);
@@ -201,7 +238,8 @@ static void test_image(const char *path, int track_count, const uint32_t *frames
 int main(int argc, char **argv)
 {
 	if (argc != 3) {
-		fprintf(stderr, "usage: %s <image.iso> <dsd14|dsd16|dst|bad>\n",
+		fprintf(stderr,
+			"usage: %s <image.iso> <dsd14|dsd16|dst|dst_shared|bad>\n",
 			argv[0]);
 		return 2;
 	}
@@ -213,13 +251,16 @@ int main(int argc, char **argv)
 		test_bad(path);
 	} else if (strcmp(mode, "dsd14") == 0) {
 		static const uint32_t frames[] = {10, 5};
-		test_image(path, 2, frames);
+		test_image(path, 2, frames, 0);
 	} else if (strcmp(mode, "dsd16") == 0) {
 		static const uint32_t frames[] = {9};
-		test_image(path, 1, frames);
+		test_image(path, 1, frames, 0);
 	} else if (strcmp(mode, "dst") == 0) {
 		static const uint32_t frames[] = {15};
-		test_image(path, 1, frames);
+		test_image(path, 1, frames, 1);
+	} else if (strcmp(mode, "dst_shared") == 0) {
+		static const uint32_t frames[] = {2};
+		test_image(path, 1, frames, 0);
 	} else {
 		fprintf(stderr, "unknown mode: %s\n", mode);
 		return 2;
