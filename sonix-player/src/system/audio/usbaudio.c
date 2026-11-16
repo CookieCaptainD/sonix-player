@@ -1,4 +1,5 @@
 #include "usbaudio.h"
+#include "usbport.h"
 
 #include "src/system/audio/audio.h"
 #include "src/system/audio/alsa-controls.h"
@@ -17,7 +18,14 @@
 
 #define TYPEC_PORT_TYPE "/sys/class/typec/port0/port_type"
 #define TYPEC_PARTNER "/sys/class/typec/port0-partner"
+#define TYPEC_POWER_ROLE "/sys/class/typec/port0/power_role"
+#define TYPEC_DATA_ROLE "/sys/class/typec/port0/data_role"
 #define SOUND_CLASS "/sys/class/sound"
+
+// The charger's 5 V boost is what actually puts VBUS on the port when this
+// player is the source. The MP2731 is always powered, so anything left here
+// survives a reboot; the supervisor writes it only when the level changes.
+#define MP2731_OTG "/sys/class/power_supply/mp2731-charger/usb_otg"
 
 // The R1 has no Type-C class. Its CC controller is a TCS1421 set by two GPIOs,
 // and the platform driver takes the mode by name through one attribute and
@@ -118,6 +126,50 @@ static bool port_is_dual(void) {
 	bool dual = fgets(line, sizeof(line), f) && strstr(line, "[dual]") != NULL;
 	fclose(f);
 	return dual;
+}
+
+// Whether `path` currently holds `token` as its bracketed role, the way the
+// Type-C attributes list them: "source sink [dual]" has dual in force and
+// "source [sink]" does not. Returns -1 when the file cannot be read, 0 when
+// `token` is not the one in force and 1 when it is.
+static int typec_role_read(const char *path, const char *token) {
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		return -1;
+	}
+	char line[128];
+	bool found = false;
+	if (fgets(line, sizeof(line), f)) {
+		char bracketed[64];
+		snprintf(bracketed, sizeof(bracketed), "[%s]", token);
+		found = strstr(line, bracketed) != NULL;
+	}
+	fclose(f);
+	return found ? 1 : 0;
+}
+
+// The power role the Type-C stack negotiated. A missing attribute is UNKNOWN,
+// which the supervisor treats as the old code treated every non-audio partner:
+// hand the port over after the settle time rather than leave it pinned.
+static usb_port_role_t typec_power_role(void) {
+	if (typec_role_read(TYPEC_POWER_ROLE, "source") > 0) {
+		return USB_ROLE_SOURCE;
+	}
+	if (typec_role_read(TYPEC_POWER_ROLE, "sink") > 0) {
+		return USB_ROLE_SINK;
+	}
+	return USB_ROLE_UNKNOWN;
+}
+
+// And the data role: whether the controller's host side is up.
+static usb_port_data_t typec_data_role(void) {
+	if (typec_role_read(TYPEC_DATA_ROLE, "host") > 0) {
+		return USB_DATA_HOST;
+	}
+	if (typec_role_read(TYPEC_DATA_ROLE, "device") > 0) {
+		return USB_DATA_DEVICE;
+	}
+	return USB_DATA_UNKNOWN;
 }
 
 // Whether the host side of the controller has enumerated anything: a device
@@ -244,6 +296,58 @@ static bool write_port_type(const char *want) {
 	return ok;
 }
 
+// The MP2731's 5 V boost: 1 on, 0 off, -1 when the node is not there or reads
+// neither.
+static int otg_boost_get(void) {
+	FILE *f = fopen(MP2731_OTG, "r");
+	if (!f) {
+		return -1;
+	}
+	int c = fgetc(f);
+	fclose(f);
+	if (c == '1') {
+		return 1;
+	}
+	if (c == '0') {
+		return 0;
+	}
+	return -1;
+}
+
+// Sets the boost, and only when it is not already where it is wanted: this runs
+// on the four-a-second poll, and a write per poll would be a write to the
+// charger per poll. Logged once per transition for the same reason. A refused
+// write is tried again after two seconds, not every quarter second and not
+// never: one transient failure must not silently leave the port without VBUS
+// for the rest of the session.
+static void otg_boost_set(bool on) {
+	static int asked = -1;
+	static time_t asked_at;
+	int want = on ? 1 : 0;
+	time_t now = time(NULL);
+
+	if (otg_boost_get() == want) {
+		asked = want;
+		return;
+	}
+	if (asked == want && now - asked_at < 2) {
+		return;
+	}
+	asked = want;
+	asked_at = now;
+
+	FILE *f = fopen(MP2731_OTG, "w");
+	bool ok = false;
+	if (f) {
+		ok = fputs(on ? "1" : "0", f) >= 0 && fputc('\n', f) != EOF;
+		if (fclose(f) != 0) {
+			ok = false;
+		}
+	}
+	fprintf(stderr, "usbaudio: 5 V boost %s%s\n", on ? "on" : "off",
+			ok ? "" : " REFUSED by the charger driver");
+}
+
 // Hands the port back to the other end. See the state machine in
 // arbitrate_port(): this is what a phone needs.
 static void port_become_sink(void) {
@@ -286,13 +390,43 @@ bool usbaudio_ensure_dual(void) {
 // a phone or a PC already on the cable and grabbing the host role from it is
 // the same failure as doing it later, and here there is no reason to: whatever
 // is on the port arrived before this player did.
-bool usbaudio_init(void) {
-	if (partner_present()) {
-		fprintf(stderr, "usbaudio: something is already on the port at startup; leaving the role alone\n");
+//
+// The Type-C power role says which of those it is. A sink role means a PC or
+// charger has taken the cable and is supplying VBUS; that is left alone as
+// before. A source role, or a role that cannot be read, may be a DAC that
+// booted with the player: usb.c forces the port to sink for the storage
+// gadget, and left that way the DAC would never appear, which is the bug this
+// change is for.
+static bool offer_port_role(bool announce) {
+	if (!partner_present()) {
+		return usbaudio_ensure_dual();
+	}
+	if (port_kind() == PORT_TCS1421) {
+		if (announce) {
+			fprintf(stderr, "usbaudio: something is already on the port at startup; leaving the role alone\n");
+		}
 		return false;
+	}
+	if (typec_power_role() == USB_ROLE_SINK) {
+		if (announce) {
+			fprintf(stderr, "usbaudio: a source is already on the port at startup; leaving the role alone\n");
+		}
+		return false;
+	}
+	if (announce) {
+		fprintf(stderr, "usbaudio: a peripheral is on the port at startup; offering dual role\n");
 	}
 	return usbaudio_ensure_dual();
 }
+
+bool usbaudio_init(void) { return offer_port_role(true); }
+
+// The same choice, made again after usb_start() has necessarily put the port
+// in sink to bind the storage gadget. The stock player does exactly this in
+// its set_usb_working_mode(): the gadget is bound first and the saved role is
+// written after it, so a bus-powered DAC plugged in at boot is not left with
+// an unpowered port until the supervisor next polls.
+void usbaudio_reapply_role(void) { offer_port_role(false); }
 
 // Where card `n`'s device really is. Empty when it has none.
 //
@@ -631,14 +765,195 @@ static void tcs1421_trace(void) {
 			otg_id_untrusted ? " (not trusted)" : "", vbus, bus);
 }
 
+// Seconds since a timestamp, 0 when it was never set or the clock went back.
+static unsigned secs_since(time_t at, time_t now) {
+	if (at == 0 || now < at) {
+		return 0;
+	}
+	return (unsigned)(now - at);
+}
+
+// The R3 Pro II's port, one decision per poll.
+//
+// usbport.h holds the rules and the reasons. This half only reads the port into
+// a state, keeps the clocks those rules need and carries out the one action it
+// gets back. Time is in whole seconds because the attributes change no faster;
+// the poll runs four times a second, so every transition is seen within a
+// quarter of one.
+static void typec_arbitrate(bool audio_present, time_t now) {
+	static time_t partner_at;	// when the current partner appeared
+	static time_t source_at;	// when sourcing began, for the boost cycle
+	static time_t stuck_at;		// when host mode with nothing attached began
+	static time_t reset_at;		// when the last reset was started
+	static time_t empty_at;		// when the port last became empty
+	static time_t empty_since;	// the longer view, across a boost pulse
+	static time_t boost_off_until;	// a pulse must be long enough to be seen
+	static bool reset_pending;
+	static unsigned boost_cycles;
+
+	bool partner = partner_present();
+	bool vbus = usb_vbus_present();
+	bool host_device = host_bus_has_device();
+	bool empty = !partner && !vbus && !host_device;
+
+	// A sound card, an empty port and a detach all start the story again. The
+	// boost cycle budget belongs to the partner: the next device gets its own.
+	// `stuck_at` is deliberately not cleared here: "empty" is also where the
+	// stuck state lives, and clearing it on every poll would restart the six
+	// seconds before they ever elapsed.
+	if (audio_present) {
+		partner_at = 0;
+		source_at = 0;
+		stuck_at = 0;
+		empty_since = 0;
+		boost_cycles = 0;
+	} else if (empty) {
+		partner_at = 0;
+		source_at = 0;
+		if (empty_since == 0) {
+			empty_since = now;
+		}
+	} else if (partner && partner_at == 0) {
+		// A new partner gets a fresh pulse budget, but only after the port has
+		// been quiet for a while: a bus-powered device can lose its CC
+		// termination for the quarter second the boost is off, and counting
+		// that gap as a new device would pulse it for ever.
+		if (empty_since && secs_since(empty_since, now) >= USB_PORT_FRESH_PARTNER_SECS) {
+			boost_cycles = 0;
+		}
+		empty_since = 0;
+		partner_at = now;
+		source_at = now;
+	} else if (!partner) {
+		// A charger with no partner node, or a partner that has just gone.
+		partner_at = 0;
+		source_at = 0;
+		empty_since = 0;
+	}
+
+	usb_port_role_t power_role = typec_power_role();
+	usb_port_data_t data_role = typec_data_role();
+	bool otg_on = otg_boost_get() > 0;
+	bool stuck = empty && (data_role == USB_DATA_HOST || otg_on);
+	if (stuck) {
+		if (stuck_at == 0) {
+			stuck_at = now;
+		}
+	} else {
+		stuck_at = 0;
+	}
+
+	// The existing release delay, and only where the decision would otherwise
+	// offer dual role: changing port_type while something is attached makes
+	// the kernel negotiate afresh, and the partner disappears for a moment
+	// after each write. Without this the two states chase each other. A reset
+	// is not delayed, or it would never finish.
+	if (!reset_pending) {
+		if (empty && !stuck) {
+			if (empty_at == 0) {
+				empty_at = now;
+			}
+			if (secs_since(empty_at, now) < RELEASE_SECS) {
+				return;
+			}
+		} else {
+			empty_at = 0;
+		}
+	}
+
+	// A boost pulse has to be long enough for the device on the far end to see
+	// it. The poll runs four times a second, and `time()` only moves once, so
+	// without this hold the off and the on would land in the same second.
+	if (boost_off_until) {
+		if (now < boost_off_until) {
+			return;
+		}
+		boost_off_until = 0;
+	}
+
+	usb_port_state_t state = {
+		.kind = USB_PORT_TYPEC,
+		.dac_mode = usb_dac_mode(),
+		.port_dual = port_is_dual(),
+		.partner = partner,
+		.audio = audio_present,
+		.vbus = vbus,
+		.host_device = host_device,
+		.otg_on = otg_on,
+		.power_role = power_role,
+		.data_role = data_role,
+		.partner_secs = secs_since(partner_at, now),
+		.source_secs = secs_since(source_at, now),
+		.stuck_secs = secs_since(stuck_at, now),
+		.reset_secs = secs_since(reset_at, now),
+		.reset_pending = reset_pending,
+		.boost_cycles = boost_cycles,
+	};
+
+	switch (usb_port_decide(&state)) {
+	case USB_PORT_ACT_KEEP_DUAL:
+		usbaudio_ensure_dual();
+		reset_pending = false;
+		reset_at = 0;
+		break;
+
+	case USB_PORT_ACT_BECOME_SINK:
+		port_become_sink();
+		break;
+
+	case USB_PORT_ACT_BOOST_ON:
+		otg_boost_set(true);
+		source_at = now;
+		break;
+
+	case USB_PORT_ACT_BOOST_OFF:
+		otg_boost_set(false);
+		boost_cycles++;
+		source_at = now;
+		boost_off_until = now + 1;
+		break;
+
+	case USB_PORT_ACT_RESET:
+		// Both halves in one go: the role back to sink so the controller
+		// leaves host mode, and the boost off so the MP2731 stops sourcing.
+		// RESET_SECS of quiet then follow before dual is offered again.
+		write_port_type("sink");
+		otg_boost_set(false);
+		reset_pending = true;
+		reset_at = now;
+		partner_at = 0;
+		source_at = 0;
+		stuck_at = 0;
+		empty_at = 0;
+		boost_cycles = 0;
+		fprintf(stderr, "usbaudio: port stuck in host mode with nothing on it; role and boost reset\n");
+		break;
+
+	case USB_PORT_ACT_NONE:
+	default:
+		break;
+	}
+}
+
 static void arbitrate_port(bool audio_present) {
+	time_t now = time(NULL);
+	port_kind_t kind = port_kind();
+
+	if (kind == PORT_TYPEC) {
+		typec_arbitrate(audio_present, now);
+		return;
+	}
+	if (kind != PORT_TCS1421) {
+		return;
+	}
+
+	// The R1's TCS1421 rules, unchanged: no Type-C class, no partner node and
+	// no boost, only the mode attribute, the ID line and VBUS. See usbport.h
+	// for why the R3 could not keep them.
 	static time_t attached_at;	// when the current non-audio partner appeared
 	static time_t empty_at;		// when the port last became empty
-	time_t now = time(NULL);
 
-	if (port_kind() == PORT_TCS1421) {
-		tcs1421_trace();
-	}
+	tcs1421_trace();
 
 	if (audio_present) {
 		attached_at = 0;

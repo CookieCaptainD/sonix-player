@@ -229,7 +229,7 @@ HOST_OBJS = $(APP_SRCS:src/%.c=build_host/%.o) $(APP_CXX_SRCS:src/%.cpp=build_ho
 TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=build_target/%.opp) \
 			  $(LVGL_SRCS:$(LVGL_DIR)/%.c=build_target/lvgl/%.o)
 
-.PHONY: all host target clean compile_commands.json
+.PHONY: all host target clean compile_commands.json usbport-test
 
 all: host compile_commands.json
 
@@ -395,6 +395,20 @@ build_target/lvgl/%.o: $(LVGL_DIR)/%.c $(TARGET_FLAGS_STAMP)
 # For the Zed/clangd LSP: autofill and hover popups.
 compile_commands.json:
 	@python3 generate_compile_commands.py
+
+# ---------------------------------------------------------------------------
+# The USB-C port decision
+#
+# usbport.c is pure and takes every input as a struct, so its test is a plain
+# host program with no device and no clock. Dev-only: not part of `all`, and it
+# writes nothing the player uses. The module is also compiled into the player
+# itself by the normal object rules.
+# ---------------------------------------------------------------------------
+usbport-test:
+	mkdir -p build_host
+	$(CC) -O2 -g -Wall -Wextra -I. -o build_host/usbport_test \
+		tools/usbport_test.c src/system/audio/usbport.c
+	./build_host/usbport_test
 
 clean:
 	rm -rf build_host build_target build_gen $(HOST_BIN) $(TARGET_BIN) $(TARGET_DEBUG_BIN) $(LAUNCH_BIN) compile_commands.json compile_flags.txt

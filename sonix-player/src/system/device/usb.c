@@ -1097,6 +1097,13 @@ void usb_start(const char *device, const char *mount_point) {
 		ensure_storage_gadget();
 	}
 
+	// The gadget is bound, so the sink write above has done its job. The saved
+	// port choice goes on top of it now, in the stock player's order: bind the
+	// gadget, then offer dual role. Without this a bus-powered DAC plugged in
+	// at boot stays unpowered for the seconds until the port supervisor next
+	// gets a turn.
+	usbaudio_reapply_role();
+
 	pthread_t thread;
 	if (pthread_create(&thread, NULL, usb_thread, NULL) == 0) {
 		pthread_detach(thread);

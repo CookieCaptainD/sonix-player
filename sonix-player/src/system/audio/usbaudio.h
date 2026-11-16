@@ -32,6 +32,11 @@
 // present as sources, so the port still settles as sink and device with them.
 bool usbaudio_init(void);
 
+// The same choice again, after usb_start() has bound the storage gadget and
+// forced the port to sink for it. Logs nothing: it is a re-application, not a
+// startup decision. Call it once the gadget is up, as the stock player does.
+void usbaudio_reapply_role(void);
+
 // The same write, made again whenever the port is found not to be dual. The
 // setting does not stay put on its own -- see the .c -- so the poll re-asserts
 // it rather than trusting the one at startup.
