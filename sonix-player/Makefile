@@ -235,6 +235,17 @@ all: host compile_commands.json
 
 host: $(HOST_BIN) compile_commands.json
 
+TEST_COLLECTIONS_BIN = build_host/collections_resolve_test
+
+$(TEST_COLLECTIONS_BIN): tests/collections_resolve_test.c src/system/library/collections_resolve.c
+	@mkdir -p $(dir $@)
+	$(CC) $(HOST_CFLAGS) -o $@ $^
+
+test-collections: $(TEST_COLLECTIONS_BIN)
+	./$(TEST_COLLECTIONS_BIN)
+
+.PHONY: test-collections
+
 $(HOST_BIN): $(HOST_OBJS)
 	$(HOST_LD) -o $@ $(HOST_OBJS) $(HOST_LDFLAGS)
 	@echo "Host build complete: Run './$(HOST_BIN)' to start the simulator."
