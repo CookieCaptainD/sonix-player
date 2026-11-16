@@ -4874,9 +4874,13 @@ static bool scan_sacd_iso(const char *path, const struct stat *st) {
 	const char *album_artist = sacd_iso_album_artist(s);
 	const char *genre = sacd_iso_genre(s);
 	int year = sacd_iso_year(s);
+	int indexed_count = 0;
 
 	for (int i = 1; i <= a->track_count; i++) {
 		const sacd_track_t *t = &a->tracks[i - 1];
+		if (t->frames == 0) {
+			continue; // no audio to index: the TOC lists it but nothing plays
+		}
 
 		char vpath[600];
 		sacd_virtual_path(path, i, vpath, sizeof(vpath));
@@ -4896,10 +4900,11 @@ static bool scan_sacd_iso(const char *path, const struct stat *st) {
 		tags.has_tags = tags.title[0] || tags.artist[0] || tags.album[0];
 
 		scan_indexed(vpath, base_name, &tags, st);
+		indexed_count++;
 	}
 
-	printf("library: %s holds %d SACD tracks\n", path, a->track_count);
-	bool indexed = a->track_count > 0;
+	printf("library: %s holds %d SACD tracks\n", path, indexed_count);
+	bool indexed = indexed_count > 0;
 	sacd_iso_close(s);
 	return indexed;
 }
@@ -6110,6 +6115,8 @@ int library_forget_deleted(const char *const *paths, int count) {
 	// whose file is gone.
 	// Asked of the card and not assumed: a delete that stopped halfway leaves
 	// some of a folder behind, and those stay.
+	// '?sace' is '?sacd=' with its last byte raised, so it bounds every track
+	// of the image: the prefix, then any next character.
 	static const char *const SELECT_SQL =
 		"SELECT rowid, path FROM MEDIA_TABLE WHERE path = ?1 OR (path >= ?1 || '?track=' AND path < ?1 || '?track>')"
 		" OR (path >= ?1 || '?sacd=' AND path < ?1 || '?sace')"

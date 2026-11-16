@@ -565,6 +565,13 @@ static size_t load_folder_sacd(const char *folder, char claimed[][512], size_t c
 		char path[768];
 		snprintf(path, sizeof(path), "%s/%s", folder, de->d_name);
 		sacd_iso_t *s = sacd_iso_open(path);
+		// Claimed whatever it turns out to be: an image that is not a SACD, or
+		// has no stereo area, is not music, and the main loop must not queue it
+		// whole. Only a valid stereo image below becomes tracks.
+		if (claims < claim_max) {
+			snprintf(claimed[claims], 512, "%s", de->d_name);
+			claims++;
+		}
 		if (!s) {
 			continue;
 		}
@@ -572,7 +579,7 @@ static size_t load_folder_sacd(const char *folder, char claimed[][512], size_t c
 		const sacd_area_t *a = area >= 0 ? sacd_iso_area(s, area) : NULL;
 		if (!a) {
 			sacd_iso_close(s);
-			continue; // not music, or no stereo area: leave it as the file it is
+			continue;
 		}
 		for (int t = 1; t <= a->track_count; t++) {
 			char virtual_path[900];
@@ -582,10 +589,6 @@ static size_t load_folder_sacd(const char *folder, char claimed[][512], size_t c
 			}
 		}
 		sacd_iso_close(s);
-		if (claims < claim_max) {
-			snprintf(claimed[claims], 512, "%s", de->d_name);
-			claims++;
-		}
 	}
 
 	closedir(dir);
@@ -1546,7 +1549,19 @@ static bool folder_has_tracks(const char *dir) {
 	bool found = false;
 	struct dirent *de;
 	while (!found && (de = readdir(d)) != NULL) {
-		found = playlist_is_playable_file(de->d_name);
+		if (sacd_is_iso(de->d_name)) {
+			// An image is a track only when it really is a SACD with a stereo
+			// area; a data image is not music the player can open.
+			char path[768];
+			snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
+			sacd_iso_t *s = sacd_iso_open(path);
+			if (s) {
+				found = sacd_iso_stereo_area(s) >= 0;
+				sacd_iso_close(s);
+			}
+		} else {
+			found = playlist_is_playable_file(de->d_name);
+		}
 	}
 	closedir(d);
 	return found;
