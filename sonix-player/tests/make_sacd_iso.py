@@ -265,6 +265,59 @@ def make_dst(path):
     build_iso(path, 0, tracks, 15, 774, 775, [700, 750], fill_audio)
 
 
+def make_dst_shared(path):
+    """Two frames, the second starting inside the first one's last sector.
+
+    Frame 0 takes 5 sectors; frame 1 starts 1245 bytes into the fifth sector
+    and takes 6 sectors in all. The shared sector has two packets and one
+    frame info (for frame 1), so a reader that copies from byte 0 instead of
+    skipping to the target's frame_start gets the previous tail, and one that
+    trusts frame 0's span truncates frame 1.
+    """
+    tracks = [
+        {"start_lsn": 700, "length_lsn": 10, "start_frame": 0, "frames": 2,
+         "title": "Track 1", "performer": "Artist 1"},
+    ]
+
+    def fill_audio(image):
+        frame0 = b"\0" + frame_bytes(1, 0)
+        frame1 = b"\0" + frame_bytes(1, 1)
+
+        image.put8(700, 0, 0x25)  # DST, 1 packet, 1 frame info
+        image.put16(700, 1, 0x97F9)  # start, audio, 2041
+        image.put(700, 3, bytes((0, 0, 0, 0x14)))  # frame 0 spans 5 sectors
+        image.put(700, 7, frame0[0:2041])
+        position = 2041
+        for part in range(1, 4):
+            lsn = 700 + part
+            image.put8(lsn, 0, 0x21)
+            image.put16(lsn, 1, (2 << 11) | 2041)
+            image.put(lsn, 3, frame0[position:position + 2041])
+            position += 2041
+        assert position == 8164
+
+        # Shared sector: frame 0's tail (1245) then frame 1's start (794).
+        # Data begins after two packet infos and one frame info: offset 9.
+        lsn = 704
+        image.put8(lsn, 0, 0x45)  # DST, 2 packets, 1 frame info
+        image.put16(lsn, 1, (0 << 15) | (2 << 11) | 1245)
+        image.put16(lsn, 3, (1 << 15) | (2 << 11) | 794)
+        image.put(lsn, 5, bytes((0, 0, 1, 0x18)))  # frame 1, 6 sectors
+        image.put(lsn, 9, frame0[8164:9409])
+        image.put(lsn, 1254, frame1[0:794])
+
+        position = 794
+        for part, length in enumerate((2041, 2041, 2041, 2041, 451)):
+            lsn = 705 + part
+            image.put8(lsn, 0, 0x21)
+            image.put16(lsn, 1, (2 << 11) | length)
+            image.put(lsn, 3, frame1[position:position + length])
+            position += length
+        assert position == len(frame1)
+
+    build_iso(path, 0, tracks, 2, 709, 710, [700, 704], fill_audio)
+
+
 def make_bad(path):
     Image(600).write(path)
 
@@ -278,6 +331,7 @@ def main():
     make_dsd14(os.path.join(out, "dsd14.iso"))
     make_dsd16(os.path.join(out, "dsd16.iso"))
     make_dst(os.path.join(out, "dst.iso"))
+    make_dst_shared(os.path.join(out, "dst_shared.iso"))
     make_bad(os.path.join(out, "bad.iso"))
     return 0
 
