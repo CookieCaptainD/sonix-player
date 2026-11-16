@@ -536,8 +536,7 @@ bool dsd_is_pcm(const dsd_file_t *d) { return d && d->pcm_mode; }
 // ---------------------------------------------------------------------------
 
 dsd_file_t *dsd_open_sacd(const char *path) {
-	char iso[1024];
-	int track = sacd_split_path(path, iso, sizeof(iso));
+	int track = sacd_split_path(path, NULL, 0);
 	if (track <= 0) {
 		track = 1; // a plain .iso is track 1 of the stereo area
 	}
@@ -593,8 +592,7 @@ dsd_file_t *dsd_open_sacd(const char *path) {
 }
 
 dsd_file_t *dsd_open(const char *path) {
-	char iso[1024];
-	if (sacd_split_path(path, iso, sizeof(iso)) > 0 || sacd_is_iso(path)) {
+	if (sacd_split_path(path, NULL, 0) > 0 || sacd_is_iso(path)) {
 		return dsd_open_sacd(path);
 	}
 
@@ -717,11 +715,13 @@ bool dsd_seek(dsd_file_t *d, uint64_t frame) {
 		target = d->bytes_per_ch;
 	}
 	target -= target % step;
-	if (d->pcm_mode) {
-		history_clear(d);
-	}
 	if (d->sacd && !sacd_iso_seek(d->sacd, target)) {
 		return false;
+	}
+	// Only once the seek has landed: a failed one leaves the stream where it
+	// was, and its filter history is still what belongs in front of it.
+	if (d->pcm_mode) {
+		history_clear(d);
 	}
 
 	d->pos_bytes = target;
