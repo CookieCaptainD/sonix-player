@@ -30,6 +30,14 @@ static void check(int cond, const char *what)
 		fail(what);
 }
 
+static void fill_pattern(unsigned char *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++)
+		buf[i] = (unsigned char)(i * 37 + 11);
+}
+
 /* An uncompressed DST frame: a zero bit, then five bits of zero (same
  * segmentation, same map, ...), then the raw DSD bytes. 9409 bytes total. */
 static int test_uncompressed(void)
@@ -37,11 +45,10 @@ static int test_uncompressed(void)
 	unsigned char frame[1 + FRAME_BYTES];
 	dst_decoder_t *dec = NULL;
 	int out_len = -1;
-	int ret, i;
+	int ret;
 
 	frame[0] = 0x00;
-	for (i = 0; i < FRAME_BYTES; i++)
-		frame[1 + i] = (unsigned char)(i * 37 + 11);
+	fill_pattern(frame + 1, FRAME_BYTES);
 
 	memset(output, 0, sizeof(output));
 
@@ -59,6 +66,64 @@ static int test_uncompressed(void)
 
 	dst_decoder_close(dec);
 	return 0;
+}
+
+/* The frame may carry more bytes than the decoder produces: the copy has to
+ * stop at 4704 * channels, and the bytes after it must stay untouched. */
+static void test_uncompressed_clamp(void)
+{
+	unsigned char frame[1 + FRAME_BYTES + 8];
+	unsigned char out[FRAME_BYTES + 8];
+	dst_decoder_t *dec = NULL;
+	int out_len = -1;
+	int ret;
+
+	frame[0] = 0x00;
+	fill_pattern(frame + 1, FRAME_BYTES + 8);
+	memset(out, 0x5A, sizeof(out));
+
+	ret = dst_decoder_init(&dec, CHANNELS, 2822400);
+	check(ret == 0 && dec != NULL, "init for the oversized frame");
+	if (ret != 0 || !dec)
+		return;
+
+	ret = dst_decoder_decode(dec, frame, (int)sizeof(frame), out, &out_len);
+	check(ret == 0, "oversized uncompressed decode returns 0");
+	check(out_len == FRAME_BYTES, "oversized frame still produces 9408 bytes");
+	if (ret == 0 && out_len == FRAME_BYTES)
+		check(memcmp(out, frame + 1, FRAME_BYTES) == 0,
+		      "oversized frame copies exactly 9408 bytes");
+
+	for (ret = FRAME_BYTES; ret < (int)sizeof(out); ret++) {
+		if (out[ret] != 0x5A) {
+			fail("oversized frame wrote past 4704 * channels bytes");
+			break;
+		}
+	}
+
+	dst_decoder_close(dec);
+}
+
+/* A compressed frame whose filter table uses reserved method 3: read_table
+ * fails and the decoder must abort instead of decoding with half-filled
+ * tables. Bits: compressed=1, segmentation=111, same-map=1, per-channel map
+ * giving two elements, half-probs=00, length[0]=1, coded=1, method=3. */
+static void test_malformed_table(void)
+{
+	static const unsigned char frame[] = { 0xFA, 0x00, 0xE0 };
+	dst_decoder_t *dec = NULL;
+	int out_len = -1;
+	int ret;
+
+	ret = dst_decoder_init(&dec, CHANNELS, 2822400);
+	check(ret == 0 && dec != NULL, "init for the malformed frame");
+	if (ret != 0 || !dec)
+		return;
+
+	ret = dst_decoder_decode(dec, frame, (int)sizeof(frame), output, &out_len);
+	check(ret < 0, "reserved prediction method is rejected");
+
+	dst_decoder_close(dec);
 }
 
 static void test_bad_input(void)
@@ -92,11 +157,23 @@ static void test_init_close(void)
 	      "init with 2 channels at 2822400");
 	check(dst_decoder_close(dec) == 0, "close returns 0");
 	check(dst_decoder_close(NULL) == 0, "close(NULL) returns 0");
+
+	dec = NULL;
+	check(dst_decoder_init(&dec, 0, 2822400) < 0 && dec == NULL,
+	      "init rejects 0 channels");
+	dec = NULL;
+	check(dst_decoder_init(&dec, -1, 2822400) < 0 && dec == NULL,
+	      "init rejects negative channels");
+	dec = NULL;
+	check(dst_decoder_init(&dec, 7, 2822400) < 0 && dec == NULL,
+	      "init rejects more than 6 channels");
 }
 
 int main(void)
 {
 	test_uncompressed();
+	test_uncompressed_clamp();
+	test_malformed_table();
 	test_bad_input();
 	test_init_close();
 
