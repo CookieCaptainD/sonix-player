@@ -36,3 +36,13 @@ cc -O2 -Wall -Wextra -I. -D_FILE_OFFSET_BITS=64 -DHOST_BUILD=1 \
    src/system/library/metadata.c src/system/decode/sacd_iso.c \
    src/system/decode/dst_decoder.c
 /tmp/metadata_sacd_test "$ISO_DIR/dsd14.iso"
+
+# Task 5: the library's SACD virtual-path naming and bookkeeping, plus a compile
+# check of library.c against the SACD API. The syntax-only pass catches a missing
+# include or a changed signature without linking the whole player.
+cc -O2 -Wall -Wextra -Isrc -o /tmp/library_sacd_test \
+   tests/library_sacd_test.c src/system/decode/sacd_iso.c \
+   src/system/decode/dst_decoder.c
+/tmp/library_sacd_test
+cc -fsyntax-only -I. -D_FILE_OFFSET_BITS=64 -DHOST_BUILD=1 \
+   src/system/library/library.c
