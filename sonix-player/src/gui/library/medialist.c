@@ -930,7 +930,7 @@ static char np_path[512];
 static char np_album[LIBRARY_ALBUM_VALUE_MAX];
 // The playing track's record as an Albums row names it -- the name and the key
 // that tells same-named albums apart -- or empty when the file is not indexed.
-static char np_album_value[300];
+static char np_album_value[LIBRARY_ALBUM_VALUE_MAX];
 static char np_artist[256];
 static char np_album_artist[256];
 static char np_genre[128];
