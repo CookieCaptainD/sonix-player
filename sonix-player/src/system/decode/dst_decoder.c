@@ -30,7 +30,13 @@
  *
  * Vendored from the libdst fork at dsd-nexus: the FFmpeg codec reduced to its
  * single-frame core, with the libsautil helpers replaced by dst_compat.h.
+ *
+ * The vendored body keeps the upstream FFmpeg/dsd-nexus space indentation;
+ * the surrounding project code uses tabs.
  */
+
+/* posix_memalign() is POSIX, so ask for it even under a strict -std=c99. */
+#define _POSIX_C_SOURCE 200809L
 
 #include "dst_decoder.h"
 #include "dst_compat.h"
@@ -140,11 +146,14 @@ static inline int get_ur_golomb(GetBitContext *gb, int k, int limit,
 {
     int zeros = 0;
 
+    if (limit > 64)
+        limit = 64;
+
     while (zeros < limit && !get_bits1(gb))
         zeros++;
 
     if (zeros < limit)
-        return (zeros << k) | get_bits(gb, k);
+        return ((unsigned int)zeros << k) | get_bits(gb, k);
 
     return get_bits(gb, esc_len) + limit - 1;
 }
@@ -275,6 +284,7 @@ static int build_filter(int16_t table[DST_MAX_ELEMENTS][16][256], const dst_tabl
 int dst_decoder_init(dst_decoder_t **decoder, int channel_count, int sample_rate)
 {
     dst_decoder_t *dec;
+    int ret;
 
     if (!decoder) {
         return -1;
@@ -282,15 +292,16 @@ int dst_decoder_init(dst_decoder_t **decoder, int channel_count, int sample_rate
 
     *decoder = NULL;
 
-    if (channel_count > DST_MAX_CHANNELS) {
+    if (channel_count <= 0 || channel_count > DST_MAX_CHANNELS) {
         fprintf(stderr, "Channel count %d", channel_count);
         return -1;
     }
 
-    dec = (dst_decoder_t *)sa_calloc(1, sizeof(dst_decoder_t));
-    if (!dec) {
+    ret = posix_memalign((void **)&dec, 64, sizeof(*dec));
+    if (ret != 0) {
         return -1;
     }
+    memset(dec, 0, sizeof(*dec));
 
     dec->channels = channel_count;
     dec->sample_rate = sample_rate;
@@ -389,11 +400,13 @@ int dst_decoder_decode(dst_decoder_t *decoder,
 
     /* Filter Coef Sets (10.12) */
 
-    read_table(gb, &decoder->fsets, fsets_code_pred_coeff, 7, 9, 1, 0);
+    if ((ret = read_table(gb, &decoder->fsets, fsets_code_pred_coeff, 7, 9, 1, 0)) < 0)
+        return ret;
 
     /* Probability Tables (10.13) */
 
-    read_table(gb, &decoder->probs, probs_code_pred_coeff, 6, 7, 0, 1);
+    if ((ret = read_table(gb, &decoder->probs, probs_code_pred_coeff, 6, 7, 0, 1)) < 0)
+        return ret;
 
     /* Arithmetic Coded Data (10.11) */
 
@@ -401,7 +414,8 @@ int dst_decoder_decode(dst_decoder_t *decoder,
         return AVERROR_INVALIDDATA;
     ac_init(ac, gb);
 
-    build_filter(decoder->filter, &decoder->fsets);
+    if ((ret = build_filter(decoder->filter, &decoder->fsets)) < 0)
+        return ret;
 
     memset(decoder->status, 0xAA, sizeof(decoder->status));
     memset(dsd_output, 0, nb_samples * channels);
