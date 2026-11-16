@@ -27,6 +27,14 @@ cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_sacd_test \
    src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
 /tmp/dsd_sacd_test "$ISO_DIR/dsd14.iso"
 
+# Task 3b: the plain .dsf/.dff containers of the same stage, not an image.
+# This is the regression smoke for the DSD formats the SACD work sits beside.
+python3 tests/make_dsd_fixtures.py "$ISO_DIR"
+cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_regression_test \
+   tests/dsd_regression_test.c src/system/decode/dsd.c \
+   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
+/tmp/dsd_regression_test "$ISO_DIR/stereo.dsf" "$ISO_DIR/stereo.dff"
+
 # Task 4: the tags of a SACD ISO track, read from the image's text sectors.
 # --gc-sections drops the tag readers and decode_detect_format from
 # metadata.c, which are not linked here.
