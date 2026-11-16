@@ -86,10 +86,27 @@ Base branch: `fix/epub-korean-font-fallback` (PR #269), because the fallback mac
 - **Metrics:** Noto faces have different line metrics from Bookerly. Pagination may shift; the reader already copes with per-font metrics, but the chapters need visual checking.
 - **Chinese style:** shared Han characters in a Chinese book now come from MiSans. Mixed Japanese books keep Rodin as primary.
 
+## R1 update-image size (measured)
+
+The R1's SD-card update refuses an image that is too large. Measured while validating this change:
+
+| Build base | Image | Result |
+|---|---|---|
+| current v2.0 `r1_original.upt` + these commits | `51,189,760` bytes | rejected by the R1 update screen |
+| 1.3.0 tag `test-r1-pr250-259-v2fix` + these commits, v2.0 AIC8800 payload removed | `49,059,840` bytes (MD5 `4cc94e8e60170d24269ad66aaf6cc778`) | accepted, flashed, Wi-Fi works |
+
+The accepted image has `rootfs.squashfs` of `45,699,072` bytes, keeps the 1.3.0 kernel (`2,940,992` bytes, MD5 `b48580b0fb42504b2871414a54d0c068`) and `ota_compatibility.in=hiby_r1_x1600_auto_rf_auto`. It was produced by:
+
+1. Packing on the 1.3.0 tag that generated the known-good 1.3.0 image, not on the current v2.0 stock base.
+2. Removing the v2.0 AIC8800 payload (`lib/firmware/aic8800d40_sdio_fw`, `module_driver/aic8800_fdrv.ko`, `module_driver/aic8800_bsp.ko`) from that base for the test image, because the 1.3.0 image already on the device does not contain it.
+3. Keeping the 1.3.0 kernel and compatibility string.
+
+The AIC8800 removal is a **packing step for the test image, not a source change in this PR**. The repository's default packer with the current v2.0 `r1_original.upt` still produces a `51.2 MB` image. A release build must either use the base that fits, confirm the R1 hardware before dropping AIC8800, or reduce the font payload (unhinted static Noto is about 0.5 MB smaller; a per-script subset is smaller still). The exact update ceiling is not documented in the repository; `49,059,840` is confirmed accepted and `51,189,760` is confirmed rejected.
+
 ## Validation
 
-1. Coverage check: for every chapter of the attached EPUB, confirm each non-ASCII letter/punctuation codepoint exists in the new chain (Bookerly + the eleven script faces). Expected result: zero missing.
-2. `make host` succeeds; open the EPUB in the simulator at several font sizes and page through chapters 5, 8–13, 17 and 18.
+1. Coverage check: for every chapter of the attached EPUB, confirm each non-ASCII letter/punctuation codepoint exists in the new chain (Bookerly + the eleven script faces). **Done:** before the change 9 chapters were missing glyphs (Chinese 128, Tamil 42, Nepali 65, Hindi 72, Marathi 64, Malayalam 57, Panjabi 58, Amharic 164, Hebrew 27); after the change all 28 chapters report `ok`.
+2. Host build: `make build_host/gui/ebook/ebookfonts.o` succeeds. A full host link was not run in this environment because the host `opusfile`/`wavpack` development libraries are absent; that is unrelated to this change.
 3. `make target` succeeds and `check-abi` reports no symbol newer than glibc 2.22.
-4. Pack an R1-only image and confirm it contains the twelve new font files; install on the HiBy R1 and check the same chapters. Do not produce an `r3proii.upt`.
-5. Regression: Latin chapters and the Korean/Japanese/Thai/Arabic chapters keep rendering as before.
+4. Pack an R1-only image and confirm it contains the twelve new font files; install on the HiBy R1 and check the same chapters. **Done:** the 49,059,840-byte image above was accepted and flashed on an R1; the book opens and the new chapters render, and Wi-Fi works. Do not produce an `r3proii.upt`.
+5. Regression: Latin chapters and the Korean/Japanese/Thai/Arabic chapters keep rendering as before. The device smoke test covered the book opening and Wi-Fi; an exhaustive page-by-page check of every chapter and every reader size was not performed.
