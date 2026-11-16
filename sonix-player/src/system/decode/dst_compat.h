@@ -4,11 +4,15 @@
  * The decoder is vendored from FFmpeg's libdst (see dst_decoder.c for the
  * copyright and licence). Only the handful of macros and inline functions it
  * calls are reproduced here, so the player needs neither libsautil nor libdst.
+ *
+ * The bit reader, its sign-extension semantics and ff_reverse are derived from
+ * FFmpeg's libsautil, LGPL-2.1-or-later, like the decoder itself.
  */
 
 #ifndef DST_COMPAT_H
 #define DST_COMPAT_H
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,7 +84,7 @@ typedef struct {
 static inline int init_get_bits8(GetBitContext *gb, const unsigned char *buf,
 				 int size)
 {
-	if (size < 0)
+	if (size < 0 || size > INT_MAX / 8)
 		return AVERROR_INVALIDDATA;
 	gb->buf = buf;
 	gb->size_bits = size * 8;
@@ -106,8 +110,9 @@ static inline void skip_bits1(GetBitContext *gb)
 		gb->bit_pos++;
 }
 
-/* Past the end reads as zero and does not move bit_pos, matching the padded
- * buffer FFmpeg's reader would have seen. */
+/* Past the end reads as zero and bit_pos stays put: deliberate. FFmpeg's
+ * reader advances its index through padded bytes, but returns the same values
+ * and this keeps get_bits_left() at exactly zero once the input is consumed. */
 static inline unsigned int get_bits(GetBitContext *gb, int n)
 {
 	unsigned int v = 0;
