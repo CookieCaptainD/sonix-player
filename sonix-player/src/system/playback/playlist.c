@@ -638,27 +638,16 @@ void playlist_load_folder(const char *folder, const char *selected_filename) {
 	// Point the current position at the selected file, defaulting to the first.
 	size_t start = 0;
 	if (selected_filename) {
-		bool found = false;
-		for (size_t i = 0; i < entry_count && !found; i++) {
+		size_t wanted = strlen(selected_filename);
+		for (size_t i = 0; i < entry_count; i++) {
 			const char *slash = strrchr(paths[i], '/');
 			const char *name = slash ? slash + 1 : paths[i];
-			if (strcmp(name, selected_filename) == 0) {
+			// A CUE sheet or an SACD image is queued as its tracks, so the file
+			// the browser named is the queue entry's name before the '?'.
+			if (strcmp(name, selected_filename) == 0 ||
+				(strncmp(name, selected_filename, wanted) == 0 && name[wanted] == '?')) {
 				start = i;
-				found = true;
-			}
-		}
-		// The browser names an SACD image, not one of the tracks it became:
-		// start at the image's first entry in the queue.
-		if (!found && sacd_is_iso(selected_filename)) {
-			for (size_t i = 0; i < entry_count; i++) {
-				char image[900];
-				if (sacd_split_path(paths[i], image, sizeof(image)) > 0) {
-					const char *slash = strrchr(image, '/');
-					if (strcmp(slash ? slash + 1 : image, selected_filename) == 0) {
-						start = i;
-						break;
-					}
-				}
+				break;
 			}
 		}
 	}
