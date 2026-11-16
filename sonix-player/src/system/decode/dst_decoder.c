@@ -332,6 +332,9 @@ int dst_decoder_decode(dst_decoder_t *decoder,
     GetBitContext *gb;
     dst_arith_coder_t *ac;
     int ret, nb_samples;
+    /* A corrupt track is 75 frames a second: the first refusal says what is
+     * wrong with it, and the 74 after it say the same thing again. */
+    static int refusal_reported;
 
     if (!decoder || !dst_data || !dsd_output || !dsd_output_len) {
         return -1;
@@ -363,17 +366,26 @@ int dst_decoder_decode(dst_decoder_t *decoder,
     /* Segmentation (10.4, 10.5, 10.6) */
 
     if (!get_bits1(gb)) {
-        fprintf(stderr, "Not Same Segmentation");
+        if (!refusal_reported) {
+            fprintf(stderr, "Not Same Segmentation");
+            refusal_reported = 1;
+        }
         return AVERROR_PATCHWELCOME;
     }
 
     if (!get_bits1(gb)) {
-        fprintf(stderr, "Not Same Segmentation For All Channels");
+        if (!refusal_reported) {
+            fprintf(stderr, "Not Same Segmentation For All Channels");
+            refusal_reported = 1;
+        }
         return AVERROR_PATCHWELCOME;
     }
 
     if (!get_bits1(gb)) {
-        fprintf(stderr, "Not End Of Channel Segmentation");
+        if (!refusal_reported) {
+            fprintf(stderr, "Not End Of Channel Segmentation");
+            refusal_reported = 1;
+        }
         return AVERROR_PATCHWELCOME;
     }
 
@@ -388,7 +400,10 @@ int dst_decoder_decode(dst_decoder_t *decoder,
         decoder->probs.elements = decoder->fsets.elements;
         memcpy(map_ch_to_pelem, map_ch_to_felem, sizeof(map_ch_to_pelem));
     } else {
-        fprintf(stderr, "Not Same Mapping");
+        if (!refusal_reported) {
+            fprintf(stderr, "Not Same Mapping");
+            refusal_reported = 1;
+        }
         if ((ret = read_map(gb, &decoder->probs, map_ch_to_pelem, channels)) < 0)
             return ret;
     }
