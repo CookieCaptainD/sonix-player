@@ -28,6 +28,7 @@
 #include "src/system/image/art_shrink.h"
 #include "src/system/core/config.h"
 #include "src/system/library/cue.h"
+#include "src/system/decode/sacd_iso.h"
 #include "src/system/library/folderorder.h"
 #include "src/system/playback/playlist.h"
 // SQLite is vendored: this header, not the system's.
@@ -2142,6 +2143,18 @@ static bool browse_playable(const char *name) {
 	return false;
 }
 
+// A .iso is listed only when it is really a SACD image with a stereo area: a
+// data image is not music, and an image with no stereo area has nothing this
+// player can play.
+static bool browse_iso_ok(const char *dir, const char *name) {
+	char path[PATH_MAX + 260];
+	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	sacd_iso_t *s = sacd_iso_open(path);
+	bool ok = s && sacd_iso_stereo_area(s) >= 0;
+	sacd_iso_close(s);
+	return ok;
+}
+
 static bool browse_add(browse_list_t *l, const char *label, const char *file, bool dir) {
 	if (l->count >= BROWSE_MAX) {
 		return false;
@@ -2287,6 +2300,9 @@ static void browse_read(const char *path, const char *indexed, browse_list_t *ou
 		}
 		if (!is_dir && !browse_playable(de->d_name)) {
 			continue;
+		}
+		if (!is_dir && sacd_is_iso(de->d_name) && !browse_iso_ok(path, de->d_name)) {
+			continue; // not a SACD image, or no stereo area: not music
 		}
 		bool claimed = false;
 		for (int i = 0; !is_dir && claims && i < claim_count && !claimed; i++) {
