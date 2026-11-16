@@ -2,6 +2,7 @@
 
 #include "src/system/core/config.h"
 #include "src/system/library/cue.h"
+#include "src/system/decode/sacd_iso.h"
 #include "src/system/library/folderorder.h"
 #include "src/system/library/library.h"
 
@@ -262,6 +263,9 @@ static int placed_path_cmp(const void *a, const void *b) {
 	}
 	int by_track = 0;
 	if (cue_order_tracks(pa->path, pb->path, &by_track)) {
+		return by_track;
+	}
+	if (sacd_order_tracks(pa->path, pb->path, &by_track)) {
 		return by_track;
 	}
 	return strcasecmp(pa->path, pb->path);
