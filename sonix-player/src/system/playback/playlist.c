@@ -227,7 +227,7 @@ bool playlist_is_playable_file(const char *name) {
 	// any other in the browser, and a folder of them has to queue.
 	static const char *const playable_exts[] = {".wav",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
 												 ".alac", ".aac",  ".dsf",  ".dff", ".aif", ".aiff",
-												 ".aifc", ".caf",  ".opus", ".wv",   ".ape"};
+												 ".aifc", ".caf",  ".opus", ".wv",   ".ape", ".iso"};
 
 	if (!name || playlist_is_junk_name(name)) {
 		return false;
@@ -244,6 +244,10 @@ bool playlist_is_playable_file(const char *name) {
 // One sheet per album is the normal case; a handful covers a box set kept in a
 // single folder.
 #define PLAYLIST_CUE_CLAIM_MAX 8
+
+// How many SACD images one folder may claim. Like a sheet, each becomes its
+// tracks rather than one entry.
+#define PLAYLIST_SACD_CLAIM_MAX 8
 
 // A folder's track and its place on the record, while the folder is sorted.
 typedef struct {
@@ -542,11 +546,60 @@ static size_t load_folder_cues(const char *folder, char claimed[][512], size_t c
 	return claims;
 }
 
+// A whole SACD in one image, queued as its tracks the way a folder's cue sheet
+// is: the browser lists the image, and tapping it must play the album, not one
+// hour-long first track. The image's name goes into `claimed` so the folder's
+// main loop does not also push the file whole.
+static size_t load_folder_sacd(const char *folder, char claimed[][512], size_t claim_max) {
+	DIR *dir = opendir(folder);
+	if (!dir) {
+		return 0;
+	}
+
+	size_t claims = 0;
+	struct dirent *de;
+	while ((de = readdir(dir)) != NULL) {
+		if (de->d_name[0] == '.' || !sacd_is_iso(de->d_name)) {
+			continue;
+		}
+		char path[768];
+		snprintf(path, sizeof(path), "%s/%s", folder, de->d_name);
+		sacd_iso_t *s = sacd_iso_open(path);
+		if (!s) {
+			continue;
+		}
+		int area = sacd_iso_stereo_area(s);
+		const sacd_area_t *a = area >= 0 ? sacd_iso_area(s, area) : NULL;
+		if (!a) {
+			sacd_iso_close(s);
+			continue; // not music, or no stereo area: leave it as the file it is
+		}
+		for (int t = 1; t <= a->track_count; t++) {
+			char virtual_path[900];
+			sacd_virtual_path(path, t, virtual_path, sizeof(virtual_path));
+			if (!push_path(virtual_path)) {
+				break;
+			}
+		}
+		sacd_iso_close(s);
+		if (claims < claim_max) {
+			snprintf(claimed[claims], 512, "%s", de->d_name);
+			claims++;
+		}
+	}
+
+	closedir(dir);
+	return claims;
+}
+
 void playlist_load_folder(const char *folder, const char *selected_filename) {
 	playlist_clear();
 
-	char claimed[PLAYLIST_CUE_CLAIM_MAX][512];
-	size_t claims = load_folder_cues(folder, claimed, PLAYLIST_CUE_CLAIM_MAX);
+	char cue_claimed[PLAYLIST_CUE_CLAIM_MAX][512];
+	size_t cue_claims = load_folder_cues(folder, cue_claimed, PLAYLIST_CUE_CLAIM_MAX);
+
+	char sacd_claimed[PLAYLIST_SACD_CLAIM_MAX][512];
+	size_t sacd_claims = load_folder_sacd(folder, sacd_claimed, PLAYLIST_SACD_CLAIM_MAX);
 
 	DIR *dir = opendir(folder);
 	if (!dir)
@@ -559,11 +612,14 @@ void playlist_load_folder(const char *folder, const char *selected_filename) {
 		if (!playlist_is_playable_file(de->d_name))
 			continue;
 		bool skip = false;
-		for (size_t i = 0; i < claims && !skip; i++) {
-			skip = strcmp(claimed[i], de->d_name) == 0;
+		for (size_t i = 0; i < cue_claims && !skip; i++) {
+			skip = strcmp(cue_claimed[i], de->d_name) == 0;
+		}
+		for (size_t i = 0; i < sacd_claims && !skip; i++) {
+			skip = strcmp(sacd_claimed[i], de->d_name) == 0;
 		}
 		if (skip)
-			continue; // a sheet in this folder already queued it, track by track
+			continue; // a sheet or an SACD image here already queued it, track by track
 		snprintf(full, sizeof(full), "%s/%s", folder, de->d_name);
 		if (!push_path(full))
 			break;
@@ -582,12 +638,27 @@ void playlist_load_folder(const char *folder, const char *selected_filename) {
 	// Point the current position at the selected file, defaulting to the first.
 	size_t start = 0;
 	if (selected_filename) {
-		for (size_t i = 0; i < entry_count; i++) {
+		bool found = false;
+		for (size_t i = 0; i < entry_count && !found; i++) {
 			const char *slash = strrchr(paths[i], '/');
 			const char *name = slash ? slash + 1 : paths[i];
 			if (strcmp(name, selected_filename) == 0) {
 				start = i;
-				break;
+				found = true;
+			}
+		}
+		// The browser names an SACD image, not one of the tracks it became:
+		// start at the image's first entry in the queue.
+		if (!found && sacd_is_iso(selected_filename)) {
+			for (size_t i = 0; i < entry_count; i++) {
+				char image[900];
+				if (sacd_split_path(paths[i], image, sizeof(image)) > 0) {
+					const char *slash = strrchr(image, '/');
+					if (strcmp(slash ? slash + 1 : image, selected_filename) == 0) {
+						start = i;
+						break;
+					}
+				}
 			}
 		}
 	}
