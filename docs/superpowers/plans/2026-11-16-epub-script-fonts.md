@@ -148,10 +148,10 @@ for f in *.ttf; do
   test -s "$f" || { echo "empty: $f"; exit 1; }
   fc-scan --format '%{family}\n' "$f" >/dev/null || { echo "bad font: $f"; exit 1; }
 done
-head -1 OFL-NotoSans.txt   # must be the SIL OFL 1.1 heading
+grep -m1 'SIL Open Font License' OFL-NotoSans.txt
 ```
 
-Expected: no `bad font`/`empty` lines; OFL heading printed.
+Expected: no `bad font`/`empty` lines; the SIL OFL 1.1 line printed (the first line is the Noto copyright).
 
 - [ ] **Step 3: Install into both model overlays**
 
@@ -176,26 +176,39 @@ Expected: 13 new files in each directory.
 
 For every family, check the regular file and the bold file separately against the EPUB. The temporary tree holds Bookerly plus exactly one candidate face:
 
+Each run still reports the other scripts as missing (and exits `1`), so the check asserts the owned chapters rather than the whole run:
+
 ```bash
 set -euo pipefail
 cd /tmp/opencode/sonix-epub-scripts
 fonts=sonix-packer/assets/R1/usr/resource/sonix/fonts
 epub="/home/diogo/Área de trabalho/Around the World in 28 Languages.epub"
-check_one() { # $@ = font files to test together
+check_one() { # $1 = chapter-label regex, $@ = font files to test together
+  label=$1; shift
   rm -rf /tmp/fontcheck; mkdir -p /tmp/fontcheck
   cp "$fonts/ebook/Bookerly-Regular.ttf" /tmp/fontcheck/
   cp "$@" /tmp/fontcheck/
-  python3 sonix-player/tools/epub_font_coverage.py --epub "$epub" --fonts /tmp/fontcheck
+  out=$(python3 sonix-player/tools/epub_font_coverage.py --epub "$epub" --fonts /tmp/fontcheck || true)
+  grep -Eq "^($label): ok$" <<<"$out" || { echo "FAIL: $label not covered by $*"; exit 1; }
+  echo "ok: $label covered by $*"
 }
-for fam in devanagari tamil malayalam gurmukhi ethiopic hebrew; do
-  check_one "$fonts/$fam.ttf"
-  check_one "$fonts/$fam-bold.ttf"
-done
-check_one "$fonts/default.otf"   # MiSans regular, Chinese
-check_one "$fonts/bold.otf"      # MiSans bold, Chinese
+check_one 'Nepali|Hindi|Marathi' "$fonts/devanagari.ttf"
+check_one 'Nepali|Hindi|Marathi' "$fonts/devanagari-bold.ttf"
+check_one 'Tamil'                "$fonts/tamil.ttf"
+check_one 'Tamil'                "$fonts/tamil-bold.ttf"
+check_one 'Malayalam'            "$fonts/malayalam.ttf"
+check_one 'Malayalam'            "$fonts/malayalam-bold.ttf"
+check_one 'Panjabi, Eastern'     "$fonts/gurmukhi.ttf"
+check_one 'Panjabi, Eastern'     "$fonts/gurmukhi-bold.ttf"
+check_one 'Amharic'              "$fonts/ethiopic.ttf"
+check_one 'Amharic'              "$fonts/ethiopic-bold.ttf"
+check_one 'Hebrew'               "$fonts/hebrew.ttf"
+check_one 'Hebrew'               "$fonts/hebrew-bold.ttf"
+check_one 'Chinese, Mandarin \(Simplified\)' "$fonts/default.otf"
+check_one 'Chinese, Mandarin \(Simplified\)' "$fonts/bold.otf"
 ```
 
-Expected in every run: the chapters that belong to that face print `ok` (Devanagari: Nepali, Hindi, Marathi; Chinese: Chinese, Mandarin (Simplified)). Other scripts still report missing. This proves both weights carry the glyphs, not just their union.
+Expected: fourteen `ok: ... covered by ...` lines. This proves both weights carry the glyphs, not just their union.
 
 - [ ] **Step 5: Run the full checker and confirm it now passes**
 
