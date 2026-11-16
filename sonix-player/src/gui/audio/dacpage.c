@@ -9,12 +9,15 @@
 #include "src/gui/shell/settingsrow.h"
 #include "src/gui/shell/switcher.h"
 #include "src/gui/shell/theme.h"
+#include "src/gui/audio/peqpage.h"
+#include "src/gui/settings/musicsettings.h"
 #include "src/system/core/lang.h"
 #include "src/system/audio/usbdac.h"
 
 lv_obj_t *dacpage_screen;
 
 static lv_obj_t *mode_switch;
+static lv_obj_t *dsp_switch;
 static lv_obj_t *big_icon;
 static lv_obj_t *format_label;
 static lv_obj_t *status_label;
@@ -144,6 +147,13 @@ static void mode_cb(lv_event_t *e) {
 	apply_mode_from_switch();
 }
 
+static void dsp_cb(lv_event_t *e) {
+	(void)e;
+	// The stored switch rather than the event target, as every other toggle on
+	// the settings pages: the target of a VALUE_CHANGED can be the row.
+	usbdac_set_dsp(lv_obj_has_state(dsp_switch, LV_STATE_CHECKED));
+}
+
 static bool leaving;
 
 // Leaves for real; the guard below lets the chevron through once `leaving` is
@@ -227,8 +237,29 @@ static void loaded_cb(lv_event_t *e) {
 	refresh();
 }
 
+// The control centre refuses to open while the player is a sound card, and
+// this page keeps the user from wandering off, so these two buttons are the
+// only way into the equalisers in DAC mode. Looked up at the press rather than
+// at build time: musicsettings_init() runs after dacpage_init().
+static void open_eq_page_cb(lv_event_t *e) {
+	(void)e;
+	lv_obj_t *target = musicsettings_eq_screen();
+	if (target) {
+		switch_screen(target);
+	}
+}
+
+static void open_peq_page_cb(lv_event_t *e) {
+	(void)e;
+	lv_obj_t *target = peqpage_screen();
+	if (target) {
+		switch_screen(target);
+	}
+}
+
 void dacpage_init(gui_config_t *cfg) {
 	lv_obj_t *container = settingsrow_page(dacpage_screen, cfg, "dac");
+	settingsrow_title_corner_slots(settingsrow_page_title(dacpage_screen), cfg, 3);
 
 	// The mode is a switch, not a side effect of arriving: the page can be
 	// looked at, and the charging button read, without the cable being taken
@@ -238,13 +269,21 @@ void dacpage_init(gui_config_t *cfg) {
 	lv_obj_set_clickable(mode_row, true);
 	lv_obj_add_event_cb(mode_row, mode_row_cb, LV_EVENT_CLICKED, NULL);
 
+	settingsrow_toggle(container, "equaliser", &dsp_switch, dsp_cb);
+	if (usbdac_dsp_enabled()) {
+		lv_obj_add_state(dsp_switch, LV_STATE_CHECKED);
+	}
+
 	// Straight into the flex flow, with no alignment of its own: the container
 	// settingsrow_page() builds already centres its children on the cross axis,
 	// and an object positioned by alignment leaves the flow and is measured as
 	// taking no space, so it would overlap the row above and steal its presses.
 	big_icon = lv_image_create(container);
 	lv_image_set_src(big_icon, &icon_dac_page);
-	lv_obj_set_style_margin_top(big_icon, 40, 0);
+	// A smaller gap than before the Equaliser row: with it the page already
+	// fills the panel, and the status line under the icon is the point of the
+	// page -- it must not start below the fold.
+	lv_obj_set_style_margin_top(big_icon, 10, 0);
 
 	format_label = lv_label_create(container);
 	lv_obj_set_width(format_label, lv_pct(100));
@@ -275,6 +314,15 @@ void dacpage_init(gui_config_t *cfg) {
 	lv_obj_move_foreground(charge_btn);
 	lv_obj_set_style_opa(charge_glyph, LV_OPA_40, 0);
 	refresh_charge_glyph();
+
+	// Above the scrolling settings container, like the charge button.
+	lv_obj_t *eq_btn = corner_button(cfg, 1, &icon_equalizer, NULL);
+	lv_obj_add_event_cb(eq_btn, open_eq_page_cb, LV_EVENT_CLICKED, NULL);
+	lv_obj_move_foreground(eq_btn);
+
+	lv_obj_t *peq_btn = corner_button(cfg, 2, &icon_peq_quick, NULL);
+	lv_obj_add_event_cb(peq_btn, open_peq_page_cb, LV_EVENT_CLICKED, NULL);
+	lv_obj_move_foreground(peq_btn);
 
 	lv_obj_add_event_cb(dacpage_screen, loaded_cb, LV_EVENT_SCREEN_LOADED, NULL);
 	switcher_set_back_guard(dacpage_screen, back_guard);
