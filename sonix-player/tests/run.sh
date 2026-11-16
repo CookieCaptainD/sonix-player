@@ -20,3 +20,9 @@ cc -O2 -Wall -Wextra -Isrc -o /tmp/sacd_iso_test \
 for mode in dsd14 dsd16 dst dst_shared bad; do
 	/tmp/sacd_iso_test "$ISO_DIR/$mode.iso" "$mode"
 done
+
+# Task 3: SACD ISO tracks through the DSD output stage (DoP and PCM).
+cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_sacd_test \
+   tests/dsd_sacd_test.c src/system/decode/dsd.c \
+   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
+/tmp/dsd_sacd_test "$ISO_DIR/dsd14.iso"
