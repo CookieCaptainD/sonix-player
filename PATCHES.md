@@ -323,3 +323,26 @@ Two differences worth writing down, neither of which needed code:
 
 `GBINPUT_MAX_CONTACTS` stays 5 on both players. It is an array size, not a
 request, and a driver that reports two fills two slots.
+
+## Remember the folder browser
+
+The file browser remembers the last folder and scroll position it was left at
+across a restart, independently of the playing queue. The choice is made the
+first time the page is opened, not at boot, so **Remember track** has already
+put its track back: with no saved folder, the browser opens that track's folder,
+then `Music`, then the card root. A saved path is accepted only after
+`realpath`, and only when it is still a directory inside the mounted card, so a
+missing card, a deleted folder, a `..` or a symlink cannot send the browser off
+the card.
+
+The position lives in a small atomic state file beside `device_config.ini`
+(`device_config.ini.browser`), not in the INI: a card path can be longer than a
+settings value (capped at 128 bytes) and can contain bytes an INI line cannot
+carry. Scroll writes are debounced by a second, and flushed when the page is
+left, on power-off and on restart. Factory reset deletes the state file with the
+settings; the first-start stock-data cleanup keeps it.
+
+The open call is asynchronous as before. The state file, path validation and
+fallbacks are covered by an out-of-tree `test_browserstate` harness (built by
+hand, not part of the repository); the folder and scroll restore are exercised
+through the host simulator.
