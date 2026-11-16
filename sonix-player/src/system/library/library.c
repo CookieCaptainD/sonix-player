@@ -3567,7 +3567,9 @@ static void probe_stream_format(const char *path, const char *filename, int *rat
 // one. The column is informational: nothing outside this file reads it.
 static int format_of(const char *name) {
 	// An SACD image, and any track of one, is DSD: the badge must not come out
-	// as WAV for the .iso container.
+	// as WAV for the .iso container. sacd_is_iso() alone would do for every
+	// path this player makes; the split is kept for a non-.iso base carrying a
+	// virtual suffix, which is still a track of the image it names.
 	if (sacd_split_path(name, NULL, 0) > 0 || sacd_is_iso(name)) {
 		return FORMAT_DSD;
 	}
@@ -4846,6 +4848,10 @@ static bool scan_sacd_iso(const char *path, const struct stat *st) {
 		return false;
 	}
 	const sacd_area_t *a = sacd_iso_area(s, area);
+	if (!a) {
+		sacd_iso_close(s);
+		return false;
+	}
 
 	// The album title, or the image's own name: "disc.iso" is a better album
 	// than nothing.
