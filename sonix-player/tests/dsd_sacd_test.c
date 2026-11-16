@@ -116,6 +116,27 @@ int main(int argc, char **argv)
 	}
 	dsd_close(d);
 
+	/* A plain .iso path means track 1 of the stereo area, and the track ends
+	 * exactly at dsd_total_frames(): one read past it returns nothing. */
+	dsd_file_t *plain = dsd_open(argv[1]);
+	check(plain != NULL, "open a plain .iso path");
+	if (!plain) {
+		return 1;
+	}
+	check(dsd_total_frames(plain) == DOP_FRAMES, "a plain path is track 1");
+	got = dsd_read(plain, 1024, buf);
+	check(got == 1024, "read from a plain .iso path");
+	if (got == 1024) {
+		check_dop(buf, 1024, 0, 0);
+	}
+	uint64_t consumed = got;
+	while ((got = dsd_read(plain, 1024, buf)) > 0) {
+		consumed += got;
+	}
+	check(consumed == DOP_FRAMES, "reading to the end takes the whole track");
+	check(dsd_read(plain, 1024, buf) == 0, "a read past the end returns 0");
+	dsd_close(plain);
+
 	/* PCM: a fresh handle, because dsd_to_pcm does not rewind. */
 	dsd_file_t *p = dsd_open(path);
 	check(p != NULL, "open a second handle");

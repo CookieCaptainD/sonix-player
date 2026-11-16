@@ -2,8 +2,12 @@
  * Tests for the vendored DST decoder (src/system/decode/dst_decoder.c).
  *
  * Only the paths that need no arithmetic-coded data are exercised here: an
- * uncompressed frame and the argument checks. The compressed path is covered
- * by decoding a real SACD ISO in the reader's tests.
+ * uncompressed frame, the malformed-table refusal and the argument checks.
+ *
+ * The compressed path is NOT covered by these tests, and the SACD reader tests
+ * do not cover it either: they decode uncompressed frames that were put in a
+ * DST container (see make_sacd_iso.py). Arithmetic-coded DST is only proved by
+ * a real DST frame from a real image, which is the field/release gate.
  */
 
 #include <stdio.h>
