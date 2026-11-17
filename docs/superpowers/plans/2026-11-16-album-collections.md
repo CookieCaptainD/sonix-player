@@ -61,7 +61,7 @@ These are the inputs/conditions most likely to bite a user. Each is pinned by a 
 
 **New asset**
 
-- `assets/icons/collection.svg` — Music tile glyph (optional fallback: `icon_menu_album`).
+- `assets/icons/collection.png` — Music tile artwork (optional fallback: `icon_menu_album`).
 
 **Modified**
 
@@ -686,7 +686,7 @@ git commit -m "collections: add the collections page and picker"
 **Files:**
 - Modify: `sonix-player/src/gui/library/music.h`
 - Modify: `sonix-player/src/gui/library/music.c`
-- Create: `sonix-player/assets/icons/collection.svg`
+- Create: `sonix-player/assets/icons/collection.png`
 - Modify: `sonix-player/tools/svg_to_lvgl.py`
 - Regenerate: `sonix-player/src/gui/shell/icons.c`, `icons.h`
 - Modify: 24 language files under
@@ -711,8 +711,9 @@ Existing saved tile orders append the unknown id at the end; no config migration
 
 - [ ] **Step 2: Add the icon**
 
-Create a 112 px single-colour SVG (a stack of three rounded album covers with a
-subtle offset works). Add `("collection.svg", "menu_collection", SECTION_ICON_SIZE)`
+Create a 140 px colour tile in the same family as the other Music section
+icons (two gradient rounded squares with a translucent front, and a white
+stack of album covers). Add `("collection.png", "menu_collection", SECTION_ICON_SIZE)`
 to `tools/svg_to_lvgl.py` and run:
 
 ```bash
@@ -776,7 +777,7 @@ state. Adding albums is wired in Task 8, so this step does not claim it.
 
 ```bash
 git add sonix-player/src/gui/library/music.h sonix-player/src/gui/library/music.c \
-  sonix-player/assets/icons/collection.svg sonix-player/tools/svg_to_lvgl.py \
+  sonix-player/assets/icons/collection.png sonix-player/tools/svg_to_lvgl.py \
   sonix-player/src/gui/shell/icons.c sonix-player/src/gui/shell/icons.h \
   sonix-packer/assets/R1/usr/resource/sonix/language \
   sonix-packer/assets/R3PII/usr/resource/sonix/language FEATURES.md

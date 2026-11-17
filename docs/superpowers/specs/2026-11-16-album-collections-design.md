@@ -435,10 +435,12 @@ the database and in the log.
   - config id `"collections"` (never translated),
   - label `"collections"`,
   - action `open_collections()` → `collectionspage_open()`,
-  - icon: a new `icon_menu_collection` (add an SVG to
-    `assets/icons/`, an entry to `tools/svg_to_lvgl.py`, and run the generator;
-    `cairosvg` and `pillow` are available). If generation is not possible,
-    fall back to `icon_menu_album`; do not block the feature on the icon.
+  - icon: a new `icon_menu_collection` (a colour tile at
+    `assets/icons/collection.png`, matching the other Music section tiles: two
+    gradient rounded squares with a white album-stack glyph; add it to
+    `tools/svg_to_lvgl.py` and run the generator). If generation is not
+    possible, fall back to `icon_menu_album`; do not block the feature on the
+    icon.
 - Existing saved tile orders do not mention the new id; `music.c` appends it to
   the end of the in-use list. Rearrange main page needs no change.
 
