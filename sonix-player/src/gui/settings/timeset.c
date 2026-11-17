@@ -849,6 +849,10 @@ static void timeset_refresh_theme(void) {
 	// whichever accent was live then.
 	if (confirm_btn) {
 		lv_obj_set_style_bg_color(confirm_btn, theme()->accent, 0);
+		lv_obj_t *label = lv_obj_get_child(confirm_btn, 0);
+		if (label) {
+			lv_obj_set_style_text_color(label, theme_on_accent(), 0);
+		}
 	}
 
 	tabbar_set_active(&mode_tabs, clock_auto_enabled() ? MODE_AUTOMATIC : MODE_MANUAL);

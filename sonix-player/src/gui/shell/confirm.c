@@ -163,6 +163,10 @@ void confirm_init(gui_config_t *cfg) {
 static void refresh_theme(void) {
 	if (ok_btn) {
 		lv_obj_set_style_bg_color(ok_btn, theme()->accent, 0);
+		// The label follows the fill; the build-time colour is only the first.
+		if (ok_label) {
+			lv_obj_set_style_text_color(ok_label, theme_on_accent(), 0);
+		}
 	}
 	if (cancel_label) {
 		lv_obj_set_style_text_color(cancel_label, theme()->text_primary, 0);
