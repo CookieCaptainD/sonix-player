@@ -112,13 +112,12 @@ static void batch_done_cb(void *arg) {
 		gui_notify_popup("collection_cannot_add");
 	}
 
-	if (b->added > 0) {
-		// Something went in: the session is over, whatever the caller was.
-		pending_free();
-		back_btn_cb(NULL);
-	}
-	// Nothing went in: the picker stays up with its pending albums, so the
-	// tap that failed is not the last word.
+	// The attempt is over either way: the user asked for these albums to go
+	// into a collection, and a picker with the same albums still on it would
+	// only ask again. Failure to even start the add is a different case
+	// (picker_add_to) and does keep them.
+	pending_free();
+	back_btn_cb(NULL);
 	batch_free(b);
 }
 
@@ -130,18 +129,12 @@ static void *batch_worker(void *arg) {
 	collections_add_albums(b->id, (const char *const *)b->values, b->count, &b->added, &skipped);
 
 	// gui_post refuses when its queue is full, and a dropped result would
-	// leave the busy card up over a job that has finished. As the collection
-	// play worker does: wait and try again, and give the copies back if the
-	// queue never clears.
-	for (int tries = 0; tries < 50; tries++) {
-		if (gui_post(batch_done_cb, b)) {
-			return NULL;
-		}
+	// leave the busy card up over a job that has finished. Wait for the queue
+	// to take it: the busy veil only ever comes down in batch_done_cb, so this
+	// is the one thing that must not give up.
+	while (!gui_post(batch_done_cb, b)) {
 		usleep(100000);
 	}
-	fprintf(stderr, "collectionspage: gui_post stayed full, add result dropped\n");
-	batch_free(b);
-	add_running = false;
 	return NULL;
 }
 
@@ -188,7 +181,8 @@ static bool batch_start(int id) {
 }
 
 // Adds the pending albums to collection `id`, one synchronously, more on a
-// worker. The way back is taken here only when something went in.
+// worker. Either way the attempt ends the picker session: the caller has one
+// copy of the values and the page has asked its question.
 static void picker_add_to(int id) {
 	if (pending_count <= 0 || add_running) {
 		return;
@@ -201,17 +195,21 @@ static void picker_add_to(int id) {
 		collections_add_albums(id, (const char *const *)pending_values, 1, &added, &skipped);
 		if (added > 0) {
 			toast_success("collection_added");
-			pending_free();
-			back_btn_cb(NULL); // straight back to where the album was tapped
 		} else {
 			gui_notify_popup("collection_cannot_add");
 		}
+		// The attempt is over either way, as with the worker below.
+		pending_free();
+		back_btn_cb(NULL); // straight back to where the album was tapped
 		return;
 	}
 
-	if (batch_start(id)) {
-		// The picker waits under the busy card until the worker answers; the
-		// done callback shows the toast and takes the way back.
+	// More than one: the picker waits under the busy card until the worker
+	// answers, and the done callback shows the toast and takes the way back.
+	// No worker at all is a failure to start, not a failed add: the pending
+	// albums stay, so the choice can be made again.
+	if (!batch_start(id)) {
+		gui_notify_popup("collection_cannot_add");
 	}
 }
 
@@ -561,12 +559,13 @@ static void rebuild_rows(void) {
 	lv_obj_set_style_text_font(new_label, &font_ui_24, 0);
 	lv_obj_set_style_text_color(new_label, theme()->accent, 0);
 
+	// Taken before the list is read: a write that lands while the rows are
+	// being drawn then differs from this value on the next look, so the
+	// screen-loaded check reloads instead of certifying it as shown.
+	rows_revision = collections_revision();
+
 	int count = 0;
 	collections_list(collect_row_cb, &count);
-
-	// Taken after the list is read, so a write that lands mid-rebuild is seen
-	// on the next look rather than waved through.
-	rows_revision = collections_revision();
 
 	if (count == 0) {
 		lv_label_set_text(empty_label, tr("collection_empty_note"));
@@ -581,6 +580,9 @@ void collectionspage_open(void) {
 	pending_free();
 	picking_generation++;
 	lv_label_set_text(title_label, tr("collections"));
+	// The row menu lives on the top layer, so it would stay over whatever
+	// screen comes next; and its collection is gone with the rebuild.
+	popover_close();
 	name_layer_hide();
 	menu_name[0] = '\0';
 	rebuild_rows();
@@ -593,6 +595,7 @@ static void picker_enter(void) {
 	picking = true;
 	picking_generation++;
 	lv_label_set_text(title_label, tr("collection_add_to_collection"));
+	popover_close(); // a browse row menu has no meaning in the picker
 	name_layer_hide();
 	menu_name[0] = '\0';
 	rebuild_rows();
@@ -640,10 +643,14 @@ static void screen_unloaded_cb(lv_event_t *e) {
 	// add still running, whose toast and way back have nowhere to go now.
 	pending_free();
 	picking_generation++;
+	// The popover is on the top layer, above every screen: left open it would
+	// hang over the page this one is being replaced by.
+	popover_close();
 }
 
 void collectionspage_init(gui_config_t *cfg) {
-	collectionspage_screen = lv_obj_create(NULL);
+	// gui.c created the screen; this page fills it, as collectionpage_init()
+	// does. Creating another one here would leak the first.
 	lv_obj_add_style(collectionspage_screen, &theme_style_screen, 0);
 	title_label = settingsrow_title(collectionspage_screen, cfg, "collections");
 	// No corner buttons on this page: the heading gets the whole width.
