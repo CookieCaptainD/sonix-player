@@ -55,12 +55,12 @@ static const script_face_t SCRIPT_FACES[] = {
 	{"japanese", "japanese.otf", "japanese-bold.otf"},
 	{"thai", "thai.otf", "thai-bold.otf"},
 	{"arabic", "arabic.otf", "arabic-bold.otf"},
-	{"devanagari", "devanagari.ttf", "devanagari-bold.ttf"},
-	{"tamil", "tamil.ttf", "tamil-bold.ttf"},
-	{"malayalam", "malayalam.ttf", "malayalam-bold.ttf"},
-	{"gurmukhi", "gurmukhi.ttf", "gurmukhi-bold.ttf"},
-	{"ethiopic", "ethiopic.ttf", "ethiopic-bold.ttf"},
-	{"hebrew", "hebrew.ttf", "hebrew-bold.ttf"},
+	{"devanagari", "devanagari.ttf", "devanagari.ttf"},
+	{"tamil", "tamil.ttf", "tamil.ttf"},
+	{"malayalam", "malayalam.ttf", "malayalam.ttf"},
+	{"gurmukhi", "gurmukhi.ttf", "gurmukhi.ttf"},
+	{"ethiopic", "ethiopic.ttf", "ethiopic.ttf"},
+	{"hebrew", "hebrew.ttf", "hebrew.ttf"},
 };
 
 #define SCRIPT_FACE_COUNT (sizeof(SCRIPT_FACES) / sizeof(SCRIPT_FACES[0]))
