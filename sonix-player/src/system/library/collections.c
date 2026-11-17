@@ -339,6 +339,11 @@ int collections_add_albums(int id, const char *const *values, int count, int *ad
 		return -1;
 	}
 
+	// Values refused before a row was offered: a name alone, or one the index
+	// does not hold. The writer never saw them, so they are counted here and
+	// added to what write_end() reports, for added + skipped to reach count.
+	int refused = 0;
+
 	for (int i = 0; i < count; i++) {
 		const char *value = values[i];
 		// A keyed value is taken as is; a name alone could pick the wrong
@@ -346,10 +351,12 @@ int collections_add_albums(int id, const char *const *values, int count, int *ad
 		const char *sep = value ? strchr(value, LIBRARY_ALBUM_KEY_SEP) : NULL;
 		if (!value || !value[0] || !sep || sep == value) {
 			fprintf(stderr, "collections: value %d is a name alone, skipped\n", i);
+			refused++;
 			continue;
 		}
 		if (!library_album_snapshot(value, snapshot)) {
 			fprintf(stderr, "collections: album of value %d not in the index, skipped\n", i);
+			refused++;
 			continue;
 		}
 
@@ -374,7 +381,7 @@ int collections_add_albums(int id, const char *const *values, int count, int *ad
 		*added = writer_added;
 	}
 	if (skipped) {
-		*skipped = writer_skipped;
+		*skipped = writer_skipped + refused;
 	}
 	if (!committed) {
 		fprintf(stderr, "collections: adding %d albums to collection %d failed, nothing kept\n", count, id);
