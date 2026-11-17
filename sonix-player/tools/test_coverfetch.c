@@ -24,6 +24,18 @@ static char stub_last_error[256];
 static unsigned char *stub_download = NULL;
 static size_t stub_download_len = 0;
 static bool stub_download_mode = false;
+// Batch testing: alternate a one-release answer with an empty one, so a run of
+// jobs yields a found, a miss, a found, ... without driving each search by hand.
+static bool stub_alternate = false;
+static int stub_alt_search = 0;
+static const char ALT_BODY_FOUND[] = "{\"releases\":[{\"id\":\"rel-alt\",\"title\":\"Album\"}]}";
+static const char ALT_BODY_EMPTY[] = "{\"releases\":[]}";
+static const unsigned char ALT_JPEG[16] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x22, 0x33, 0x44};
+
+void coverfetch_test_set_alternating(bool on) {
+	stub_alternate = on;
+	stub_alt_search = 0;
+}
 
 bool http_get_ex(const char *url, const char *extra_headers, bool want_error_body, char **out,
 				 size_t *out_len, size_t limit, int timeout_secs, int *status_out) {
@@ -33,6 +45,36 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 	(void)timeout_secs;
 	stub_calls++;
 	snprintf(stub_url, sizeof(stub_url), "%s", url ? url : "");
+	if (stub_alternate) {
+		*status_out = 200;
+		if (strstr(url, "coverartarchive.org") != NULL) {
+			// Every image download is a valid JPEG.
+			size_t len = sizeof(ALT_JPEG);
+			*out = malloc(len + 1);
+			if (!*out) {
+				return false;
+			}
+			memcpy(*out, ALT_JPEG, len);
+			(*out)[len] = '\0';
+			if (out_len) {
+				*out_len = len;
+			}
+			return true;
+		}
+		// Searches alternate: one release, then an empty "releases" array.
+		bool found = (stub_alt_search++ % 2) == 0;
+		const char *body = found ? ALT_BODY_FOUND : ALT_BODY_EMPTY;
+		size_t len = strlen(body);
+		*out = malloc(len + 1);
+		if (!*out) {
+			return false;
+		}
+		memcpy(*out, body, len + 1);
+		if (out_len) {
+			*out_len = len;
+		}
+		return true;
+	}
 	*status_out = stub_status;
 	if (stub_status < 200 || stub_status >= 300) {
 		*out = NULL;
@@ -99,6 +141,8 @@ void coverfetch_test_reset(void) {
 	stub_download = NULL;
 	stub_download_len = 0;
 	stub_download_mode = false;
+	stub_alternate = false;
+	stub_alt_search = 0;
 	coverfetch_negative_clear();
 }
 
@@ -390,6 +434,49 @@ static void case_save_temp_paths_are_unique(void) {
 		  "save_temp_paths_are_unique");
 }
 
+// 13. Cancelling from the progress callback stops after the job that reported
+// done == 2, keeps the cover already saved, and makes no more HTTP calls.
+typedef struct {
+	int callbacks;
+	coverfetch_progress_t last;
+	int calls_at_cancel;
+} batch_ctx_t;
+
+static void batch_progress_cb(const coverfetch_progress_t *p, void *user) {
+	batch_ctx_t *ctx = user;
+	ctx->callbacks++;
+	ctx->last = *p;
+	if (p->done == 2) {
+		ctx->calls_at_cancel = coverfetch_test_calls();
+		coverfetch_batch_cancel();
+	}
+}
+
+static void batch_cancel_stops_and_keeps_saved(void) {
+	coverfetch_job_t jobs[6];
+	memset(jobs, 0, sizeof(jobs));
+	char albums[6][24];
+	for (int i = 0; i < 6; i++) {
+		snprintf(albums[i], sizeof(albums[i]), "Album %d", i);
+		snprintf(jobs[i].album, sizeof(jobs[i].album), "%s", albums[i]);
+		snprintf(jobs[i].artist, sizeof(jobs[i].artist), "Artist");
+		snprintf(jobs[i].path, sizeof(jobs[i].path), "/tmp/music/Album %d/track.mp3", i);
+	}
+
+	save_reset();
+	coverfetch_test_set_alternating(true);
+
+	batch_ctx_t ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	coverfetch_batch_run(jobs, 6, batch_progress_cb, &ctx);
+
+	// Job 1 (found) costs a search + a download, job 2 (miss) one search: three
+	// calls by the time the callback cancels. Nothing may follow them.
+	bool stopped = ctx.last.done == 2 && ctx.last.found == 1 && ctx.last.not_found == 1 && ctx.callbacks == 2;
+	bool quiet = ctx.calls_at_cancel == 3 && coverfetch_test_calls() == 3;
+	CHECK(stopped && quiet && save_file_exists(), "batch_cancel_stops_and_keeps_saved");
+}
+
 int main(void) {
 	save_dir_setup();
 	case_query_encodes_album_and_artist();
@@ -404,6 +491,7 @@ int main(void) {
 	case_save_preserves_existing_art();
 	case_save_replaces_when_asked();
 	case_save_temp_paths_are_unique();
+	batch_cancel_stops_and_keeps_saved();
 
 	char path[600];
 	save_target(path, sizeof(path), "");

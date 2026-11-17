@@ -1,6 +1,7 @@
 #ifndef COVERFETCH_TEST_H
 #define COVERFETCH_TEST_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 // Test-only hooks, compiled with COVERFETCH_TEST beside HOST_BUILD. No product
@@ -28,5 +29,10 @@ void coverfetch_test_set_dir(const char *dir);
 const char *coverfetch_test_last_temp(void);
 
 int coverfetch_test_outstanding_records(void);
+
+// Make HTTP answers alternate: each search is OK with one release, then an
+// empty "releases" array (a NOT_FOUND); every cover download is a valid JPEG.
+// Used by the batch cancel test to get one found and one miss per pair.
+void coverfetch_test_set_alternating(bool on);
 
 #endif /* COVERFETCH_TEST_H */
