@@ -938,9 +938,6 @@ static bool g_rtc_alarm_armed;
 static bool g_rtc_auto_off_armed;
 static bool g_rtc_battery_armed;
 static bool g_rtc_usb_check_armed;
-// Which of the three won the alarm slot. Kept so the resume path can tell a
-// periodic cable check from a shutdown or a battery look.
-static usbwake_reason_t g_rtc_wake_reason;
 // The deadlines on CLOCK_BOOTTIME. The wall clock is not usable for this: it
 // does not count the sleep, and clock_resync() -- the one thing that would fix
 // it -- refuses to do anything until the date has been set by hand or by
@@ -948,7 +945,6 @@ static usbwake_reason_t g_rtc_wake_reason;
 // true. CLOCK_BOOTTIME counts suspended time and needs nobody's permission.
 static uint32_t g_rtc_alarm_boot_at;
 static uint32_t g_rtc_battery_boot_at;
-static uint32_t g_rtc_usb_boot_at;
 
 static bool rtc_wakealarm_write(const char *val) {
 #ifdef HOST_BUILD
@@ -972,7 +968,6 @@ static void rtc_alarm_disarm(void) {
 	g_rtc_auto_off_armed = false;
 	g_rtc_battery_armed = false;
 	g_rtc_usb_check_armed = false;
-	g_rtc_wake_reason = USBWAKE_NONE;
 	rtc_wakealarm_write("0");
 	printf("power: RTC wake alarm disarmed\n");
 }
@@ -993,7 +988,6 @@ static void rtc_alarm_arm(void) {
 	g_rtc_auto_off_armed = false;
 	g_rtc_battery_armed = false;
 	g_rtc_usb_check_armed = false;
-	g_rtc_wake_reason = USBWAKE_NONE;
 
 	long auto_off_s = 0;
 	if (g_auto_off_enabled && g_auto_off_ms > 0) {
@@ -1037,13 +1031,9 @@ static void rtc_alarm_arm(void) {
 	g_rtc_auto_off_armed = auto_off_s > 0;
 	g_rtc_battery_armed = battery_s > 0 && reason == USBWAKE_BATTERY;
 	g_rtc_usb_check_armed = usb_s > 0 && reason == USBWAKE_USB_CHECK;
-	g_rtc_wake_reason = reason;
 	uint32_t now = boottime_ms();
 	g_rtc_alarm_boot_at = now + (uint32_t)auto_off_s * 1000u;
 	g_rtc_battery_boot_at = now + (uint32_t)battery_s * 1000u;
-	if (g_rtc_usb_check_armed) {
-		g_rtc_usb_boot_at = now + (uint32_t)usb_s * 1000u;
-	}
 	printf("power: mem: RTC wake in %ld s %s\n", remaining_s,
 		   reason == USBWAKE_USB_CHECK ? "to check for a cable"
 		   : reason == USBWAKE_BATTERY ? "to look at the battery"
@@ -1270,8 +1260,8 @@ static void suspend_to_ram(void) {
 
 	bool rtc_woke_it = rc == 0 && g_rtc_alarm_armed && !user_woke_it;
 	// Copy what this wake was for before disarming clears it, then decide from
-	// the copies. g_rtc_usb_boot_at is deliberately not consulted here: it is
-	// only stamped when the cable check owns the alarm and may be stale.
+	// the copies: the resume path acts on these copied armed flags, which are
+	// the source of truth for what this alarm was for.
 	bool usb_check_wake = g_rtc_usb_check_armed;
 	bool auto_off_armed = g_rtc_auto_off_armed;
 	bool battery_armed = g_rtc_battery_armed;
