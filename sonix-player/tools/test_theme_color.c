@@ -75,7 +75,7 @@ int main(void) {
 	// 5. On-accent foreground: white on the presets that are dark, black on
 	// the pale ones. These are the six shipped accents.
 	CHECK(same(theme_color_on(lv_color_make(53, 132, 228)), 255, 255, 255), "white on blue");
-	CHECK(same(theme_color_on(lv_color_make(255, 120, 0)), 255, 255, 255), "white on orange");
+	CHECK(same(theme_color_on(lv_color_make(255, 120, 0)), 0, 0, 0), "black on orange");
 	CHECK(same(theme_color_on(lv_color_make(229, 165, 10)), 0, 0, 0), "black on yellow");
 	CHECK(same(theme_color_on(lv_color_make(46, 194, 126)), 0, 0, 0), "black on green");
 	CHECK(same(theme_color_on(lv_color_make(145, 65, 172)), 255, 255, 255), "white on purple");

@@ -104,11 +104,9 @@ uint8_t theme_color_luminance(lv_color_t c) {
 lv_color_t theme_color_on(lv_color_t background) {
 	float l = relative_luminance(background);
 	// White stays the default: it is the foreground the six shipped accents
-	// were designed around, and on the mid blues and oranges it reads better
-	// than the mathematically higher-contrast black. Past this point white
-	// would fall under about 2.5:1 -- the pale yellows, limes and greens -- so
-	// the foreground flips to near-black.
-	return l < 0.37f ? lv_color_white() : lv_color_black();
+	// were designed around. Past this point white would fall under 3:1 -- the
+	// orange, the yellows, the greens -- so the foreground flips to near-black.
+	return l < 0.30f ? lv_color_white() : lv_color_black();
 }
 
 int theme_color_nearest(const lv_color_t *presets, int count, lv_color_t c) {
