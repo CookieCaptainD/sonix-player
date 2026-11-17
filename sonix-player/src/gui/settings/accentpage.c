@@ -47,6 +47,10 @@ static lv_obj_t *ok_label;
 // persisted accent back over the one just committed.
 static bool committed;
 
+// The colour the page opened on. OK on this exact colour is not a change:
+// the preset stays a preset, and no config or boot-logo write happens.
+static lv_color_t seeded_color;
+
 static int clamp_int(int value, int low, int high) {
 	if (value < low) {
 		return low;
@@ -60,6 +64,10 @@ static int clamp_int(int value, int low, int high) {
 // The sliders work in whole degrees and percent; the theme API takes 0..255
 // channels, as the colour maths does.
 static uint8_t percent_to_channel(int percent) { return (uint8_t)((percent * 255 + 50) / 100); }
+
+static bool same_color(lv_color_t a, lv_color_t b) {
+	return a.red == b.red && a.green == b.green && a.blue == b.blue;
+}
 
 // The live colour the three sliders describe. Pure maths, so the preview circle
 // can follow a drag without touching the palette.
@@ -161,8 +169,18 @@ static void ok_cb(lv_event_t *e) {
 	if (switcher_back_drag_active()) {
 		return;
 	}
+	lv_color_t picked = picked_color();
+	if (same_color(picked, seeded_color)) {
+		// Nothing moved. A preview may still have left another accent live, so
+		// put the persisted one back; then leave without writing anything.
+		theme_restore_accent();
+		committed = true;
+		switch_screen_return_to(appearance_screen);
+		return;
+	}
+
 	committed = true;
-	theme_set_accent_custom(picked_color());
+	theme_set_accent_custom(picked);
 	switch_screen_return_to(appearance_screen);
 }
 
@@ -170,8 +188,9 @@ static void screen_loaded_cb(lv_event_t *e) {
 	(void)e;
 	committed = false;
 
+	seeded_color = theme_accent_color();
 	int hue, sat, bright;
-	rgb_to_hsv(theme_accent_color(), &hue, &sat, &bright);
+	rgb_to_hsv(seeded_color, &hue, &sat, &bright);
 	lv_slider_set_value(hue_slider, hue, LV_ANIM_OFF);
 	lv_slider_set_value(sat_slider, sat, LV_ANIM_OFF);
 	lv_slider_set_value(bright_slider, bright, LV_ANIM_OFF);
