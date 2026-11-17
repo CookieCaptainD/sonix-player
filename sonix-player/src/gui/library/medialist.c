@@ -17,6 +17,7 @@
 #include "src/gui/shell/icons.h"
 #include "src/gui/settings/musicsettings.h"
 #include "src/gui/nowplaying/player.h"
+#include "src/gui/library/collectionspage.h"
 #include "src/gui/library/playlistpage.h"
 #include "src/gui/shell/popover.h"
 #include "src/gui/shell/settingsrow.h"
@@ -1533,8 +1534,8 @@ static void sel_gather(panel_t *p, path_list_t *list) {
 	selection_stop(p);
 }
 
-static void sel_add_cb(lv_event_t *e) {
-	panel_t *p = lv_event_get_user_data(e);
+static void sel_add_playlist_action(void *user) {
+	panel_t *p = user;
 	if (!p || !p->selecting || p->sel_count == 0) {
 		return;
 	}
@@ -1546,6 +1547,51 @@ static void sel_add_cb(lv_event_t *e) {
 		playlistpage_add_tracks((const char *const *)list.paths, list.count);
 	}
 	path_list_free(&list);
+}
+
+// Albums stay albums here rather than being expanded to their tracks. The
+// picker copies the values synchronously, so this array can be freed as soon
+// as the picker has been opened.
+static void sel_add_collection_action(void *user) {
+	panel_t *p = user;
+	if (!p || !p->selecting || p->sel_count == 0) {
+		return;
+	}
+	qsort(p->sel, (size_t)p->sel_count, sizeof(*p->sel), sel_by_index);
+
+	int count = p->sel_count;
+	char **values = calloc((size_t)count, sizeof(*values));
+	int copied = 0;
+	for (; values && copied < count; copied++) {
+		values[copied] = strdup(p->sel[copied].key);
+		if (!values[copied]) {
+			break;
+		}
+	}
+	if (copied == count) {
+		selection_stop(p);
+		collectionspage_add_albums((const char *const *)values, count);
+	}
+	for (int i = 0; i < copied; i++) {
+		free(values[i]);
+	}
+	free(values);
+}
+
+static void sel_add_cb(lv_event_t *e) {
+	panel_t *p = lv_event_get_user_data(e);
+	if (!p || !p->selecting || p->sel_count == 0) {
+		return;
+	}
+	if (p->kind != LIBRARY_LIST_ALBUMS) {
+		sel_add_playlist_action(p);
+		return;
+	}
+	popover_item_t items[] = {
+		{"add_to_playlist", sel_add_playlist_action, p},
+		{"collection_add_to_collection", sel_add_collection_action, p},
+	};
+	popover_show(p->sel_add_btn, items, 2);
 }
 
 // Each track where "add to queue" puts it, the first chosen first -- see
