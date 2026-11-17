@@ -307,7 +307,9 @@ static void window_update(void) {
 		// puts each album on the widget that is next over instead of renaming
 		// the whole pool through one fixed mapping.
 		int index = first + i;
-		row_bind(&rows[index % ROW_POOL], index < filled ? index : -1);
+		// The fill test is the relative slot: `filled` counts the albums read
+		// back, while `index` is where this one sits in the whole collection.
+		row_bind(&rows[index % ROW_POOL], i < filled ? index : -1);
 	}
 
 	thumbs_update();
