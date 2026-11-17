@@ -2350,6 +2350,14 @@ static void coverfetch_find_saved(void *user) {
 
 static void *coverfetch_find_save_worker(void *arg) {
 	coverfetch_find_save_t *save = arg;
+	// The card may have been exported or pulled since the cover was chosen.
+	// Without this the save lands in internal storage. gui_notify_no_card()
+	// posts from this worker to the interface thread, so the error is visible.
+	if (!gui_card_available()) {
+		gui_notify_no_card();
+		free(save);
+		return NULL;
+	}
 	save->saved = coverfetch_save(save->path, "", &save->record, false);
 	if (!gui_post(coverfetch_find_saved, save)) {
 		free(save);

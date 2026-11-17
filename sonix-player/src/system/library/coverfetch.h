@@ -64,10 +64,13 @@ typedef struct {
 } coverfetch_job_t;
 
 // A progress post. done counts jobs finished (found plus not_found); cancelled
-// is set once a batch has been asked to stop.
+// is set once a batch has been asked to stop. aborted is set when the batch
+// stopped itself because its save gate refused a write (e.g. the card became
+// unavailable mid-run) -- the UI should report that rather than a summary.
 typedef struct {
 	int total, done, found, not_found;
 	bool cancelled;
+	bool aborted;
 } coverfetch_progress_t;
 
 typedef void (*coverfetch_progress_cb)(const coverfetch_progress_t *p, void *user);
@@ -88,5 +91,17 @@ void coverfetch_batch_cancel(void);
 // True while a batch worker is still alive, including after a cancel while it
 // finishes its current request. Check before showing progress for a new run.
 bool coverfetch_batch_running(void);
+
+// Optional pre-save gate for the batch worker, supplied by the UI layer (so
+// this module stays free of GUI dependencies). Called on the worker thread
+// immediately before each cover.jpg write; returning false aborts the run and
+// sets aborted in a final progress post. Keep it quick and safe off-thread.
+// NULL disables the gate, which is the default for non-GUI callers.
+void coverfetch_batch_set_save_gate(bool (*gate)(void));
+
+// True while any cover work wants the network and the device awake: the batch
+// worker or an individual search/save operation. Used by power management to
+// keep Wi-Fi up and defer suspend while a fetch is in flight.
+bool coverfetch_busy(void);
 
 #endif /* COVERFETCH_H */

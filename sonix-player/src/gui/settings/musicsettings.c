@@ -1639,6 +1639,16 @@ static void batch_progress_post(void *user) {
 	if (!batch_active) {
 		return;
 	}
+	if (batch_progress.aborted) {
+		// The batch's save gate found the card gone mid-run. No summary: tell
+		// the user plainly and put the progress card away.
+		batch_active = false;
+		if (batch_progress_veil) {
+			lv_obj_set_hidden(batch_progress_veil, true);
+		}
+		gui_notify_no_card();
+		return;
+	}
 	char text[160];
 	snprintf(text, sizeof(text), tr("coverfetch_batch_progress"), batch_progress.done, batch_progress.total,
 			 batch_progress.found, batch_progress.not_found);
@@ -1726,15 +1736,66 @@ static void batch_count_then_start(void *user) {
 	confirm_show("coverfetch_batch_title", message, "coverfetch_batch_download", batch_start_cb, NULL);
 }
 
+// A batch started by turning Wi-Fi on waits for the link the same way the Now
+// Playing search does (player.c: coverfetch_find_wifi_wait). Sending the first
+// request before association is reported as "not found", not retried.
+#define BATCH_WIFI_POLL_MS 500
+#define BATCH_WIFI_WAIT_MS 30000
+
+static lv_timer_t *batch_wifi_timer;
+static uint32_t batch_wifi_since;
+
+static bool batch_wifi_online(void) {
+	wifi_status_t wifi;
+	wifi_get_status(&wifi);
+	return wifi.state == WIFI_STATE_CONNECTED && wifi.ip[0] != '\0';
+}
+
+static void batch_wifi_wait_end(void) {
+	if (batch_wifi_timer) {
+		lv_timer_delete(batch_wifi_timer);
+		batch_wifi_timer = NULL;
+	}
+}
+
+static void batch_wifi_tick_cb(lv_timer_t *t) {
+	(void)t;
+	// Wi-Fi switched off again: the batch is no longer wanted.
+	if (!wifi_get_enabled()) {
+		batch_wifi_wait_end();
+		toast_busy_end();
+		return;
+	}
+	if (batch_wifi_online()) {
+		batch_wifi_wait_end();
+		toast_busy_end();
+		batch_count_then_start(NULL);
+		return;
+	}
+	if (lv_tick_elaps(batch_wifi_since) >= BATCH_WIFI_WAIT_MS) {
+		batch_wifi_wait_end();
+		toast_busy_end();
+		toast_error("coverfetch_batch_no_wifi");
+	}
+}
+
 static void batch_enable_wifi_cb(void *user) {
 	(void)user;
 	wifi_set_enabled(true);
-	batch_count_then_start(NULL);
+	batch_wifi_since = lv_tick_get();
+	if (!batch_wifi_timer) {
+		batch_wifi_timer = lv_timer_create(batch_wifi_tick_cb, BATCH_WIFI_POLL_MS, NULL);
+	}
+	toast_busy_dismissable("coverfetch_find_searching");
 }
 
 // Leaving the page while a batch is running stops it; whatever has already
 // been written stays on the card.
 static bool batch_back_guard(void) {
+	if (batch_wifi_timer) {
+		batch_wifi_wait_end(); // leaving the page drops a pending link-up wait
+		toast_busy_end();
+	}
 	if (!batch_active) {
 		return false;
 	}
@@ -1748,6 +1809,10 @@ static bool batch_back_guard(void) {
 
 static void coverfetch_batch_row_cb(lv_event_t *e) {
 	(void)e;
+	if (batch_wifi_timer) {
+		toast_busy_dismissable("coverfetch_find_searching");
+		return;
+	}
 	if (!gui_card_available()) {
 		gui_notify_no_card();
 		return;
@@ -1839,7 +1904,10 @@ static void build_library_page(gui_config_t *cfg) {
 		lv_obj_add_state(allow_delete_switch, LV_STATE_CHECKED);
 	}
 
-	// Fill in album covers the library is missing, one album at a time.
+	// Fill in album covers the library is missing, one album at a time. The
+	// worker re-checks the card immediately before every write; the check stays
+	// here so coverfetch.c keeps no GUI dependency.
+	coverfetch_batch_set_save_gate(gui_card_available);
 	settingsrow_action(container, "coverfetch_batch_title", coverfetch_batch_row_cb, NULL);
 	option_note(container, "coverfetch_batch_note");
 
