@@ -37,6 +37,10 @@ fail() {
 BLOCK="$(sed -n '/^# DEBUG-TOOLS-BEGIN$/,/^# DEBUG-TOOLS-END$/p' "$PACKER")"
 [ -n "$BLOCK" ] || { echo "FAIL: DEBUG-TOOLS markers not found in $PACKER" >&2; exit 1; }
 
+# The packer must contain its own strip_debug_tools call.
+grep -q 'strip_debug_tools "\$SQUASH_DIR"' "$PACKER" ||
+	fail "packer has no production strip_debug_tools call"
+
 # Run the extracted block in its own shell. say() is stubbed because the test
 # is not the packer. A file avoids quoting the block, which holds $variables.
 {
