@@ -20,21 +20,19 @@ lv_color_t lv_color_white(void) { return lv_color_make(255, 255, 255); }
 
 lv_color_t lv_color_black(void) { return lv_color_make(0, 0, 0); }
 
-#define CHECK(cond, name) \
-	do { \
-		if (cond) { \
-			printf("ok   %s\n", name); \
-		} else { \
-			printf("FAIL %s (%s:%d)\n", name, __FILE__, __LINE__); \
-			exit(1); \
-		} \
+#define CHECK(cond, name)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              \
+	do {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               \
+		if (cond) {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    \
+			printf("ok   %s\n", name);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 \
+		} else {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       \
+			printf("FAIL %s (%s:%d)\n", name, __FILE__, __LINE__);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     \
+			exit(1);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   \
+		}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              \
 	} while (0)
 
 static int near(int a, int b) { return a > b ? a - b : b - a; }
 
-static int same(lv_color_t c, int r, int g, int b) {
-	return near(c.red, r) <= 1 && near(c.green, g) <= 1 && near(c.blue, b) <= 1;
-}
+static int same(lv_color_t c, int r, int g, int b) { return near(c.red, r) <= 1 && near(c.green, g) <= 1 && near(c.blue, b) <= 1; }
 
 int main(void) {
 	// 1. The primaries come out of the wheel in the right places.
@@ -72,8 +70,7 @@ int main(void) {
 	// 4. Luminance orders the way the eye does.
 	CHECK(theme_color_luminance(lv_color_make(255, 255, 255)) == 255, "white luminance is 255");
 	CHECK(theme_color_luminance(lv_color_make(0, 0, 0)) == 0, "black luminance is 0");
-	CHECK(theme_color_luminance(lv_color_make(46, 194, 126)) < theme_color_luminance(lv_color_make(229, 165, 10)),
-		  "yellow reads brighter than green");
+	CHECK(theme_color_luminance(lv_color_make(46, 194, 126)) < theme_color_luminance(lv_color_make(229, 165, 10)), "yellow reads brighter than green");
 
 	// 5. On-accent foreground: white on the presets that are dark, black on
 	// the pale ones. These are the six shipped accents.
@@ -89,9 +86,7 @@ int main(void) {
 	// 6. Nearest preset follows the hue: an orange is orange, not the closest
 	// in brightness; a grey has no hue to match.
 	const lv_color_t presets[] = {
-		{.red = 53, .green = 132, .blue = 228},  {.red = 255, .green = 120, .blue = 0},
-		{.red = 229, .green = 165, .blue = 10},  {.red = 46, .green = 194, .blue = 126},
-		{.red = 145, .green = 65, .blue = 172},  {.red = 213, .green = 97, .blue = 153},
+		{.red = 53, .green = 132, .blue = 228}, {.red = 255, .green = 120, .blue = 0}, {.red = 229, .green = 165, .blue = 10}, {.red = 46, .green = 194, .blue = 126}, {.red = 145, .green = 65, .blue = 172}, {.red = 213, .green = 97, .blue = 153},
 	};
 	for (int i = 0; i < 6; i++) {
 		if (theme_color_nearest(presets, 6, presets[i]) != i) {
