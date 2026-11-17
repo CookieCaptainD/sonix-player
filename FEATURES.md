@@ -58,6 +58,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 ## Now Playing
 
 - The cover fills the top of the screen, with the same picture blurred behind the controls.
+- **Find cover** - when a track has no artwork, a button in Now Playing looks for its album cover on MusicBrainz and saves it beside the track. If Wi-Fi is off, the player asks to turn it on and starts the search by itself.
 - **Three layouts** - Standard, Waveform (the progress bar becomes the waveform of the track) and Alternative.
 - **Cover colour** - the buttons and the bar take the main colour of the cover.
 - **Cover Flow** - swipe up from the bottom edge of the Music page to flip through your albums.
