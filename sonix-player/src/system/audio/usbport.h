@@ -79,6 +79,7 @@ typedef struct {
 	bool dac_mode;			// usb_dac_mode(): the player is a USB sound card
 	bool port_dual;			// port_type currently reads "[dual]"
 	bool partner;			// /sys/class/typec/port0-partner exists
+	bool partner_recent;	// a partner is here now, or was seen recently enough to trust
 	bool audio;				// a USB sound card is present
 	bool vbus;				// VBUS is arriving into the player
 	bool host_device;		// a device is on this player's host bus
@@ -89,6 +90,7 @@ typedef struct {
 	unsigned source_secs;	// seconds since sourcing with no enumeration
 	unsigned stuck_secs;	// seconds in the stuck condition
 	unsigned reset_secs;	// seconds since a reset was started
+	bool reset_consumed;	// a reset has already fired in this episode
 	bool reset_pending;
 	unsigned boost_cycles;	// boost off/on cycles already tried
 } usb_port_state_t;

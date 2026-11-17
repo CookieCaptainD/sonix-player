@@ -27,6 +27,11 @@
 // survives a reboot; the supervisor writes it only when the level changes.
 #define MP2731_OTG "/sys/class/power_supply/mp2731-charger/usb_otg"
 
+// Whether the charger is taking power from the port or from the battery. The
+// field report asked for this alongside the boost, since the two together say
+// whether VBUS is coming in or going out.
+#define MP2731_ONLINE "/sys/class/power_supply/mp2731-charger/online"
+
 // The R1 has no Type-C class. Its CC controller is a TCS1421 set by two GPIOs,
 // and the platform driver takes the mode by name through one attribute and
 // reads the current one back: "Sink", "Source", "StrongDRP" or "NormalDRP".
@@ -773,6 +778,47 @@ static unsigned secs_since(time_t at, time_t now) {
 	return (unsigned)(now - at);
 }
 
+// One sysfs value for the snapshot, in the same fopen/fgets/strcspn style as the
+// role readers above. A node the running kernel does not publish shows as "?":
+// the log must still say which value is missing instead of failing the poll.
+static void snapshot_value(const char *path, char *out, size_t out_size) {
+	strcpy(out, "?");
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		return;
+	}
+	char line[96];
+	if (fgets(line, sizeof(line), f) && line[0]) {
+		line[strcspn(line, "\r\n")] = '\0';
+		snprintf(out, out_size, "%s", line);
+	}
+	fclose(f);
+}
+
+// The six values asked for in the field report, on one line once a second while
+// there is anything on the port. An empty port has nothing to explain and
+// would fill the log with the same line for hours, so it is left out.
+static void log_port_snapshot(time_t now) {
+	static time_t last_at;
+	if (last_at && now <= last_at) {
+		return;
+	}
+	if (!partner_present() && !usb_vbus_present() && !host_bus_has_device()) {
+		return;
+	}
+	last_at = now;
+
+	char port_type[96], power_role[96], data_role[96], otg[96], online[96];
+	snapshot_value(TYPEC_PORT_TYPE, port_type, sizeof(port_type));
+	snapshot_value(TYPEC_POWER_ROLE, power_role, sizeof(power_role));
+	snapshot_value(TYPEC_DATA_ROLE, data_role, sizeof(data_role));
+	snapshot_value(MP2731_OTG, otg, sizeof(otg));
+	snapshot_value(MP2731_ONLINE, online, sizeof(online));
+	fprintf(stderr,
+			"usbaudio: snapshot port0 port_type=%s power_role=%s data_role=%s partner=%d usb_otg=%s online=%s\n",
+			port_type, power_role, data_role, partner_present() ? 1 : 0, otg, online);
+}
+
 // The R3 Pro II's port, one decision per poll.
 //
 // usbport.h holds the rules and the reasons. This half only reads the port into
@@ -782,6 +828,7 @@ static unsigned secs_since(time_t at, time_t now) {
 // quarter of one.
 static void typec_arbitrate(bool audio_present, time_t now) {
 	static time_t partner_at;	// when the current partner appeared
+	static time_t last_partner_at;	// when any partner was last seen, across boost pulses
 	static time_t source_at;	// when sourcing began, for the boost cycle
 	static time_t stuck_at;		// when host mode with nothing attached began
 	static time_t reset_at;		// when the last reset was started
@@ -789,12 +836,31 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 	static time_t empty_since;	// the longer view, across a boost pulse
 	static time_t boost_off_until;	// a pulse must be long enough to be seen
 	static bool reset_pending;
+	static bool reset_consumed;	// a reset has already fired in this episode
 	static unsigned boost_cycles;
 
 	bool partner = partner_present();
 	bool vbus = usb_vbus_present();
 	bool host_device = host_bus_has_device();
 	bool empty = !partner && !vbus && !host_device;
+
+	log_port_snapshot(now);
+
+	// A partner is still recent through a boost pulse's brief CC dropout, so
+	// the empty gap that follows is not read as a cable-less host. The timer is
+	// kept separately from partner_at, which the boost cycle budget resets.
+	if (partner) {
+		last_partner_at = now;
+	}
+	bool partner_recent = partner ||
+			(last_partner_at && secs_since(last_partner_at, now) < USB_PORT_FRESH_PARTNER_SECS);
+
+	// A reset is spent until something shows the port has genuinely changed
+	// hands: an audio device, a charger or PC feeding VBUS, a device on the
+	// host bus, or a new partner arriving.
+	if (audio_present || vbus || host_device) {
+		reset_consumed = false;
+	}
 
 	// A sound card, an empty port and a detach all start the story again. The
 	// boost cycle budget belongs to the partner: the next device gets its own.
@@ -824,6 +890,7 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 		empty_since = 0;
 		partner_at = now;
 		source_at = now;
+		reset_consumed = false;
 	} else if (!partner) {
 		// A charger with no partner node, or a partner that has just gone.
 		partner_at = 0;
@@ -876,6 +943,7 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 		.dac_mode = usb_dac_mode(),
 		.port_dual = port_is_dual(),
 		.partner = partner,
+		.partner_recent = partner_recent,
 		.audio = audio_present,
 		.vbus = vbus,
 		.host_device = host_device,
@@ -886,6 +954,7 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 		.source_secs = secs_since(source_at, now),
 		.stuck_secs = secs_since(stuck_at, now),
 		.reset_secs = secs_since(reset_at, now),
+		.reset_consumed = reset_consumed,
 		.reset_pending = reset_pending,
 		.boost_cycles = boost_cycles,
 	};
@@ -921,6 +990,7 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 		otg_boost_set(false);
 		reset_pending = true;
 		reset_at = now;
+		reset_consumed = true;
 		partner_at = 0;
 		source_at = 0;
 		stuck_at = 0;

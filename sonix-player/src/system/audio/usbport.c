@@ -68,11 +68,23 @@ usb_port_action_t usb_port_decide(const usb_port_state_t *s) {
 			return USB_PORT_ACT_NONE;
 		}
 
-		// SINK: a charger, a PC, or a phone acting as the source. The old rule
-		// still fits: this player is the peripheral and the port stays as it
-		// is. UNKNOWN takes the same path, so a kernel that does not publish
-		// the role cannot leave the port pinned.
-		return handover(s);
+		// SINK or UNKNOWN with a source feeding VBUS, or with a device on this
+		// player's host bus: a charger, a PC, or a phone that has won the host
+		// role. The old handover still fits there.
+		if (s->vbus || s->host_device) {
+			return handover(s);
+		}
+
+		// No VBUS and no host device is not a host: it is a bus-powered DAC
+		// that cannot enumerate until this player sources it, however it read
+		// its power role. Handing over here is "no card after three seconds"
+		// used as proof of a host, which is impossible while the port is
+		// unpowered. SINK has nothing to power; UNKNOWN gets the boost so the
+		// device can boot and say what it is.
+		if (s->power_role == USB_ROLE_SINK) {
+			return USB_PORT_ACT_NONE;
+		}
+		return s->otg_on ? USB_PORT_ACT_NONE : USB_PORT_ACT_BOOST_ON;
 	}
 
 	// Nothing on the port.
@@ -93,6 +105,14 @@ usb_port_action_t usb_port_decide(const usb_port_state_t *s) {
 		// through sink/dual every eight seconds for ever. Only a port that is
 		// still not dual (a sink write that did not get back, or a reset in
 		// progress) or a boost left on is genuinely stuck.
+		// One reset per episode. The port can come back in the stale host
+		// state that caused it, and writing sink again every few seconds is
+		// the storm in the field log, not recovery. A partner seen in the last
+		// few seconds is also not an empty port: a boost pulse drops CC
+		// briefly, and that gap must not be read as a cable-less host.
+		if (s->reset_consumed || s->partner_recent) {
+			return USB_PORT_ACT_NONE;
+		}
 		return s->stuck_secs >= USB_PORT_STUCK_SECS ? USB_PORT_ACT_RESET : USB_PORT_ACT_NONE;
 	}
 

@@ -200,18 +200,59 @@ static void test_charger_settles_sink(void) {
 
 // A partner whose role cannot be read is treated as the old code treated every
 // non-audio partner, so an old kernel or a missing attribute cannot leave the
-// port pinned.
+// port pinned. VBUS says this is a charger or a PC feeding the port, not a DAC
+// waiting to be sourced; without it the handover rule below does not apply.
 static void test_unknown_power_role_falls_back(void) {
 	usb_port_state_t s = typec();
 	s.partner = true;
 	s.power_role = USB_ROLE_UNKNOWN;
 	s.data_role = USB_DATA_UNKNOWN;
+	s.vbus = true;
 
 	s.partner_secs = 1;
 	check("unknown role, still settling", usb_port_decide(&s), USB_PORT_ACT_NONE);
 
 	s.partner_secs = USB_PORT_HANDOVER_SECS;
 	check("unknown role, handover due", usb_port_decide(&s), USB_PORT_ACT_BECOME_SINK);
+}
+
+// A SINK-role partner with no VBUS is not a charger: a bus-powered DAC can read
+// as sink before this player has put any power on the port. Without VBUS and
+// without a host-side device there is nothing to hand the port over to, and no
+// amount of waiting turns it into a host.
+static void test_sink_without_vbus_never_hands_over(void) {
+	usb_port_state_t s = typec();
+	s.partner = true;
+	s.power_role = USB_ROLE_SINK;
+	s.partner_secs = USB_PORT_HANDOVER_SECS;
+	check("sink, no VBUS, handover time", usb_port_decide(&s), USB_PORT_ACT_NONE);
+
+	s.partner_secs = 600;
+	check("sink, no VBUS, long wait", usb_port_decide(&s), USB_PORT_ACT_NONE);
+
+	// The gate is VBUS or a host-side device, not role alone.
+	s.host_device = true;
+	check("sink, host device on bus", usb_port_decide(&s), USB_PORT_ACT_BECOME_SINK);
+}
+
+// A DAC whose role could not be read must still be sourced. With no VBUS there
+// is no sound card to enumerate, so the handover here would be the same bug the
+// source-role branch already avoids.
+static void test_unknown_role_without_vbus_gets_sourced(void) {
+	usb_port_state_t s = typec();
+	s.partner = true;
+	s.power_role = USB_ROLE_UNKNOWN;
+	s.partner_secs = 600;
+
+	s.otg_on = false;
+	check("unknown role, no VBUS, boost off", usb_port_decide(&s), USB_PORT_ACT_BOOST_ON);
+
+	s.otg_on = true;
+	check("unknown role, no VBUS, boost on", usb_port_decide(&s), USB_PORT_ACT_NONE);
+
+	s.source_secs = 30;
+	s.boost_cycles = USB_PORT_MAX_BOOST_CYCLES;
+	check("unknown role, no VBUS, long wait", usb_port_decide(&s), USB_PORT_ACT_NONE);
 }
 
 // The second failure mode: an overcurrent or a mode mismatch leaves host mode
@@ -292,6 +333,28 @@ static void test_reset_holds_then_releases(void) {
 	check("reset outranks audio", usb_port_decide(&s), USB_PORT_ACT_NONE);
 }
 
+// A reset is one shot for an episode. After it the port can come back in the
+// stale host state that caused it, but firing again every few seconds is the
+// storm in the field log, not recovery. A partner seen in the last few seconds
+// is the same story: a boost pulse briefly drops CC, and that gap is not an
+// empty port either.
+static void test_stuck_reset_is_one_shot(void) {
+	usb_port_state_t s = typec();
+	s.data_role = USB_DATA_HOST;
+	s.port_dual = false;
+	s.stuck_secs = USB_PORT_STUCK_SECS;
+
+	s.reset_consumed = true;
+	check("stuck, reset already consumed", usb_port_decide(&s), USB_PORT_ACT_NONE);
+
+	s.reset_consumed = false;
+	s.partner_recent = true;
+	check("stuck, partner seen recently", usb_port_decide(&s), USB_PORT_ACT_NONE);
+
+	s.partner_recent = false;
+	check("stuck, neither, reset due", usb_port_decide(&s), USB_PORT_ACT_RESET);
+}
+
 int main(void) {
 	test_r1_is_always_none();
 	test_dac_mode_keeps_hands_off();
@@ -300,9 +363,12 @@ int main(void) {
 	test_phone_hands_over();
 	test_charger_settles_sink();
 	test_unknown_power_role_falls_back();
+	test_sink_without_vbus_never_hands_over();
+	test_unknown_role_without_vbus_gets_sourced();
 	test_stuck_host_role_resets();
 	test_empty_port_offers_dual();
 	test_reset_holds_then_releases();
+	test_stuck_reset_is_one_shot();
 
 	if (failures) {
 		fprintf(stderr, "%d USB port decision(s) wrong\n", failures);
