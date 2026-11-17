@@ -1563,8 +1563,7 @@ static void build_library_page(gui_config_t *cfg) {
 
 	// Long names in lists scroll instead of ending in dots. The speed is also
 	// used by the player and the other labels that scroll.
-	settingsrow_toggle_pills(container, "musicsettings_scroll_names", scroll_toggle_cb,
-							 &scroll_switch, &scroll_pills);
+	settingsrow_toggle_pills(container, "musicsettings_scroll_names", scroll_toggle_cb, &scroll_switch, &scroll_pills);
 	scroll_pill[0] = settingsrow_pill(scroll_pills, "musicsettings_scroll_slow", 35, scroll_pick_cb);
 	scroll_pill[1] = settingsrow_pill(scroll_pills, "musicsettings_scroll_normal", 55, scroll_pick_cb);
 	scroll_pill[2] = settingsrow_pill(scroll_pills, "musicsettings_scroll_fast", 80, scroll_pick_cb);
