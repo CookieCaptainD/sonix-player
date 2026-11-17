@@ -101,10 +101,20 @@ static void host_browser_scroll_cb(lv_timer_t *timer) {
 	if (scroll) {
 		browser_test_scroll(atoi(scroll));
 	}
+	// Entering the child right after the scroll builds the same ancestor stack
+	// a real tap on a folder row would build.
+	const char *child = getenv("SONIX_BROWSER_OPEN_CHILD");
+	if (child && child[0]) {
+		browser_test_open_child(child);
+	}
 }
 static void host_browser_refresh_cb(lv_timer_t *timer) {
 	lv_timer_delete(timer);
 	browser_refresh();
+}
+static void host_browser_go_up_cb(lv_timer_t *timer) {
+	lv_timer_delete(timer);
+	browser_go_up();
 }
 static void host_open_browser_cb(lv_timer_t *timer) {
 	lv_timer_delete(timer);
@@ -115,6 +125,12 @@ static void host_open_browser_cb(lv_timer_t *timer) {
 	}
 	if (getenv("SONIX_BROWSER_SCROLL")) {
 		lv_timer_create(host_browser_scroll_cb, 1500, NULL);
+	}
+	// Walk back up without a finger: the back button and the swipe both call
+	// the same public function.
+	const char *go_up = getenv("SONIX_BROWSER_GO_UP_MS");
+	if (go_up) {
+		lv_timer_create(host_browser_go_up_cb, atoi(go_up), NULL);
 	}
 	// Re-read the page without a user action: what a late-mounted card does.
 	const char *refresh = getenv("SONIX_BROWSER_REFRESH_MS");

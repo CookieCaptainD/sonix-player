@@ -129,6 +129,15 @@ static bool save_after_listing;
 static bool browser_state_dirty;
 static lv_timer_t *state_timer;
 
+// Scroll positions remembered while walking DOWN the tree, restored on the
+// way back up -- so going into an album and back does not land at the top of
+// a long folder. One slot per depth level. Declared here because the state
+// writer below stores them alongside the current folder.
+#define SCROLL_STACK_DEPTH BROWSER_STATE_STACK_MAX
+static int scroll_stack[SCROLL_STACK_DEPTH];
+static int scroll_stack_len;
+static int pending_scroll = -1; // applied by adopt_listing() when >= 0
+
 static bool state_file_path(char *out, size_t size) {
 	const char *path = config_path();
 	if (!path) {
@@ -143,7 +152,7 @@ static void save_browser_state(void) {
 		return;
 	}
 	char file[1024];
-	if (state_file_path(file, sizeof(file)) && browser_state_save(file, current_path, lv_obj_get_scroll_y(file_list))) {
+	if (state_file_path(file, sizeof(file)) && browser_state_save(file, current_path, lv_obj_get_scroll_y(file_list), scroll_stack, scroll_stack_len)) {
 		browser_state_dirty = false;
 	}
 }
@@ -611,14 +620,6 @@ static bool is_playable_file(const char *name) {
 	return false;
 }
 
-// Scroll positions remembered while walking DOWN the tree, restored on the
-// way back up -- so going into an album and back does not land at the top of
-// a long folder. One slot per depth level.
-#define SCROLL_STACK_DEPTH 12
-static int scroll_stack[SCROLL_STACK_DEPTH];
-static int scroll_stack_len;
-static int pending_scroll = -1; // applied by adopt_listing() when >= 0
-
 // Which row the pointer is over, or -1. The pool of row objects is reused as
 // the list scrolls, so a row's index has to be looked up rather than carried.
 static row_t *row_of_button(lv_obj_t *button) {
@@ -1072,6 +1073,10 @@ static void shuffle_button_cb(lv_event_t *e) {
 
 void browser_open_dir_public(const char *path) {
 	browser_user_navigation();
+	// A direct open is not a step down from the folder on screen, so the old
+	// ancestor scrolls no longer describe the walk back from here.
+	scroll_stack_len = 0;
+	pending_scroll = -1;
 	browser_open_dir(path);
 }
 
@@ -1082,6 +1087,18 @@ void browser_test_scroll(int y) {
 	if (file_list) {
 		lv_obj_scroll_to_y(file_list, y, LV_ANIM_OFF);
 	}
+}
+
+void browser_test_open_child(const char *path) {
+	if (!path || !path[0]) {
+		return;
+	}
+	if (scroll_stack_len < SCROLL_STACK_DEPTH) {
+		scroll_stack[scroll_stack_len++] = lv_obj_get_scroll_y(file_list);
+	}
+	pending_scroll = -1;
+	browser_user_navigation();
+	browser_open_dir(path);
 }
 #endif
 
@@ -1105,9 +1122,12 @@ void browser_refresh(void) {
 		char chosen[sizeof(current_path)] = "";
 		int scroll = 0;
 		int saved_scroll = 0;
+		int loaded_stack[BROWSER_STATE_STACK_MAX] = {0};
+		int loaded_stack_len = 0;
+		bool used_saved = false;
 
 		if (state_file_path(file, sizeof(file))) {
-			browser_state_load(file, saved, sizeof(saved), &saved_scroll);
+			browser_state_load(file, saved, sizeof(saved), &saved_scroll, loaded_stack, BROWSER_STATE_STACK_MAX, &loaded_stack_len);
 		}
 		if (config_get_int("player", "remember_track", 0)) {
 			char virtual_path[sizeof(track)];
@@ -1116,14 +1136,26 @@ void browser_refresh(void) {
 				cue_split_path(virtual_path, track, sizeof(track));
 			}
 		}
-		if (browser_state_choose(root_path, saved, saved_scroll, track, chosen, sizeof(chosen), &scroll)) {
+		if (browser_state_choose(root_path, saved, saved_scroll, track, chosen, sizeof(chosen), &scroll, &used_saved)) {
 			snprintf(current_path, sizeof(current_path), "%s", chosen);
 			pending_scroll = scroll;
+			// The ancestor scrolls belong to the saved folder's branch. Put
+			// them back only when that folder was really chosen: a fallback
+			// to the track, Music or the root must start a fresh walk, or
+			// the first step up would land at a stale position.
+			scroll_stack_len = 0;
+			if (used_saved) {
+				for (int i = 0; i < loaded_stack_len; i++) {
+					scroll_stack[i] = loaded_stack[i];
+				}
+				scroll_stack_len = loaded_stack_len;
+			}
 		} else if (!current_path[0] && strlen(root_path) < sizeof(current_path)) {
 			// Nothing came back at all (a root too long for the buffer): show
 			// the root rather than a page with no listing and no message.
 			snprintf(current_path, sizeof(current_path), "%s", root_path);
 			pending_scroll = 0;
+			scroll_stack_len = 0;
 		}
 		browser_started = true;
 	} else if (listing_loaded) {

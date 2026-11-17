@@ -13,16 +13,27 @@
 // not remembered; the browser then opens <card>/Music, and finally the root.
 #define STATE_PATH_MAX 512
 
+// V2 adds the ancestor scrolls. V1 is still read as an empty stack so a state
+// file written by an earlier build does not make the browser start at zero.
+typedef struct {
+	char magic[8];
+	int32_t scroll;
+	int32_t stack_len;
+	int32_t stack[BROWSER_STATE_STACK_MAX];
+	char folder[STATE_PATH_MAX];
+} browser_state_disk_t;
+
 typedef struct {
 	char magic[8];
 	int32_t scroll;
 	char folder[STATE_PATH_MAX];
-} browser_state_disk_t;
+} browser_state_disk_v1_t;
 
-static const char STATE_MAGIC[8] = {'S', 'N', 'X', 'B', 'R', 'W', '1', '\0'};
+static const char STATE_MAGIC[8] = {'S', 'N', 'X', 'B', 'R', 'W', '2', '\0'};
+static const char STATE_MAGIC_V1[8] = {'S', 'N', 'X', 'B', 'R', 'W', '1', '\0'};
 
-bool browser_state_save(const char *file, const char *folder, int scroll) {
-	if (!file || !file[0] || !folder || !folder[0] || strlen(folder) >= STATE_PATH_MAX) {
+bool browser_state_save(const char *file, const char *folder, int scroll, const int *stack, int stack_len) {
+	if (!file || !file[0] || !folder || !folder[0] || strlen(folder) >= STATE_PATH_MAX || stack_len < 0 || stack_len > BROWSER_STATE_STACK_MAX || (stack_len > 0 && !stack)) {
 		return false;
 	}
 
@@ -35,6 +46,10 @@ bool browser_state_save(const char *file, const char *folder, int scroll) {
 	memset(&state, 0, sizeof(state));
 	memcpy(state.magic, STATE_MAGIC, sizeof(state.magic));
 	state.scroll = scroll < 0 ? 0 : scroll;
+	state.stack_len = stack_len;
+	for (int i = 0; i < stack_len; i++) {
+		state.stack[i] = stack[i] < 0 ? 0 : stack[i];
+	}
 	memcpy(state.folder, folder, strlen(folder) + 1);
 
 	FILE *f = fopen(temp, "wb");
@@ -54,25 +69,55 @@ bool browser_state_save(const char *file, const char *folder, int scroll) {
 	return ok;
 }
 
-bool browser_state_load(const char *file, char *folder, size_t size, int *scroll) {
-	if (!file || !folder || !size || !scroll) {
+bool browser_state_load(const char *file, char *folder, size_t size, int *scroll, int *stack, int stack_max, int *stack_len) {
+	if (!file || !folder || !size || !scroll || !stack || !stack_len || stack_max < 0) {
 		return false;
 	}
+	*stack_len = 0;
 
 	FILE *f = fopen(file, "rb");
 	if (!f) {
 		return false;
 	}
-	browser_state_disk_t state;
-	bool ok = fread(&state, sizeof(state), 1, f) == 1 && fgetc(f) == EOF && !ferror(f);
+	unsigned char raw[sizeof(browser_state_disk_t)];
+	size_t n = fread(raw, 1, sizeof(raw), f);
+	bool extra = fgetc(f) != EOF;
+	bool error = ferror(f) != 0;
 	fclose(f);
-
-	if (!ok || memcmp(state.magic, STATE_MAGIC, sizeof(state.magic)) != 0 || !memchr(state.folder, '\0', sizeof(state.folder)) || !state.folder[0] || strlen(state.folder) >= size || state.scroll < 0) {
+	if (extra || error) {
 		return false;
+	}
+
+	browser_state_disk_t state;
+	if (n == sizeof(browser_state_disk_t) && memcmp(raw, STATE_MAGIC, sizeof(STATE_MAGIC)) == 0) {
+		memcpy(&state, raw, sizeof(state));
+	} else if (n == sizeof(browser_state_disk_v1_t) && memcmp(raw, STATE_MAGIC_V1, sizeof(STATE_MAGIC_V1)) == 0) {
+		browser_state_disk_v1_t old;
+		memcpy(&old, raw, sizeof(old));
+		memset(&state, 0, sizeof(state));
+		memcpy(state.magic, STATE_MAGIC, sizeof(state.magic));
+		state.scroll = old.scroll;
+		memcpy(state.folder, old.folder, sizeof(state.folder));
+	} else {
+		return false;
+	}
+
+	int count = state.stack_len;
+	if (state.scroll < 0 || count < 0 || count > BROWSER_STATE_STACK_MAX || count > stack_max || !memchr(state.folder, '\0', sizeof(state.folder)) || !state.folder[0] || strlen(state.folder) >= size) {
+		return false;
+	}
+	for (int i = 0; i < count; i++) {
+		if (state.stack[i] < 0) {
+			return false;
+		}
 	}
 
 	memcpy(folder, state.folder, strlen(state.folder) + 1);
 	*scroll = state.scroll;
+	for (int i = 0; i < count; i++) {
+		stack[i] = state.stack[i];
+	}
+	*stack_len = count;
 	return true;
 }
 
@@ -124,14 +169,20 @@ bool browser_state_directory(const char *root, const char *folder, char *out, si
 	return n >= 0 && (size_t)n < size;
 }
 
-bool browser_state_choose(const char *root, const char *saved, int saved_scroll, const char *track, char *out, size_t size, int *scroll) {
+bool browser_state_choose(const char *root, const char *saved, int saved_scroll, const char *track, char *out, size_t size, int *scroll, bool *used_saved) {
 	if (!root || !out || !size || !scroll) {
 		return false;
 	}
 
 	*scroll = 0;
+	if (used_saved) {
+		*used_saved = false;
+	}
 	if (saved && browser_state_directory(root, saved, out, size)) {
 		*scroll = saved_scroll > 0 ? saved_scroll : 0;
+		if (used_saved) {
+			*used_saved = true;
+		}
 		return true;
 	}
 

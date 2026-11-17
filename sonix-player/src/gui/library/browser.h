@@ -39,6 +39,9 @@ void browser_open_dir_public(const char *path);
 #ifdef HOST_BUILD
 // Simulator-only: scroll the current listing to `y`, as a finger would.
 void browser_test_scroll(int y);
+// Simulator-only: take the folder branch of a row tap, so the ancestor scroll
+// is pushed the same way a finger entering a folder would push it.
+void browser_test_open_child(const char *path);
 #endif
 
 #endif /* BROWSER_H */
