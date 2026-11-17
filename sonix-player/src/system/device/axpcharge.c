@@ -89,7 +89,7 @@ static bool voltage_seen;
 // page is not required for the DAC toggle to work.
 static bool charge_known;
 static bool charge_wanted_off;		 // the state the tick keeps enforcing
-static bool charge_saved_bit = true; // REG18h[1] as found before we cleared it
+static bool charge_saved_bit = true; // REG18h[1] before the first stop; always 1 (see below)
 static bool charge_blocked;			 // last state the PMIC confirmed
 static long long charge_next_ms;
 
@@ -314,13 +314,13 @@ static bool charge_apply_locked(bool reassert, bool quiet) {
 }
 
 // The release both variants share, with the lock already held. A failed write
-// stays queued: the deadline is a second away, and the tick keeps trying until
-// the PMIC confirms it.
+// stays queued: the deadline is the usual re-assert period away, and the tick
+// keeps trying until the PMIC confirms it.
 static bool charge_release_locked(bool quiet) {
 	charge_wanted_off = false;
 	charge_known = true;
 	bool ok = charge_apply_locked(false, quiet);
-	charge_next_ms = now_ms() + (ok ? REASSERT_MS : CHARGE_REASSERT_MS);
+	charge_next_ms = now_ms() + REASSERT_MS;
 	return ok;
 }
 
@@ -347,8 +347,9 @@ bool axpcharge_set_charging(bool on) {
 	}
 
 	// First stop: remember the bit, so allowing charging again can put back
-	// what was there. A clear bit found at startup is stale, not healthy, and
-	// counts as set.
+	// what was there. A clear bit found before the first stop is stale, not
+	// healthy (startup releases charging before any DAC mode can exist), so it
+	// still counts as set: charge_saved_bit therefore always ends up 1.
 	if (!on && !charge_known) {
 		uint8_t v;
 		if (!axp_read(AXP_REG_MODULE, &v)) {
@@ -357,8 +358,6 @@ bool axpcharge_set_charging(bool on) {
 		}
 		charge_saved_bit = (v & AXP_MODULE_CHARGE) != 0;
 		if (!charge_saved_bit) {
-			// A clear bit found before any DAC mode can exist is the stale
-			// state, not the healthy one: startup releases charging first.
 			charge_saved_bit = true;
 		}
 	}
@@ -435,10 +434,11 @@ void axpcharge_tick(void) {
 
 	// Its own pass: the caps keep their five seconds, but a stop is re-asserted
 	// every second, because the driver can set the bit again after a gauge
-	// reset. A failed attempt stays due, so the next tick retries it.
+	// reset. Everything else, a failed release included, waits the usual five:
+	// only a requested stop earns the fast period.
 	if (charge_known && now >= charge_next_ms) {
-		bool ok = charge_apply_locked(true, false);
-		charge_next_ms = now_ms() + (ok && !charge_wanted_off ? REASSERT_MS : CHARGE_REASSERT_MS);
+		charge_apply_locked(true, false);
+		charge_next_ms = now_ms() + (charge_wanted_off ? CHARGE_REASSERT_MS : REASSERT_MS);
 	}
 
 	pthread_mutex_unlock(&axp_lock);
