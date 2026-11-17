@@ -1671,6 +1671,11 @@ static void batch_retry_cb(void *user) {
 }
 
 static void batch_start(bool retry_only) {
+	if (coverfetch_batch_running()) {
+		// A cancelled worker can still be finishing a request. Starting now
+		// would give two workers one progress card and mixed counts.
+		return;
+	}
 	int missing = coverfetch_batch_missing();
 	if (missing <= 0 && !retry_only) {
 		toast_plain("coverfetch_batch_none");

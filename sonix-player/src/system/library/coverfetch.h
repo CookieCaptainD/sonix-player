@@ -81,7 +81,12 @@ int coverfetch_batch_missing(void);
 void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user);
 
 // Asks a running batch to stop before its next job. Safe to call from the
-// progress callback.
+// progress callback. A cancel reaches only that run; starting another batch
+// before it exits is refused.
 void coverfetch_batch_cancel(void);
+
+// True while a batch worker is still alive, including after a cancel while it
+// finishes its current request. Check before showing progress for a new run.
+bool coverfetch_batch_running(void);
 
 #endif /* COVERFETCH_H */

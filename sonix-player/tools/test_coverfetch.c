@@ -477,6 +477,63 @@ static void batch_cancel_stops_and_keeps_saved(void) {
 	CHECK(stopped && quiet && save_file_exists(), "batch_cancel_stops_and_keeps_saved");
 }
 
+// 14. A second run attempted from inside a live worker's progress callback is
+// refused: it must add no callback and no HTTP call, and the running guard must
+// still describe the original run. This pins the overlap guard without threads.
+typedef struct {
+	int callbacks;
+	int nested_callbacks;
+	int calls_at_nested;
+	bool running_at_nested;
+} batch_guard_ctx_t;
+
+static void batch_nested_cb(const coverfetch_progress_t *p, void *user) {
+	(void)p;
+	batch_guard_ctx_t *g = user;
+	g->nested_callbacks++;
+}
+
+static void batch_guard_cb(const coverfetch_progress_t *p, void *user) {
+	batch_guard_ctx_t *g = user;
+	g->callbacks++;
+	if (p->done != 1) {
+		return;
+	}
+	coverfetch_job_t nested[2];
+	memset(nested, 0, sizeof(nested));
+	for (int i = 0; i < 2; i++) {
+		snprintf(nested[i].album, sizeof(nested[i].album), "Nested %d", i);
+		snprintf(nested[i].artist, sizeof(nested[i].artist), "Artist");
+		snprintf(nested[i].path, sizeof(nested[i].path), "/tmp/music/Nested %d/track.mp3", i);
+	}
+	g->calls_at_nested = coverfetch_test_calls();
+	g->running_at_nested = coverfetch_batch_running();
+	coverfetch_batch_run(nested, 2, batch_nested_cb, g);
+}
+
+static void batch_overlap_is_refused(void) {
+	coverfetch_job_t jobs[2];
+	memset(jobs, 0, sizeof(jobs));
+	for (int i = 0; i < 2; i++) {
+		snprintf(jobs[i].album, sizeof(jobs[i].album), "Overlap %d", i);
+		snprintf(jobs[i].artist, sizeof(jobs[i].artist), "Artist");
+		snprintf(jobs[i].path, sizeof(jobs[i].path), "/tmp/music/Overlap %d/track.mp3", i);
+	}
+
+	save_reset();
+	coverfetch_test_set_alternating(true);
+
+	batch_guard_ctx_t g;
+	memset(&g, 0, sizeof(g));
+	coverfetch_batch_run(jobs, 2, batch_guard_cb, &g);
+
+	// Job 1 costs a search + a download, job 2 only a search: three calls.
+	// The nested run must add none of its own.
+	bool refused = g.callbacks == 2 && g.nested_callbacks == 0 && g.running_at_nested &&
+				   g.calls_at_nested == 2 && coverfetch_test_calls() == 3;
+	CHECK(refused && !coverfetch_batch_running(), "batch_overlap_is_refused");
+}
+
 int main(void) {
 	save_dir_setup();
 	case_query_encodes_album_and_artist();
@@ -492,6 +549,7 @@ int main(void) {
 	case_save_replaces_when_asked();
 	case_save_temp_paths_are_unique();
 	batch_cancel_stops_and_keeps_saved();
+	batch_overlap_is_refused();
 
 	char path[600];
 	save_target(path, sizeof(path), "");

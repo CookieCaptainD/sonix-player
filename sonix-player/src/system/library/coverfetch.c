@@ -53,10 +53,6 @@ static unsigned long save_seq = 0;
 static char negative_keys[COVERFETCH_MAX_KEYS][640];
 static int negative_count = 0;
 
-// Set by coverfetch_batch_cancel(), read by the one batch worker. Volatile is
-// enough for a flag that is only ever set, never used to hand over data.
-static volatile bool batch_cancel = false;
-
 #ifdef COVERFETCH_TEST
 static int records_outstanding = 0;
 static char test_save_dir[1024];
@@ -389,7 +385,34 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 // the caller's callback, which posts it to the interface thread.
 // ---------------------------------------------------------------------------
 
-void coverfetch_batch_cancel(void) { batch_cancel = true; }
+typedef struct {
+	coverfetch_job_t *jobs;
+	int count;
+	coverfetch_progress_cb cb;
+	void *user;
+	volatile bool cancel; // this run's token; a new run never resets it
+} batch_ctx_t;
+
+// One batch at a time. The pointer is both the running guard and the way cancel
+// reaches the live run. A cancelled worker may still be inside a request for
+// seconds; until it exits it owns this slot, so no second worker can start.
+static pthread_mutex_t batch_lock = PTHREAD_MUTEX_INITIALIZER;
+static batch_ctx_t *batch_current; // guarded by batch_lock
+
+bool coverfetch_batch_running(void) {
+	pthread_mutex_lock(&batch_lock);
+	bool running = batch_current != NULL;
+	pthread_mutex_unlock(&batch_lock);
+	return running;
+}
+
+void coverfetch_batch_cancel(void) {
+	pthread_mutex_lock(&batch_lock);
+	if (batch_current) {
+		batch_current->cancel = true;
+	}
+	pthread_mutex_unlock(&batch_lock);
+}
 
 #ifndef COVERFETCH_TEST
 // An album row already carries one representative track in `path` (see
@@ -422,12 +445,16 @@ int coverfetch_batch_missing(void) {
 int coverfetch_batch_missing(void) { return 0; }
 #endif
 
-typedef struct {
-	coverfetch_job_t *jobs;
-	int count;
-	coverfetch_progress_cb cb;
-	void *user;
-} batch_ctx_t;
+// Give the slot back on every exit path, then drop this run's memory.
+static void batch_release(batch_ctx_t *ctx) {
+	pthread_mutex_lock(&batch_lock);
+	if (batch_current == ctx) {
+		batch_current = NULL;
+	}
+	pthread_mutex_unlock(&batch_lock);
+	free(ctx->jobs);
+	free(ctx);
+}
 
 static void *batch_worker(void *arg) {
 	batch_ctx_t *ctx = arg;
@@ -440,7 +467,7 @@ static void *batch_worker(void *arg) {
 	p.total = ctx->count;
 
 	for (int i = 0; i < ctx->count; i++) {
-		if (batch_cancel) {
+		if (ctx->cancel) {
 			break;
 		}
 		const coverfetch_job_t *job = &ctx->jobs[i];
@@ -464,17 +491,16 @@ static void *batch_worker(void *arg) {
 
 		// Check again after the blocking work: a cancel during the request
 		// stops here rather than posting an answer nobody wants.
-		if (batch_cancel) {
+		if (ctx->cancel) {
 			break;
 		}
 		if (ctx->cb) {
-			p.cancelled = batch_cancel;
+			p.cancelled = ctx->cancel;
 			ctx->cb(&p, ctx->user);
 		}
 	}
 
-	free(ctx->jobs);
-	free(ctx);
+	batch_release(ctx);
 	return NULL;
 }
 
@@ -482,7 +508,6 @@ void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_pr
 	if (!jobs || count <= 0) {
 		return;
 	}
-	batch_cancel = false;
 
 	batch_ctx_t *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
@@ -498,13 +523,31 @@ void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_pr
 	ctx->cb = cb;
 	ctx->user = user;
 
+	// Claim the slot only if the previous run has really exited. Rejecting here
+	// keeps a late cancel from reviving a worker that is still winding down.
+	pthread_mutex_lock(&batch_lock);
+	if (batch_current) {
+		pthread_mutex_unlock(&batch_lock);
+		free(ctx->jobs);
+		free(ctx);
+		return;
+	}
+	batch_current = ctx;
+	pthread_mutex_unlock(&batch_lock);
+
 #ifdef COVERFETCH_TEST
 	// Deterministic for the host test: run to completion on this thread so the
 	// case can inspect the final progress and the stub's call count directly.
-	batch_worker(ctx);
+	batch_worker(ctx); // releases the slot through batch_release()
 #else
 	pthread_t thread;
 	if (pthread_create(&thread, NULL, batch_worker, ctx) != 0) {
+		// No worker will run to release the slot, so do it here.
+		pthread_mutex_lock(&batch_lock);
+		if (batch_current == ctx) {
+			batch_current = NULL;
+		}
+		pthread_mutex_unlock(&batch_lock);
 		free(ctx->jobs);
 		free(ctx);
 		return;
