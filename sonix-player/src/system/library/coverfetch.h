@@ -53,4 +53,35 @@ void coverfetch_negative_clear(void); // test hook: forget every miss
 // A stable, case-folded key for an album and artist: "<album>|<artist>".
 void coverfetch_key(char *out, size_t size, const char *album, const char *artist);
 
+// Batch download: one album in each job, walked in order on a single worker.
+// path is a representative track, dir the album folder (empty derives it from
+// the track).
+typedef struct {
+	char album[256];
+	char artist[256];
+	char path[1024];
+	char dir[1024];
+} coverfetch_job_t;
+
+// A progress post. done counts jobs finished (found plus not_found); cancelled
+// is set once a batch has been asked to stop.
+typedef struct {
+	int total, done, found, not_found;
+	bool cancelled;
+} coverfetch_progress_t;
+
+typedef void (*coverfetch_progress_cb)(const coverfetch_progress_t *p, void *user);
+
+// How many albums in the library have no cover on their first track.
+int coverfetch_batch_missing(void);
+
+// Runs the jobs on a detached background thread, posting progress through cb
+// after each one. The jobs are copied, so the caller's array may go away as
+// soon as this returns. One request at a time, shared with the other callers.
+void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user);
+
+// Asks a running batch to stop before its next job. Safe to call from the
+// progress callback.
+void coverfetch_batch_cancel(void);
+
 #endif /* COVERFETCH_H */

@@ -10,6 +10,9 @@
 #include <unistd.h>
 
 #include "src/system/core/json.h"
+#include "src/system/core/utils.h"
+#include "src/system/library/albumart.h"
+#include "src/system/library/library.h"
 #include "src/system/net/http.h"
 
 #ifndef COVERFETCH_MB_API
@@ -49,6 +52,10 @@ static unsigned long save_seq = 0;
 // albums; when it fills, the oldest miss is dropped.
 static char negative_keys[COVERFETCH_MAX_KEYS][640];
 static int negative_count = 0;
+
+// Set by coverfetch_batch_cancel(), read by the one batch worker. Volatile is
+// enough for a flag that is only ever set, never used to hand over data.
+static volatile bool batch_cancel = false;
 
 #ifdef COVERFETCH_TEST
 static int records_outstanding = 0;
@@ -371,4 +378,137 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 		return false;
 	}
 	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Batch download
+//
+// One worker walks the jobs in order, sharing the single request lock with the
+// other callers. It copies the jobs so a page that started the batch can go
+// away without leaving the worker holding freed memory. Progress goes through
+// the caller's callback, which posts it to the interface thread.
+// ---------------------------------------------------------------------------
+
+void coverfetch_batch_cancel(void) { batch_cancel = true; }
+
+#ifndef COVERFETCH_TEST
+// An album row already carries one representative track in `path` (see
+// library.c:2482). Use it directly: library_for_each() holds the index lock
+// while calling back, so a nested walk here would deadlock.
+static bool missing_album_cb(const char *name, const char *path, const char *artist, void *user) {
+	(void)name;
+	(void)artist;
+	int *missing = user;
+	if (!path || !path[0]) {
+		return true;
+	}
+	albumart_t art;
+	memset(&art, 0, sizeof(art));
+	bool has_art = albumart_load_for_file(path, &art);
+	albumart_free(&art);
+	if (!has_art) {
+		(*missing)++;
+	}
+	return true;
+}
+
+int coverfetch_batch_missing(void) {
+	int missing = 0;
+	library_for_each(LIBRARY_LIST_ALBUMS, LIBRARY_FILTER_NONE, NULL, missing_album_cb, &missing);
+	return missing;
+}
+#else
+// The host test drives jobs directly and does not pull in the library.
+int coverfetch_batch_missing(void) { return 0; }
+#endif
+
+typedef struct {
+	coverfetch_job_t *jobs;
+	int count;
+	coverfetch_progress_cb cb;
+	void *user;
+} batch_ctx_t;
+
+static void *batch_worker(void *arg) {
+	batch_ctx_t *ctx = arg;
+#ifndef COVERFETCH_TEST
+	thread_be_background("cover fetch");
+#endif
+
+	coverfetch_progress_t p;
+	memset(&p, 0, sizeof(p));
+	p.total = ctx->count;
+
+	for (int i = 0; i < ctx->count; i++) {
+		if (batch_cancel) {
+			break;
+		}
+		const coverfetch_job_t *job = &ctx->jobs[i];
+		char key[640];
+		coverfetch_key(key, sizeof(key), job->album, job->artist);
+		if (coverfetch_negative_has(key)) {
+			// An earlier run already asked about this album and got nothing.
+			p.not_found++;
+		} else {
+			coverfetch_record_t *records = NULL;
+			int count = 0;
+			coverfetch_result_t r = coverfetch_search(job->album, job->artist, "", &records, &count);
+			if (r == COVERFETCH_OK && count > 0 && coverfetch_save(job->path, job->dir, &records[0], false)) {
+				p.found++;
+			} else {
+				p.not_found++;
+			}
+			coverfetch_free(records, count);
+		}
+		p.done++;
+
+		// Check again after the blocking work: a cancel during the request
+		// stops here rather than posting an answer nobody wants.
+		if (batch_cancel) {
+			break;
+		}
+		if (ctx->cb) {
+			p.cancelled = batch_cancel;
+			ctx->cb(&p, ctx->user);
+		}
+	}
+
+	free(ctx->jobs);
+	free(ctx);
+	return NULL;
+}
+
+void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user) {
+	if (!jobs || count <= 0) {
+		return;
+	}
+	batch_cancel = false;
+
+	batch_ctx_t *ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		return;
+	}
+	ctx->jobs = calloc((size_t)count, sizeof(*ctx->jobs));
+	if (!ctx->jobs) {
+		free(ctx);
+		return;
+	}
+	memcpy(ctx->jobs, jobs, (size_t)count * sizeof(*jobs));
+	ctx->count = count;
+	ctx->cb = cb;
+	ctx->user = user;
+
+#ifdef COVERFETCH_TEST
+	// Deterministic for the host test: run to completion on this thread so the
+	// case can inspect the final progress and the stub's call count directly.
+	batch_worker(ctx);
+#else
+	pthread_t thread;
+	if (pthread_create(&thread, NULL, batch_worker, ctx) != 0) {
+		free(ctx->jobs);
+		free(ctx);
+		return;
+	}
+	pthread_detach(thread);
+#endif
 }
