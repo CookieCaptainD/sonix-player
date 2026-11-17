@@ -210,12 +210,21 @@ static void row_bind(row_t *row, int index) {
 	lv_obj_set_hidden(row->button, false);
 	lv_obj_set_y(row->button, index * ROW_HEIGHT);
 	lv_label_set_text(row->label, album->name);
-	lv_label_set_text(row->artist, album->artist);
-	// A missing album keeps its stored names but wears the quiet colour: it
-	// is still in the collection, only not on the card any more.
+	// A missing album keeps its stored names but wears the quiet colour and
+	// says so under the title: it is still in the collection, only not on the
+	// card any more.
 	if (album->missing) {
+		char detail[384];
+		const char *note = tr("collection_not_in_library");
+		if (album->artist[0]) {
+			snprintf(detail, sizeof(detail), "%s - %s", album->artist, note);
+		} else {
+			snprintf(detail, sizeof(detail), "%s", note);
+		}
+		lv_label_set_text(row->artist, detail);
 		lv_obj_add_style(row->label, &theme_style_text_dim, 0);
 	} else {
+		lv_label_set_text(row->artist, album->artist);
 		lv_obj_remove_style(row->label, &theme_style_text_dim, 0);
 	}
 
