@@ -249,6 +249,7 @@ void theme_init(void) {
 	// A custom colour rides beside the preset. A missing or damaged value is
 	// not an error: the player simply comes up on the preset, never on no
 	// accent at all.
+	custom_color = ACCENT_COLORS[accent_index];
 	custom_active = config_get_bool("ui", "accent_custom", false);
 	if (custom_active) {
 		lv_color_t stored;

@@ -10,10 +10,7 @@ static float linear_channel(uint8_t channel) {
 	return c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
 }
 
-static float relative_luminance(lv_color_t c) {
-	return 0.2126f * linear_channel(c.red) + 0.7152f * linear_channel(c.green) +
-		   0.0722f * linear_channel(c.blue);
-}
+static float relative_luminance(lv_color_t c) { return 0.2126f * linear_channel(c.red) + 0.7152f * linear_channel(c.green) + 0.0722f * linear_channel(c.blue); }
 
 lv_color_t theme_color_hsv(uint16_t hue, uint8_t sat, uint8_t val) {
 	if (sat == 0) {
@@ -143,7 +140,6 @@ bool theme_color_parse_rgb(long value, lv_color_t *out) {
 	if (!out || value < 0 || value > 0xFFFFFFL) {
 		return false;
 	}
-	*out = lv_color_make((uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 8) & 0xFF),
-						 (uint8_t)(value & 0xFF));
+	*out = lv_color_make((uint8_t)((value >> 16) & 0xFF), (uint8_t)((value >> 8) & 0xFF), (uint8_t)(value & 0xFF));
 	return true;
 }
