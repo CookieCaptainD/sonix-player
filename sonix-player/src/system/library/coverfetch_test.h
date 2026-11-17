@@ -1,18 +1,27 @@
 #ifndef COVERFETCH_TEST_H
 #define COVERFETCH_TEST_H
 
+#include <stddef.h>
+
 // Test-only hooks, compiled with COVERFETCH_TEST beside HOST_BUILD. No product
 // build defines COVERFETCH_TEST.
 //
 // The stub controls are implemented in tools/test_coverfetch.c, beside the
-// HTTP state they drive; the record counter lives in coverfetch.c under
-// COVERFETCH_TEST so a "no result" path can be checked for leaks.
+// HTTP state they drive; the record counter and the save-folder override live
+// in coverfetch.c under COVERFETCH_TEST, where the code they observe lives.
 
 void coverfetch_test_reset(void);
 void coverfetch_test_set_body(const char *body);
 void coverfetch_test_set_status(int status);
 int coverfetch_test_calls(void);
 const char *coverfetch_test_url(void);
+
+// A binary download body with an explicit length, for coverfetch_save().
+void coverfetch_test_set_download(const void *data, size_t len);
+
+// Send every save to this folder instead of deriving one from the track path.
+// Implemented beside coverfetch_save() in coverfetch.c.
+void coverfetch_test_set_dir(const char *dir);
 
 int coverfetch_test_outstanding_records(void);
 

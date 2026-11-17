@@ -33,6 +33,13 @@ coverfetch_result_t coverfetch_search(const char *album, const char *artist, con
 
 void coverfetch_free(coverfetch_record_t *records, int count);
 
+// Downloads a record's image and writes it as cover.jpg in dir_path, or in the
+// folder of track_path when dir_path is empty. An existing cover.jpg is never
+// overwritten unless replace is true. Returns true only when this call wrote a
+// new file: a network error, a body over 4 MB, bytes that are not a supported
+// image, or a filesystem error all leave the target untouched.
+bool coverfetch_save(const char *track_path, const char *dir_path, const coverfetch_record_t *record, bool replace);
+
 // Builds "query=release:<album> AND artist:<artist>" for the MusicBrainz ws/2
 // release search, with every space encoded as %20 (values and separator).
 void coverfetch_mb_query(char *out, size_t size, const char *album, const char *artist);
