@@ -658,10 +658,11 @@ Model it on `playlistpage.c`:
   worker with `thread_be_low_priority("collectionadd")`.
 - The worker calls `collections_add_albums()`; `gui_post()` the done callback
   (retry a few times if the queue is full, as the import worker does).
-- Done callback: `toast_busy_end()`; choose `collection_added`,
-  `collection_some_not_added`, `collection_already_there` (added 0, all
-  skipped as duplicates), or `collection_cannot_add`; free the batch;
-  `back_btn_cb(NULL)` when returning to the caller.
+- Done callback: `toast_busy_end()`; choose `collection_added` (all added),
+  `collection_some_not_added` (some added), or `collection_cannot_add`
+  (nothing added; the counts do not distinguish duplicates from refused
+  values, so do not claim a reason); free the batch; `back_btn_cb(NULL)` when
+  returning to the caller.
 - Free pending values on screen unload/next open.
 
 - [ ] **Step 5: Build**
@@ -731,7 +732,7 @@ Add a `; --- collections` block to all 12 files in both trees with:
 `collection_no_albums`, `collection_albums`, `collection_album`,
 `collection_add_to_collection`, `collection_added`,
 `collection_some_not_added`, `collection_cannot_add`,
-`collection_already_there`, `collection_remove_album`, `collection_removed`,
+`collection_remove_album`, `collection_removed`,
 `collection_not_in_library`, `collection_missing_note`,
 `collection_delete_title`, `collection_delete_message`,
 `collection_cannot_delete`, `collection_name_taken`,
@@ -746,7 +747,7 @@ name.
 - [ ] **Step 4: Check every file has every key**
 
 ```bash
-keys="collections collection_new collection_name collection_empty_note collection_no_albums collection_albums collection_album collection_add_to_collection collection_added collection_some_not_added collection_cannot_add collection_already_there collection_remove_album collection_removed collection_not_in_library collection_missing_note collection_delete_title collection_delete_message collection_cannot_delete collection_name_taken collection_cannot_create collection_cannot_rename collection_play collection_loading collection_cannot_play"
+keys="collections collection_new collection_name collection_empty_note collection_no_albums collection_albums collection_album collection_add_to_collection collection_added collection_some_not_added collection_cannot_add collection_remove_album collection_removed collection_not_in_library collection_missing_note collection_delete_title collection_delete_message collection_cannot_delete collection_name_taken collection_cannot_create collection_cannot_rename collection_play collection_loading collection_cannot_play"
 for f in sonix-packer/assets/*/usr/resource/sonix/language/*.ini; do
   for k in $keys; do grep -q "^$k = " "$f" || echo "missing $k in $f"; done
 done

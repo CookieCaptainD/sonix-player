@@ -370,7 +370,9 @@ system layer validates again.
   `write_row()` / `write_end()`. One item lives at a time; the whole selection
   is one transaction.
 - Report added/skipped; the UI distinguishes "all added", "some added", and
-  "nothing added". Duplicates are skipped, not errors.
+  "nothing added". `skipped` includes both refused values and duplicates, so a
+  caller must not infer the reason from the counts. Duplicates are skipped, not
+  errors.
 
 `collections_albums_page()`:
 
@@ -607,7 +609,7 @@ New language keys (names indicative; keep the `collection_` prefix):
 `collection_no_albums`, `collection_albums`, `collection_album`,
 `collection_add_to_collection`, `collection_added`,
 `collection_some_not_added`, `collection_cannot_add`,
-`collection_already_there`, `collection_remove_album`, `collection_removed`,
+`collection_remove_album`, `collection_removed`,
 `collection_not_in_library`, `collection_missing_note`,
 `collection_delete_title`, `collection_delete_message`,
 `collection_cannot_delete`, `collection_name_taken`,
