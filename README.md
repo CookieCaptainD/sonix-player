@@ -226,6 +226,31 @@ script execs it, and it runs the player as its child and does `sleep 1; reboot`
 when the player exits - what the rest of the script would do, without a shell
 sitting in memory for the whole session.
 
+### Trying a build without flashing
+
+You can run a `make target` binary on the device over ADB. @sandreas asked for
+this in #147. The helper is `sonix-player/tools/sonix_devrun.sh`.
+
+1. Turn on ADB: Settings > About, tap Build number five times, then Settings >
+   Developer options > ADB.
+2. Push the helper and the binary:
+   `adb push sonix-player/tools/sonix_devrun.sh /tmp/sonix_devrun.sh`
+   `adb push sonix-player/sonix_player /tmp/sonix_player`
+3. Make the helper executable and check the binary:
+   `adb shell chmod 755 /tmp/sonix_devrun.sh`
+   `adb shell /tmp/sonix_devrun.sh --check /tmp/sonix_player`
+4. Run the build: `adb shell /tmp/sonix_devrun.sh /tmp/sonix_player`
+
+The helper stops `sonix_launch` and `sonix_player`, copies the binary to
+`/tmp`, runs it in the foreground, and reboots when it exits. The ADB shell
+shows stdout and stderr. Turn on "Log to microSD" in Developer options if you
+want the player's own log.
+
+The helper rejects a file outside 1-32 MiB or without a 32-bit MIPS ELF header.
+It writes nothing to the root filesystem, so the installed build stays
+untouched. If the binary crashes or the device hangs, power-cycle or use
+Vol+ + Power recovery. No flash is needed.
+
 
 ## Creating the firmware image
 
