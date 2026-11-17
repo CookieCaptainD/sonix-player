@@ -81,7 +81,8 @@ static int accent_index;
 
 // The user's own accent, chosen on the picker page. `custom_active` says
 // whether it is the one in force; the colour itself is kept even while a
-// preset is selected, so reopening the picker starts where it was left.
+// preset is selected, so turning custom back on does not lose it. The
+// picker itself seeds from whichever accent is live.
 static bool custom_active;
 static lv_color_t custom_color;
 
