@@ -2322,28 +2322,75 @@ void player_cover_reload(const char *path) {
 	reload_cover(path);
 }
 
-// One of several releases: this copy carries the path it was searched for, so
-// a track change while the list is up cannot save its cover onto the next one.
+// One cover to write: the path it was searched for and a copy of the chosen
+// record. coverfetch_save() blocks on the network, so it runs on a worker;
+// only the answer comes back to the interface thread.
 typedef struct {
 	char path[1024];
 	coverfetch_record_t record;
-} coverfetch_find_pick_t;
+	bool saved;
+} coverfetch_find_save_t;
 
-static void coverfetch_find_pick_cb(void *user) {
-	coverfetch_find_pick_t *pick = user;
+static void coverfetch_find_saved(void *user) {
+	coverfetch_find_save_t *save = user;
 	device_state_t state;
 	device_state_get(&state);
-	if (strcmp(state.current_file, pick->path) != 0) {
-		free(pick);
+	// A track change during the write leaves the file in place, but nothing is
+	// shown for a cover that is no longer the one playing.
+	if (strcmp(state.current_file, save->path) == 0) {
+		if (save->saved) {
+			player_cover_reload(save->path);
+			toast_success("coverfetch_find_saved");
+		} else {
+			toast_error("coverfetch_find_failed");
+		}
+	}
+	free(save);
+}
+
+static void *coverfetch_find_save_worker(void *arg) {
+	coverfetch_find_save_t *save = arg;
+	save->saved = coverfetch_save(save->path, "", &save->record, false);
+	if (!gui_post(coverfetch_find_saved, save)) {
+		free(save);
+	}
+	return NULL;
+}
+
+// Takes ownership of `save`, whether or not the thread starts.
+static void coverfetch_find_save_dispatch(coverfetch_find_save_t *save) {
+	pthread_t thread;
+	if (pthread_create(&thread, NULL, coverfetch_find_save_worker, save) != 0) {
+		free(save);
+		toast_error("coverfetch_find_failed");
 		return;
 	}
-	if (coverfetch_save(pick->path, "", &pick->record, false)) {
-		player_cover_reload(pick->path);
-		toast_success("coverfetch_find_saved");
-	} else {
+	pthread_detach(thread);
+}
+
+// Copies the record so the caller can free its list while the write is running.
+static void coverfetch_find_save_async(const char *path, const coverfetch_record_t *record) {
+	coverfetch_find_save_t *save = calloc(1, sizeof(*save));
+	if (!save) {
 		toast_error("coverfetch_find_failed");
+		return;
 	}
-	free(pick);
+	snprintf(save->path, sizeof(save->path), "%s", path);
+	save->record = *record;
+	coverfetch_find_save_dispatch(save);
+}
+
+// A chosen release from the list: the check keeps a track change while the list
+// was up from writing its cover onto the next track.
+static void coverfetch_find_pick_cb(void *user) {
+	coverfetch_find_save_t *save = user;
+	device_state_t state;
+	device_state_get(&state);
+	if (strcmp(state.current_file, save->path) != 0) {
+		free(save);
+		return;
+	}
+	coverfetch_find_save_dispatch(save);
 }
 
 // Up to five choices in the popover the player already uses for a choice
@@ -2353,15 +2400,15 @@ static void coverfetch_find_choices(const coverfetch_find_job_t *job) {
 	popover_item_t items[CHOICES] = {0};
 	int shown = 0;
 	for (int i = 0; i < job->count && shown < CHOICES; i++) {
-		coverfetch_find_pick_t *pick = malloc(sizeof(*pick));
-		if (!pick) {
+		coverfetch_find_save_t *save = calloc(1, sizeof(*save));
+		if (!save) {
 			break;
 		}
-		snprintf(pick->path, sizeof(pick->path), "%s", job->path);
-		pick->record = job->records[i];
-		items[shown].label = pick->record.source;
+		snprintf(save->path, sizeof(save->path), "%s", job->path);
+		save->record = job->records[i];
+		items[shown].label = save->record.source;
 		items[shown].action = coverfetch_find_pick_cb;
-		items[shown].user = pick;
+		items[shown].user = save;
 		shown++;
 	}
 	if (!shown) {
@@ -2386,12 +2433,7 @@ static void coverfetch_find_fetched(void *user) {
 			break;
 		}
 		if (job->count == 1) {
-			if (coverfetch_save(job->path, "", &job->records[0], false)) {
-				player_cover_reload(job->path);
-				toast_success("coverfetch_find_saved");
-			} else {
-				toast_error("coverfetch_find_failed");
-			}
+			coverfetch_find_save_async(job->path, &job->records[0]);
 		} else {
 			coverfetch_find_choices(job);
 		}
