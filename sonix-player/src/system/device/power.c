@@ -397,6 +397,14 @@ bool power_charging_release(void) {
 	// before the early return below -- and it is the safety variant, whose retry
 	// stays queued for the tick, rather than the user's own request.
 	bool ok = axpcharge_charging_control_supported() ? axpcharge_charging_release() : true;
+
+	// The block belongs to DAC mode and must not outlive it: apply_charge_limit()
+	// reads it on the next tick and would write the MP2731 back off behind this
+	// release, leaving normal mode not charging until the next reboot.
+	if (ok) {
+		g_charging_blocked = false;
+	}
+
 	find_charge_node();
 	if (!g_charge_node) {
 		return ok;
@@ -414,6 +422,13 @@ bool power_charging_release_quiet(void) {
 	if (axpcharge_charging_control_supported()) {
 		ok = axpcharge_charging_release_quiet();
 	}
+
+	// Same as the safe variant: a block left in place would come back as a
+	// charger write on the next tick.
+	if (ok) {
+		g_charging_blocked = false;
+	}
+
 	find_charge_node();
 	if (g_charge_node) {
 		charger_run(true);

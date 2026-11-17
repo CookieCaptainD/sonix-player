@@ -421,7 +421,8 @@ static bool apply_charging(bool on) {
 		system_suppress_charging(!on);
 	}
 	printf("usbdac: charging %s while in DAC mode\n",
-	       on ? "allowed" : ok ? "held off" : "could not be held off");
+	       on ? (ok ? "allowed" : "could not be resumed")
+	          : (ok ? "held off" : "could not be held off"));
 	return ok;
 }
 
@@ -674,10 +675,10 @@ static void *start_main(void *arg) {
 
 failed:
 	// The toggle may already have stopped charging. A start that fails must not
-	// leave the player in normal mode with the cell charger off.
-	if (!power_charging_release()) {
-		system_suppress_charging(true);
-	}
+	// leave the player in normal mode with the cell charger off -- and if the
+	// release succeeded, the indication has to come down with it, exactly as
+	// usbdac_stop() does it.
+	system_suppress_charging(!power_charging_release());
 
 	pthread_mutex_lock(&lock);
 	state.starting = false;
