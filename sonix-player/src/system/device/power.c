@@ -392,13 +392,34 @@ bool power_charging_held(void) {
 
 static void charger_run(bool run);
 
-void power_charging_release(void) {
+bool power_charging_release(void) {
+	// The AXP2101 (R1) has no MP2731 node at all, so its release has to happen
+	// before the early return below -- and it is the safety variant, whose retry
+	// stays queued for the tick, rather than the user's own request.
+	bool ok = axpcharge_charging_control_supported() ? axpcharge_charging_release() : true;
 	find_charge_node();
 	if (!g_charge_node) {
-		return;
+		return ok;
 	}
 	charger_run(true);
 	g_charging_suspended = false;
+	return ok;
+}
+
+// The crash handler's release: the AXP2101 part never blocks on the PMIC lock
+// and never logs (axpcharge_charging_release_quiet), and nothing new is printed
+// here either -- the process is dying and whatever is on the wire matters more.
+bool power_charging_release_quiet(void) {
+	bool ok = true;
+	if (axpcharge_charging_control_supported()) {
+		ok = axpcharge_charging_release_quiet();
+	}
+	find_charge_node();
+	if (g_charge_node) {
+		charger_run(true);
+		g_charging_suspended = false;
+	}
+	return ok;
 }
 
 void power_set_charge_limit(int percent) {
@@ -479,18 +500,32 @@ static void apply_charge_limit(void) {
 // Forbids or allows charging outright, on top of whatever the percentage limit
 // is doing. DAC mode is the one caller: the choice is the user's and the
 // percentage limit must not undo it.
-void power_set_charging_allowed(bool allowed) {
+//
+// On the R1 the PMIC is the charger, so the request goes to it and the read-back
+// is the answer. On the R3 Pro II it stays the MP2731's step-charging bit, as it
+// always was: the answer there is only whether a node was found, because none of
+// those writes reports a result and a false here would turn today's
+// unconditional suppression into a new way for the icon to lie.
+bool power_set_charging_allowed(bool allowed) {
+	if (axpcharge_charging_control_supported()) {
+		g_charging_blocked = !allowed;
+		bool ok = axpcharge_set_charging(allowed);
+		printf("power: charging %s%s\n", allowed ? "allowed" : "forbidden",
+			   ok ? "" : " (the PMIC did not take it)");
+		return ok;
+	}
+
 	find_charge_node();
 	g_charging_blocked = !allowed;
 
 	if (!g_charge_node) {
 		printf("power: charging cannot be controlled on this firmware\n");
-		return;
+		return false;
 	}
 
 	printf("power: charging %s\n", allowed ? "allowed again" : "forbidden");
 	apply_charge_limit(); // one place decides, including this
-
+	return g_charge_node != NULL;
 }
 
 // ---------------------------------------------------------------------------
@@ -1809,6 +1844,12 @@ static void power_timer_cb(lv_timer_t *timer) {
 	apply_charge_limit();
 	axpcharge_tick();
 
+	// A suppression raised at boot when the release failed is stale as soon as
+	// the tick's retry has got the PMIC to confirm it -- but not while DAC mode
+	// is the reason it was raised, which is the user's choice and outlasts it.
+	if (!usbdac_is_active() && axpcharge_charging_control_supported() && !axpcharge_charging_blocked()) {
+		system_suppress_charging(false);
+	}
 }
 
 void power_notify_activity(void) {

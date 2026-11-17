@@ -191,7 +191,16 @@ bool power_charging_held(void);
 // paths that end the player: the charger driver keeps the bit across a
 // shutdown, so a device switched off at its charge limit would come back to a
 // cable that does nothing until the next boot resets the chip.
-void power_charging_release(void);
+//
+// Returns whether the release was handled now: on the AXP2101 (R1) the PMIC's
+// own answer, on the MP2731 (R3 Pro II) whether there was a node to write -- the
+// driver's writes have no result of their own.
+bool power_charging_release(void);
+
+// The same, for the crash handler: the AXP2101 part never blocks on the PMIC
+// lock and never logs, because a crash handler that waits or writes to the log
+// may never finish.
+bool power_charging_release_quiet(void);
 
 // Switches the device off the whole way: the playing position and the clock
 // saved, the streaming caches emptied, the card's databases closed and the
@@ -203,7 +212,11 @@ void power_shutdown(void);
 // DAC mode, where the point of not charging is to keep the charger's noise off
 // the cable. Stopping the charger takes three writes in a set order -- see
 // charger_run() -- and this is the only place that knows them.
-void power_set_charging_allowed(bool allowed);
+//
+// Returns whether the request was carried out: on the AXP2101 (R1) the PMIC read
+// the requested state back, on the MP2731 (R3 Pro II) whether there was a node
+// to write -- a request handled as before, not a verified write.
+bool power_set_charging_allowed(bool allowed);
 
 // Powers the device off after `minutes` with no input and nothing playing.
 void power_set_auto_off(bool enabled, uint32_t minutes);
