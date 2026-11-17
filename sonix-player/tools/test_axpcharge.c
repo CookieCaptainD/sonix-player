@@ -141,10 +141,13 @@ static void case_release_waits_5s(void) {
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_waits_5s starts stopped");
 	axpcharge_test_fail_write(true);
 	CHECK(!axpcharge_charging_release(), "release_waits_5s immediate attempt fails");
+	// Clear the failure before the first tick: with a one-second retry the tick
+	// would now succeed and set the bit, so this check can fail if the cadence
+	// regresses.
+	axpcharge_test_fail_write(false);
 	axpcharge_test_advance_ms(2000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_waits_5s not retried after two seconds");
-	axpcharge_test_fail_write(false);
 	axpcharge_test_advance_ms(4000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_waits_5s retried after five seconds");
