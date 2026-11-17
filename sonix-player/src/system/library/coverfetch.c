@@ -32,8 +32,10 @@
 #endif
 // The JSON is small; a cap keeps a broken server from eating the heap.
 #define COVERFETCH_MAX_BYTES (256 * 1024)
-// An image is capped at 4 MB. Read one byte over so an oversized body is
-// rejected instead of being silently truncated to the cap by http_get_ex().
+// An image is capped at 4 MB. http_get_ex() keeps one byte of the limit for the
+// trailing NUL, so the largest out_len is limit - 1: ask for MAX + 2 to get
+// MAX + 1 back, which the len > MAX check below rejects. MAX + 1 would yield
+// exactly MAX and let an oversized body through as a truncated JPEG.
 #define COVERFETCH_MAX_IMAGE_BYTES (4 * 1024 * 1024)
 #define COVERFETCH_IMAGE_NAME "cover.jpg"
 // PID plus a per-save serial keeps concurrent writers in different processes
@@ -49,9 +51,30 @@ static pthread_mutex_t http_lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned long save_seq = 0;
 
 // "not found" keys. A fixed table is enough for a library of a few hundred
-// albums; when it fills, the oldest miss is dropped.
+// albums; when it fills, the oldest miss is dropped. The batch worker, the Now
+// Playing search worker and the GUI retry clear can all touch this at once, so
+// every access is guarded by its own mutex (http_lock covers HTTP only).
+static pthread_mutex_t negative_lock = PTHREAD_MUTEX_INITIALIZER;
 static char negative_keys[COVERFETCH_MAX_KEYS][640];
 static int negative_count = 0;
+
+// Live search/save operations, counted separately from the batch slot so a
+// single foreground fetch also holds Wi-Fi and suspend off. Its own mutex keeps
+// coverfetch_busy() from blocking behind a request that is sleeping on http_lock.
+static pthread_mutex_t activity_lock = PTHREAD_MUTEX_INITIALIZER;
+static int activity_count = 0;
+
+static void activity_enter(void) {
+	pthread_mutex_lock(&activity_lock);
+	activity_count++;
+	pthread_mutex_unlock(&activity_lock);
+}
+
+static void activity_leave(void) {
+	pthread_mutex_lock(&activity_lock);
+	activity_count--;
+	pthread_mutex_unlock(&activity_lock);
+}
 
 #ifdef COVERFETCH_TEST
 static int records_outstanding = 0;
@@ -67,10 +90,9 @@ void coverfetch_test_set_dir(const char *dir) {
 const char *coverfetch_test_last_temp(void) { return test_save_temp; }
 #endif
 
-bool coverfetch_negative_has(const char *key) {
-	if (!key || !key[0]) {
-		return false;
-	}
+// Called with negative_lock held, so the add path can check for a duplicate
+// without trying to take the same non-recursive mutex twice.
+static bool negative_has_unlocked(const char *key) {
 	for (int i = 0; i < negative_count; i++) {
 		if (strcmp(negative_keys[i], key) == 0) {
 			return true;
@@ -79,19 +101,39 @@ bool coverfetch_negative_has(const char *key) {
 	return false;
 }
 
-void coverfetch_negative_add(const char *key) {
-	if (!key || !key[0] || coverfetch_negative_has(key)) {
-		return;
+bool coverfetch_negative_has(const char *key) {
+	if (!key || !key[0]) {
+		return false;
 	}
-	if (negative_count >= COVERFETCH_MAX_KEYS) {
-		memmove(negative_keys, negative_keys + 1, sizeof(negative_keys) - sizeof(negative_keys[0]));
-		negative_count--;
-	}
-	snprintf(negative_keys[negative_count], sizeof(negative_keys[0]), "%s", key);
-	negative_count++;
+	pthread_mutex_lock(&negative_lock);
+	bool found = negative_has_unlocked(key);
+	pthread_mutex_unlock(&negative_lock);
+	return found;
 }
 
-void coverfetch_negative_clear(void) { negative_count = 0; }
+void coverfetch_negative_add(const char *key) {
+	if (!key || !key[0]) {
+		return;
+	}
+	pthread_mutex_lock(&negative_lock);
+	if (!negative_has_unlocked(key)) {
+		if (negative_count >= COVERFETCH_MAX_KEYS) {
+			memmove(negative_keys, negative_keys + 1, sizeof(negative_keys) - sizeof(negative_keys[0]));
+			negative_count = COVERFETCH_MAX_KEYS - 1; // defensive clamp before the write
+		}
+		if (negative_count < COVERFETCH_MAX_KEYS) {
+			snprintf(negative_keys[negative_count], sizeof(negative_keys[0]), "%s", key);
+			negative_count++;
+		}
+	}
+	pthread_mutex_unlock(&negative_lock);
+}
+
+void coverfetch_negative_clear(void) {
+	pthread_mutex_lock(&negative_lock);
+	negative_count = 0;
+	pthread_mutex_unlock(&negative_lock);
+}
 
 void coverfetch_key(char *out, size_t size, const char *album, const char *artist) {
 	if (!size) {
@@ -161,8 +203,8 @@ static bool api_get(const char *url, char **body, int *status) {
 	return ok;
 }
 
-coverfetch_result_t coverfetch_search(const char *album, const char *artist, const char *title,
-									  coverfetch_record_t **records, int *count) {
+static coverfetch_result_t search_impl(const char *album, const char *artist, const char *title,
+									   coverfetch_record_t **records, int *count) {
 	(void)title; // kept for disambiguation when the result list is ranked
 	*records = NULL;
 	*count = 0;
@@ -253,6 +295,14 @@ coverfetch_result_t coverfetch_search(const char *album, const char *artist, con
 	return result;
 }
 
+coverfetch_result_t coverfetch_search(const char *album, const char *artist, const char *title,
+									  coverfetch_record_t **records, int *count) {
+	activity_enter();
+	coverfetch_result_t result = search_impl(album, artist, title, records, count);
+	activity_leave();
+	return result;
+}
+
 void coverfetch_free(coverfetch_record_t *records, int count) {
 	(void)count;
 	if (!records) {
@@ -283,7 +333,7 @@ static bool is_supported_image(const uint8_t *data, size_t size) {
 	return false;
 }
 
-bool coverfetch_save(const char *track_path, const char *dir_path, const coverfetch_record_t *record, bool replace) {
+static bool save_impl(const char *track_path, const char *dir_path, const coverfetch_record_t *record, bool replace) {
 	if (!record || !record->url[0]) {
 		return false;
 	}
@@ -333,7 +383,7 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 	unsigned long seq;
 	pthread_mutex_lock(&http_lock);
 	seq = ++save_seq;
-	bool ok = http_get_ex(record->url, NULL, false, &body, &len, COVERFETCH_MAX_IMAGE_BYTES + 1,
+	bool ok = http_get_ex(record->url, NULL, false, &body, &len, COVERFETCH_MAX_IMAGE_BYTES + 2,
 						  COVERFETCH_TIMEOUT_SECS, &status);
 	pthread_mutex_unlock(&http_lock);
 	if (!ok || !body || len < 12 || len > COVERFETCH_MAX_IMAGE_BYTES ||
@@ -376,6 +426,13 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 	return true;
 }
 
+bool coverfetch_save(const char *track_path, const char *dir_path, const coverfetch_record_t *record, bool replace) {
+	activity_enter();
+	bool saved = save_impl(track_path, dir_path, record, replace);
+	activity_leave();
+	return saved;
+}
+
 // ---------------------------------------------------------------------------
 // Batch download
 //
@@ -398,12 +455,30 @@ typedef struct {
 // seconds; until it exits it owns this slot, so no second worker can start.
 static pthread_mutex_t batch_lock = PTHREAD_MUTEX_INITIALIZER;
 static batch_ctx_t *batch_current; // guarded by batch_lock
+// Optional UI-supplied guard, consulted immediately before each batch save.
+static bool (*batch_save_gate)(void); // guarded by batch_lock
+
+void coverfetch_batch_set_save_gate(bool (*gate)(void)) {
+	pthread_mutex_lock(&batch_lock);
+	batch_save_gate = gate;
+	pthread_mutex_unlock(&batch_lock);
+}
 
 bool coverfetch_batch_running(void) {
 	pthread_mutex_lock(&batch_lock);
 	bool running = batch_current != NULL;
 	pthread_mutex_unlock(&batch_lock);
 	return running;
+}
+
+bool coverfetch_busy(void) {
+	if (coverfetch_batch_running()) {
+		return true;
+	}
+	pthread_mutex_lock(&activity_lock);
+	bool busy = activity_count > 0;
+	pthread_mutex_unlock(&activity_lock);
+	return busy;
 }
 
 void coverfetch_batch_cancel(void) {
@@ -480,7 +555,24 @@ static void *batch_worker(void *arg) {
 			coverfetch_record_t *records = NULL;
 			int count = 0;
 			coverfetch_result_t r = coverfetch_search(job->album, job->artist, "", &records, &count);
-			if (r == COVERFETCH_OK && count > 0 && coverfetch_save(job->path, job->dir, &records[0], false)) {
+			bool saved = false;
+			if (r == COVERFETCH_OK && count > 0) {
+				pthread_mutex_lock(&batch_lock);
+				bool (*gate)(void) = batch_save_gate;
+				pthread_mutex_unlock(&batch_lock);
+				if (gate && !gate()) {
+					// The card went away or was exported mid-run: writing now
+					// would drop cover.jpg on internal storage. Abort the rest.
+					p.aborted = true;
+				} else {
+					saved = coverfetch_save(job->path, job->dir, &records[0], false);
+				}
+			}
+			if (p.aborted) {
+				coverfetch_free(records, count);
+				break;
+			}
+			if (saved) {
 				p.found++;
 			} else {
 				p.not_found++;
@@ -498,6 +590,13 @@ static void *batch_worker(void *arg) {
 			p.cancelled = ctx->cancel;
 			ctx->cb(&p, ctx->user);
 		}
+	}
+
+	// A gate refusal breaks the loop above without a normal progress post, so
+	// send one final post carrying the abort reason for the UI to act on.
+	if (p.aborted && ctx->cb) {
+		p.cancelled = false;
+		ctx->cb(&p, ctx->user);
 	}
 
 	batch_release(ctx);

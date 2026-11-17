@@ -4,6 +4,7 @@
 #include "src/system/library/coverfetch.h"
 #include "src/system/library/coverfetch_test.h"
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,18 @@ static const char ALT_BODY_FOUND[] = "{\"releases\":[{\"id\":\"rel-alt\",\"title
 static const char ALT_BODY_EMPTY[] = "{\"releases\":[]}";
 static const unsigned char ALT_JPEG[16] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x22, 0x33, 0x44};
 
+// http.c reserves one byte of `limit` for the trailing NUL (body_reserve()
+// stops growing at cap == limit and body_append() leaves room for it), so the
+// largest out_len production can return is limit - 1. Mirror that here: a stub
+// that always reports the full len hides the 4 MB cap off-by-one.
+static size_t stub_clamp(size_t len, size_t limit) {
+	if (limit == 0) {
+		return 0;
+	}
+	size_t cap = limit - 1;
+	return len < cap ? len : cap;
+}
+
 void coverfetch_test_set_alternating(bool on) {
 	stub_alternate = on;
 	stub_alt_search = 0;
@@ -41,7 +54,6 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 				 size_t *out_len, size_t limit, int timeout_secs, int *status_out) {
 	(void)extra_headers;
 	(void)want_error_body;
-	(void)limit;
 	(void)timeout_secs;
 	stub_calls++;
 	snprintf(stub_url, sizeof(stub_url), "%s", url ? url : "");
@@ -49,7 +61,7 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 		*status_out = 200;
 		if (strstr(url, "coverartarchive.org") != NULL) {
 			// Every image download is a valid JPEG.
-			size_t len = sizeof(ALT_JPEG);
+			size_t len = stub_clamp(sizeof(ALT_JPEG), limit);
 			*out = malloc(len + 1);
 			if (!*out) {
 				return false;
@@ -64,12 +76,13 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 		// Searches alternate: one release, then an empty "releases" array.
 		bool found = (stub_alt_search++ % 2) == 0;
 		const char *body = found ? ALT_BODY_FOUND : ALT_BODY_EMPTY;
-		size_t len = strlen(body);
+		size_t len = stub_clamp(strlen(body), limit);
 		*out = malloc(len + 1);
 		if (!*out) {
 			return false;
 		}
-		memcpy(*out, body, len + 1);
+		memcpy(*out, body, len);
+		(*out)[len] = '\0';
 		if (out_len) {
 			*out_len = len;
 		}
@@ -81,7 +94,7 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 		return false;
 	}
 	if (stub_download_mode) {
-		size_t len = stub_download_len;
+		size_t len = stub_clamp(stub_download_len, limit);
 		*out = malloc(len ? len : 1);
 		if (!*out) {
 			return false;
@@ -94,12 +107,13 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 		}
 		return true;
 	}
-	size_t len = strlen(stub_body);
+	size_t len = stub_clamp(strlen(stub_body), limit);
 	*out = malloc(len + 1);
 	if (!*out) {
 		return false;
 	}
-	memcpy(*out, stub_body, len + 1);
+	memcpy(*out, stub_body, len);
+	(*out)[len] = '\0';
 	if (out_len) {
 		*out_len = len;
 	}
@@ -534,6 +548,54 @@ static void batch_overlap_is_refused(void) {
 	CHECK(refused && !coverfetch_batch_running(), "batch_overlap_is_refused");
 }
 
+// 15. The negative cache is shared by the batch worker, the Now Playing search
+// worker and the GUI retry clear. Concurrent adds must not lose keys or push
+// negative_count past COVERFETCH_MAX_KEYS (which used to write past the array).
+#define NEG_THREADS 8
+#define NEG_PER_THREAD 31 // 248 keys, just below the table size
+
+static void *negative_add_thread(void *arg) {
+	int base = *(int *)arg;
+	char key[640];
+	for (int i = 0; i < NEG_PER_THREAD; i++) {
+		snprintf(key, sizeof(key), "album-%d-%d|artist", base, i);
+		coverfetch_negative_add(key);
+	}
+	return NULL;
+}
+
+static void case_negative_cache_concurrent_adds(void) {
+	coverfetch_test_reset();
+	pthread_t threads[NEG_THREADS];
+	int bases[NEG_THREADS];
+	for (int t = 0; t < NEG_THREADS; t++) {
+		bases[t] = t;
+		if (pthread_create(&threads[t], NULL, negative_add_thread, &bases[t]) != 0) {
+			printf("FAIL could not spawn negative-cache thread\n");
+			exit(1);
+		}
+	}
+	for (int t = 0; t < NEG_THREADS; t++) {
+		pthread_join(threads[t], NULL);
+	}
+	bool all = true;
+	char key[640];
+	for (int t = 0; t < NEG_THREADS && all; t++) {
+		for (int i = 0; i < NEG_PER_THREAD; i++) {
+			snprintf(key, sizeof(key), "album-%d-%d|artist", t, i);
+			if (!coverfetch_negative_has(key)) {
+				all = false;
+				break;
+			}
+		}
+	}
+	// A clear after the storm and a fresh add must still leave a usable cache.
+	coverfetch_negative_clear();
+	coverfetch_negative_add("after|clear");
+	CHECK(all && coverfetch_negative_has("after|clear") && !coverfetch_negative_has("album-0-0|artist"),
+		  "negative_cache_concurrent_adds");
+}
+
 int main(void) {
 	save_dir_setup();
 	case_query_encodes_album_and_artist();
@@ -550,6 +612,7 @@ int main(void) {
 	case_save_temp_paths_are_unique();
 	batch_cancel_stops_and_keeps_saved();
 	batch_overlap_is_refused();
+	case_negative_cache_concurrent_adds();
 
 	char path[600];
 	save_target(path, sizeof(path), "");
