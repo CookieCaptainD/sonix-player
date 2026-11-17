@@ -23,6 +23,10 @@ void coverfetch_test_set_download(const void *data, size_t len);
 // Implemented beside coverfetch_save() in coverfetch.c.
 void coverfetch_test_set_dir(const char *dir);
 
+// The temp path the last save chose, so a case can check that two saves to
+// one folder do not share it.
+const char *coverfetch_test_last_temp(void);
+
 int coverfetch_test_outstanding_records(void);
 
 #endif /* COVERFETCH_TEST_H */

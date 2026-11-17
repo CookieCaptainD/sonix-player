@@ -33,12 +33,17 @@
 // rejected instead of being silently truncated to the cap by http_get_ex().
 #define COVERFETCH_MAX_IMAGE_BYTES (4 * 1024 * 1024)
 #define COVERFETCH_IMAGE_NAME "cover.jpg"
-#define COVERFETCH_PART_SUFFIX ".coverfetch.part"
+// PID plus a per-save serial keeps concurrent writers in different processes
+// and threads from sharing one temp path in the same album folder.
+#define COVERFETCH_PART_FORMAT ".coverfetch.%ld.%lu.part"
 #define COVERFETCH_MAX_RESULTS 5
 #define COVERFETCH_MAX_KEYS 256
 
 // One request at a time across every caller, held for the whole attempt loop.
 static pthread_mutex_t http_lock = PTHREAD_MUTEX_INITIALIZER;
+// Guarded by http_lock, already taken for the request. Only the name is
+// serialised; the file write itself still happens after the unlock.
+static unsigned long save_seq = 0;
 
 // "not found" keys. A fixed table is enough for a library of a few hundred
 // albums; when it fills, the oldest miss is dropped.
@@ -48,12 +53,15 @@ static int negative_count = 0;
 #ifdef COVERFETCH_TEST
 static int records_outstanding = 0;
 static char test_save_dir[1024];
+static char test_save_temp[1200];
 
 int coverfetch_test_outstanding_records(void) { return records_outstanding; }
 
 void coverfetch_test_set_dir(const char *dir) {
 	snprintf(test_save_dir, sizeof(test_save_dir), "%s", dir ? dir : "");
 }
+
+const char *coverfetch_test_last_temp(void) { return test_save_temp; }
 #endif
 
 bool coverfetch_negative_has(const char *key) {
@@ -319,7 +327,9 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 	char *body = NULL;
 	size_t len = 0;
 	int status = 0;
+	unsigned long seq;
 	pthread_mutex_lock(&http_lock);
+	seq = ++save_seq;
 	bool ok = http_get_ex(record->url, NULL, false, &body, &len, COVERFETCH_MAX_IMAGE_BYTES + 1,
 						  COVERFETCH_TIMEOUT_SECS, &status);
 	pthread_mutex_unlock(&http_lock);
@@ -330,11 +340,14 @@ bool coverfetch_save(const char *track_path, const char *dir_path, const coverfe
 	}
 
 	char temp[1200];
-	n = snprintf(temp, sizeof(temp), "%s%s", target, COVERFETCH_PART_SUFFIX);
+	n = snprintf(temp, sizeof(temp), "%s" COVERFETCH_PART_FORMAT, target, (long)getpid(), seq);
 	if (n < 0 || (size_t)n >= sizeof(temp)) {
 		free(body);
 		return false;
 	}
+#ifdef COVERFETCH_TEST
+	snprintf(test_save_temp, sizeof(test_save_temp), "%s", temp);
+#endif
 
 	FILE *f = fopen(temp, "wb");
 	if (!f) {

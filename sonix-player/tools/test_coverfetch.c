@@ -260,10 +260,9 @@ static bool save_file_exists(void) {
 }
 
 static bool save_part_exists(void) {
-	char path[600];
-	save_target(path, sizeof(path), ".coverfetch.part");
+	const char *path = coverfetch_test_last_temp();
 	struct stat st;
-	return stat(path, &st) == 0;
+	return path && path[0] && stat(path, &st) == 0;
 }
 
 static bool save_file_equals(const unsigned char *want, size_t len) {
@@ -370,6 +369,27 @@ static void case_save_replaces_when_asked(void) {
 		  "save_replaces_when_asked");
 }
 
+// 12. Two saves to one folder pick different temp paths, so neither can
+// rename the other's half-written bytes into cover.jpg.
+static void case_save_temp_paths_are_unique(void) {
+	coverfetch_record_t r;
+	save_record(&r);
+	save_reset();
+
+	coverfetch_test_set_download(JPEG_BYTES, sizeof(JPEG_BYTES));
+	bool first = coverfetch_save("music/Album/track.mp3", "", &r, true);
+	char first_temp[1200];
+	snprintf(first_temp, sizeof(first_temp), "%s", coverfetch_test_last_temp());
+	bool first_clean = first && first_temp[0] && !save_part_exists();
+
+	coverfetch_test_set_download(JPEG_BYTES, sizeof(JPEG_BYTES));
+	bool second = coverfetch_save("music/Album/track.mp3", "", &r, true);
+	const char *second_temp = coverfetch_test_last_temp();
+
+	CHECK(first_clean && second && second_temp[0] && strcmp(first_temp, second_temp) != 0 && !save_part_exists(),
+		  "save_temp_paths_are_unique");
+}
+
 int main(void) {
 	save_dir_setup();
 	case_query_encodes_album_and_artist();
@@ -383,6 +403,7 @@ int main(void) {
 	case_save_rejects_oversized_body();
 	case_save_preserves_existing_art();
 	case_save_replaces_when_asked();
+	case_save_temp_paths_are_unique();
 
 	char path[600];
 	save_target(path, sizeof(path), "");
