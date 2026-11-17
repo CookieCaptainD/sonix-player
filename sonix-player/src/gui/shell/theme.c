@@ -450,6 +450,12 @@ void theme_preview_accent(lv_color_t color) {
 }
 
 void theme_set_accent_custom(lv_color_t color) {
+	// OK on an untouched picker is not a change: no config write, no NAND
+	// erase. The palette is still applied below -- the picker may have
+	// previewed another colour and come back to this one.
+	bool unchanged = custom_active && color.red == custom_color.red && color.green == custom_color.green &&
+					 color.blue == custom_color.blue;
+
 	custom_color = color;
 	custom_active = true;
 
@@ -470,9 +476,10 @@ void theme_set_accent_custom(lv_color_t color) {
 	config_set_bool("ui", "accent_custom", true);
 	config_set_int("ui", "accent_rgb",
 				   ((long)color.red << 16) | ((long)color.green << 8) | (long)color.blue);
-	config_save();
-
-	bootlogo_follow(active->dark, accent_index);
+	if (!unchanged) {
+		config_save();
+		bootlogo_follow(active->dark, accent_index);
+	}
 
 	refresh_all();
 }

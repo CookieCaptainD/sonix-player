@@ -19,9 +19,9 @@ lv_color_t theme_color_hsv(uint16_t hue, uint8_t sat, uint8_t val) {
 
 	uint32_t h = (uint32_t)(hue % 360u);
 	uint32_t region = h / 60u;
-	// Where in the sector the hue sits, on 0..255. The 127 rounds instead of
-	// truncating, so 359 is the near-red the caller asked for and not the one
-	// step before it.
+	// Where in the sector the hue sits, on 0..255. The +30 rounds to the
+	// nearest step instead of truncating, so 359 is the near-red the caller
+	// asked for and not the one step before it.
 	uint32_t f = ((h % 60u) * 255u + 30u) / 60u;
 	uint32_t s = sat;
 	uint32_t v = val;
