@@ -326,7 +326,7 @@ request, and a driver that reports two fills two slots.
 
 ## Custom accent colour
 
-The accent can be any colour, not only the six presets, and the choice lives in
+The colour can be any colour, not only the six presets, and the choice lives in
 `device_config.ini` beside the preset index:
 
 | key | value | meaning |
@@ -335,10 +335,14 @@ The accent can be any colour, not only the six presets, and the choice lives in
 | `ui/accent_custom` | 0 / 1 | the custom colour is active |
 | `ui/accent_rgb` | 0..0xFFFFFF | the chosen colour, decimal in the INI |
 
+A seventh swatch on Appearance, and the Custom colour row under it, open the
+picker: a preview circle with the interface's own foreground on it, then hue,
+saturation and brightness strips.
+
 `ui/accent` keeps meaning what it always meant, a preset index from 0 to 5, so
 the stock boot-logo marker still holds a value it understands; a custom colour
 never writes 6 or more into it. A custom accent is paired with the **closest
-preset** by RGB distance, and that preset is what the boot logo draws, since
+preset** by hue, and that preset is what the boot logo draws, since
 there is no custom boot-logo artwork.
 
 Dragging a slider on the picker only previews. The page changes the live
