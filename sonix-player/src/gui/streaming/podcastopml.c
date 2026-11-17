@@ -144,6 +144,10 @@ static void paint_feed(feed_t *f) {
 	lv_obj_set_style_bg_color(f->box, f->state == FEED_ALREADY ? theme()->surface_pressed : theme()->accent, 0);
 	lv_obj_set_style_border_width(f->box, ticked || f->state == FEED_ALREADY ? 0 : 2, 0);
 	lv_obj_set_hidden(f->tick, !(ticked || f->state == FEED_ALREADY));
+	// The box is the accent while the feed is a new choice, and the quiet
+	// pressed surface when it is already followed; the tick has to read on
+	// both, so the state picks the foreground.
+	lv_obj_set_style_image_recolor(f->tick, f->state == FEED_ALREADY ? theme()->text_primary : theme_on_accent(), 0);
 	lv_obj_set_style_opa(f->row, usable || f->state == FEED_LOOKING ? LV_OPA_COVER : LV_OPA_60, 0);
 }
 
