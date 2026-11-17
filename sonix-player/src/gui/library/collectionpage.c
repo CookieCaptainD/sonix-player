@@ -35,7 +35,10 @@ lv_obj_t *collectionpage_screen;
 // between: the content area is exactly count * 100 tall, which is what makes
 // scroll position a row number.
 #define ROW_HEIGHT 100
-#define ROW_POOL 10
+// One widget per coverloader slot: the two pools are the same size by
+// construction, so a row can never be left asking for a slot that is not
+// there.
+#define ROW_POOL COVERLOADER_COLLECTION_COUNT
 #define ROW_RADIUS 12
 #define ROW_PAD 14
 #define THUMB_SIZE 72
@@ -43,10 +46,12 @@ lv_obj_t *collectionpage_screen;
 // How often finished artwork is collected while any is pending.
 #define THUMB_POLL_MS 150
 
-// One row widget. `page_slot` is which album of the current window it shows
-// (and -1 a slot parked because the window ran past the end of the list); a
-// row keeps the window it was filled for too, so a rebind can tell "same
-// album, still true" from "the window moved under it".
+// One row widget. `index` is the absolute position in the collection of the
+// album it shows -- absolute, not window-relative, so that a one-step slide
+// of the window moves exactly one album onto a new widget and the other nine
+// keep theirs. -1 is a widget parked because the window ran past the end of
+// the list; -2 is "standing for something else now", set when the page is
+// rebuilt, so the next binding cannot be skipped as already current.
 typedef struct {
 	lv_obj_t *button;
 	lv_obj_t *icon;
@@ -54,8 +59,7 @@ typedef struct {
 	lv_obj_t *artist;
 	lv_obj_t *menu_btn;
 
-	int page_slot;
-	int window_first;
+	int index;
 
 	bool has_thumb;
 	bool thumb_settled; // the worker answered, whatever it found
@@ -185,27 +189,26 @@ static void row_drop_thumb(row_t *row) {
 	row->thumb_settled = false;
 }
 
-static void row_bind(row_t *row, int page_slot) {
-	// The same album in the same place of the same window: the labels and the
-	// cover state are already its. A one-step slide of the window rebinds
-	// every widget's position with it, but nothing on the row has to move
-	// twice for that.
-	if (page_slot >= 0 && row->page_slot == page_slot && row->window_first == window_first) {
+static void row_bind(row_t *row, int index) {
+	// The same album as before, wherever the window now sits: the labels and
+	// the cover state are already its. Album j always lands on widget
+	// j % ROW_POOL, so a one-step slide of the window moves one album onto
+	// the widget the oldest one is leaving and leaves the other nine alone.
+	if (row->index == index) {
 		return;
 	}
 
 	row_drop_thumb(row);
-	row->page_slot = page_slot;
-	row->window_first = window_first;
+	row->index = index;
 
-	if (page_slot < 0) {
+	if (index < 0) {
 		lv_obj_set_hidden(row->button, true);
 		return;
 	}
 
-	const collection_album_t *album = &album_rows[page_slot];
+	const collection_album_t *album = &album_rows[index - window_first];
 	lv_obj_set_hidden(row->button, false);
-	lv_obj_set_y(row->button, (window_first + page_slot) * ROW_HEIGHT);
+	lv_obj_set_y(row->button, index * ROW_HEIGHT);
 	lv_label_set_text(row->label, album->name);
 	lv_label_set_text(row->artist, album->artist);
 	// A missing album keeps its stored names but wears the quiet colour: it
@@ -227,13 +230,16 @@ static void row_bind(row_t *row, int page_slot) {
 	}
 }
 
-// Collects what the artwork worker has finished for the rows on screen.
+// Collects what the artwork worker has finished for the rows on screen. Runs
+// whenever the page is active and something may be pending, not only when the
+// window moved: the timer pauses itself while the page is under another
+// screen, and this is what starts it again after a return.
 static void thumbs_update(void) {
 	bool anything_pending = false;
 
 	for (int i = 0; i < ROW_POOL; i++) {
 		row_t *row = &rows[i];
-		if (row->page_slot < 0 || row->thumb_settled) {
+		if (row->index < 0 || row->thumb_settled) {
 			continue;
 		}
 
@@ -286,7 +292,12 @@ static void window_update(void) {
 		first = 0;
 	}
 	if (first == window_first) {
-		return; // the scroll moved within the window; nothing to read
+		// The scroll moved within the window; nothing to read back. The
+		// covers go on being collected all the same: after a return from
+		// another screen this is the only thing that starts the paused thumb
+		// timer again.
+		thumbs_update();
+		return;
 	}
 	window_first = first;
 
@@ -296,7 +307,7 @@ static void window_update(void) {
 		// puts each album on the widget that is next over instead of renaming
 		// the whole pool through one fixed mapping.
 		int index = first + i;
-		row_bind(&rows[index % ROW_POOL], i < filled ? i : -1);
+		row_bind(&rows[index % ROW_POOL], index < filled ? index : -1);
 	}
 
 	thumbs_update();
@@ -312,8 +323,7 @@ static void scroll_cb(lv_event_t *e) {
 static void reload(void) {
 	for (int i = 0; i < ROW_POOL; i++) {
 		row_drop_thumb(&rows[i]);
-		rows[i].page_slot = -2; // every widget now stands for a different album
-		rows[i].window_first = -2;
+		rows[i].index = -2; // every widget now stands for a different album
 	}
 
 	album_count = collections_album_count(current_id);
@@ -335,13 +345,13 @@ static void reload(void) {
 // row behaviour
 // ---------------------------------------------------------------------------
 
-// The album a row widget is showing, or NULL when it shows nothing of this
-// window.
+// The album a row widget is showing, or NULL when it shows nothing of the
+// current window.
 static const collection_album_t *row_album(const row_t *row) {
-	if (row->page_slot < 0 || row->window_first != window_first) {
+	if (row->index < 0 || row->index < window_first || row->index >= window_first + ROW_POOL) {
 		return NULL;
 	}
-	return &album_rows[row->page_slot];
+	return &album_rows[row->index - window_first];
 }
 
 static void row_clicked_cb(lv_event_t *e) {
@@ -632,8 +642,7 @@ void collectionpage_init(gui_config_t *cfg) {
 		lv_obj_set_style_image_recolor_opa(dots, LV_OPA_COVER, 0);
 		lv_obj_center(dots);
 
-		row->page_slot = -1;
-		row->window_first = -1;
+		row->index = -1;
 		row->has_thumb = false;
 		row->thumb_settled = false;
 	}
