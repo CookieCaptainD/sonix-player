@@ -18,9 +18,9 @@ lv_obj_t *accentpage_screen;
 // in. The three slider cards are shorter than the ordinary settings slider
 // cards: this page has four controls, and it must not need scrolling on the
 // shorter of the two panels.
-#define PREVIEW_SIZE 116
-#define PREVIEW_CARD_H 140
-#define SLIDER_CARD_H 92
+#define PREVIEW_SIZE 100
+#define PREVIEW_CARD_H 112
+#define SLIDER_CARD_H 90
 #define TRACK_HEIGHT 18
 
 // One descriptor per strip: the gradient a slider draws is a pointer into this
@@ -345,7 +345,7 @@ void accentpage_init(gui_config_t *cfg) {
 	lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
 	lv_obj_set_width(note, lv_pct(100));
 	lv_obj_add_style(note, &theme_style_text_dim, 0);
-	lv_obj_set_style_text_font(note, &font_ui_20, 0);
+	lv_obj_set_style_text_font(note, &font_ui_18, 0);
 	lv_label_set_text(note, tr("appearance_custom_accent_note"));
 
 	make_slider_card(container, "appearance_hue", 0, 359, &hue_main_style, &hue_value, &hue_slider);
