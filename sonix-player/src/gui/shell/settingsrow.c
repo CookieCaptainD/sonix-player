@@ -399,7 +399,7 @@ static void make_ticks(lv_obj_t *parent, lv_obj_t *slider, int steps, int y) {
 		// Inside the track, so they read as notches on the scale rather than a
 		// second row of dots below it: a light mark visible on the accent fill
 		// and on the grey trough alike.
-		lv_obj_set_style_bg_color(tick, lv_color_white(), 0);
+		lv_obj_set_style_bg_color(tick, theme_on_accent(), 0);
 		lv_obj_set_style_bg_opa(tick, LV_OPA_60, 0);
 		lv_obj_set_style_border_width(tick, 0, 0);
 		lv_obj_set_clickable(tick, false);
@@ -583,7 +583,7 @@ lv_obj_t *settingsrow_toggle_slider(lv_obj_t *parent, const char *name, int step
 		lv_obj_set_style_radius(tick, LV_RADIUS_CIRCLE, 0);
 		// Same light mark as the plain slider card: it must show on the accent
 		// fill and on the grey trough alike.
-		lv_obj_set_style_bg_color(tick, lv_color_white(), 0);
+		lv_obj_set_style_bg_color(tick, theme_on_accent(), 0);
 		lv_obj_set_style_bg_opa(tick, LV_OPA_60, 0);
 		lv_obj_set_style_border_width(tick, 0, 0);
 		lv_obj_set_clickable(tick, false);
@@ -917,7 +917,7 @@ void settingsrow_pill_active(lv_obj_t *pill, bool active) {
 		return;
 	}
 	lv_obj_set_style_bg_color(pill, active ? theme()->accent : theme()->surface_pressed, 0);
-	lv_obj_set_style_text_color(lv_obj_get_child(pill, 0), active ? lv_color_white() : theme()->text_primary, 0);
+	lv_obj_set_style_text_color(lv_obj_get_child(pill, 0), active ? theme_on_accent() : theme()->text_primary, 0);
 }
 
 // ---------------------------------------------------------------------------

@@ -329,7 +329,7 @@ static void make_feed_row(int i) {
 	lv_obj_set_event_bubble(f->box, true);
 	f->tick = lv_image_create(f->box);
 	lv_image_set_src(f->tick, &icon_check_small);
-	lv_obj_set_style_image_recolor(f->tick, lv_color_white(), 0);
+	lv_obj_set_style_image_recolor(f->tick, theme_on_accent(), 0);
 	lv_obj_set_style_image_recolor_opa(f->tick, LV_OPA_COVER, 0);
 	lv_obj_center(f->tick);
 	lv_obj_set_event_bubble(f->tick, true);
@@ -572,7 +572,7 @@ static void follow_cb(lv_event_t *e) {
 	lv_obj_t *open_label = lv_label_create(open);
 	lv_label_set_text(open_label, tr("podcast_opml_open_followed"));
 	lv_obj_set_style_text_font(open_label, &font_ui_22, 0);
-	lv_obj_set_style_text_color(open_label, lv_color_white(), 0);
+	lv_obj_set_style_text_color(open_label, theme_on_accent(), 0);
 	lv_obj_center(open_label);
 
 	switch_screen(result_screen);
@@ -894,7 +894,7 @@ void podcastopml_init(gui_config_t *cfg) {
 	follow_label = lv_label_create(follow_btn);
 	lv_label_set_text(follow_label, "");
 	lv_obj_set_style_text_font(follow_label, &font_ui_22, 0);
-	lv_obj_set_style_text_color(follow_label, lv_color_white(), 0);
+	lv_obj_set_style_text_color(follow_label, theme_on_accent(), 0);
 	lv_obj_center(follow_label);
 
 	switcher_attach_back_gesture(feeds_screen);
