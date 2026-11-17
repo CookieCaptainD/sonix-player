@@ -32,7 +32,9 @@ void axpcharge_test_fail_read(bool fail);
 // The answer axpcharge_charging_control_supported() gives on the host.
 void axpcharge_test_set_applies(bool applies);
 
-// What the stubbed gauge and cable detect report.
+// What the stubbed gauge and cable detect report. Both are implemented in
+// tools/test_axpcharge.c, beside the stubs whose state they set; the other
+// hooks below live in axpcharge.c.
 void axpcharge_test_set_millivolts(int mv);
 void axpcharge_test_set_vbus(bool present);
 
