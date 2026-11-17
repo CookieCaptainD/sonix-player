@@ -87,7 +87,10 @@ unsigned usbdac_serial(void);
 // supplying the player, and only what would go into the battery is held off.
 // Remembered in config as [usb] dac_charge_disable and applied whenever DAC
 // mode starts.
-void usbdac_set_charging(bool enabled);
+//
+// Returns false when DAC mode is running and the hardware refused the change;
+// nothing is then claimed and the previous state stands.
+bool usbdac_set_charging(bool enabled);
 bool usbdac_charging_enabled(void);
 
 #endif /* USBDAC_H */

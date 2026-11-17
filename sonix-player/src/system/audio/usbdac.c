@@ -404,19 +404,25 @@ static void gadget_teardown(void) {
 // Charging
 // ---------------------------------------------------------------------------
 
-static void apply_charging(void) {
-	bool on = usbdac_charging_enabled();
+// Takes the state to apply rather than reading the cache: a toggle press has
+// to apply the new value, and reading the cache would apply the old one again.
+// Returns whether the hardware took the request.
+static bool apply_charging(bool on) {
+	// power.c owns the charger. It stops charging through the PMIC's charge
+	// bit, which leaves the input path feeding the system -- so the player
+	// carries on running from the cable with the battery untouched, which is
+	// the whole point here.
+	bool ok = power_set_charging_allowed(on);
 
-	// power.c owns the charger. It stops charging through the driver's
-	// step-charging bit, which leaves the input path feeding the system -- so
-	// the player carries on running from the cable with the battery untouched,
-	// which is the whole point here.
-	power_set_charging_allowed(on);
-
-	// Say so where the user looks: with the charger off the battery icon and
-	// the LED must stop claiming a charge is happening.
-	system_suppress_charging(!on);
-	printf("usbdac: charging %s while in DAC mode\n", on ? "allowed" : "held off");
+	// Only change what the user is told when the hardware really changed: a
+	// failed stop leaves the icon showing charging, and a failed resume leaves
+	// it showing charging off.
+	if (ok) {
+		system_suppress_charging(!on);
+	}
+	printf("usbdac: charging %s while in DAC mode\n",
+	       on ? "allowed" : ok ? "held off" : "could not be held off");
+	return ok;
 }
 
 // The live answer, cached here rather than read back out of the config every
@@ -425,13 +431,18 @@ static void apply_charging(void) {
 // the choice is remembered across boots, not where it lives.
 static int charging_cache = -1; // -1 = not read from config yet
 
-void usbdac_set_charging(bool enabled) {
+bool usbdac_set_charging(bool enabled) {
+	// With DAC mode running, the hardware is asked first: the cache and the
+	// stored preference must not claim a state the PMIC refused.
+	if (usbdac_is_active()) {
+		if (!apply_charging(enabled)) {
+			return false;
+		}
+	}
 	charging_cache = enabled ? 1 : 0;
 	config_set_bool("usb", "dac_charge_disable", !enabled);
 	config_save();
-	if (usbdac_is_active()) {
-		apply_charging();
-	}
+	return true;
 }
 
 bool usbdac_charging_enabled(void) {
@@ -617,7 +628,12 @@ static void *start_main(void *arg) {
 		goto failed;
 	}
 
-	apply_charging();
+	if (!apply_charging(usbdac_charging_enabled()) && !usbdac_charging_enabled()) {
+		// The user asked for no charging, the PMIC refused, and the icon would
+		// otherwise show a state the cell is not in. This session charges; the
+		// stored preference stays as the user chose so the next attempt retries.
+		charging_cache = 1;
+	}
 
 	running = true;
 	if (!wait_for_node()) {
@@ -657,6 +673,12 @@ static void *start_main(void *arg) {
 	return NULL;
 
 failed:
+	// The toggle may already have stopped charging. A start that fails must not
+	// leave the player in normal mode with the cell charger off.
+	if (!power_charging_release()) {
+		system_suppress_charging(true);
+	}
+
 	pthread_mutex_lock(&lock);
 	state.starting = false;
 	state.active = false;
@@ -695,6 +717,16 @@ void usbdac_stop(void) {
 		pthread_join(start_thread, NULL);
 		start_thread_valid = false;
 	}
+
+	// Leaving DAC mode gives the charger back, and the indication with it. The
+	// release comes after the join: a start still applying "off" could
+	// otherwise stop charging again behind this. It has to run even when the
+	// mode never became active, because a failed start may have applied "off".
+	bool released = power_charging_release();
+	if (released) {
+		system_suppress_charging(false);
+	}
+
 	if (!usbdac_is_active() && !thread_valid) {
 		return;
 	}
@@ -714,10 +746,6 @@ void usbdac_stop(void) {
 		pthread_join(audio_thread, NULL);
 		thread_valid = false;
 	}
-
-	// Leaving DAC mode gives the charger back, and the indication with it.
-	power_set_charging_allowed(true);
-	system_suppress_charging(false);
 
 	gadget_teardown();
 
