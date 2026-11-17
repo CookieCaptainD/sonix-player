@@ -6,6 +6,7 @@
 
 #include "lvgl/src/misc/lv_text_ap.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,9 +43,7 @@
 // the animated one.
 #define SCROLL_WAIT_CHARS 3
 
-bool scrolltext_auto_enabled(void) {
-	return config_get_bool("ui", "scroll_names", false);
-}
+bool scrolltext_auto_enabled(void) { return config_get_bool("ui", "scroll_names", false); }
 
 int scrolltext_speed_px_s(void) {
 	int speed = (int)config_get_int("ui", "scroll_speed", SCROLL_SPEED_DEFAULT);
@@ -124,7 +123,7 @@ static int32_t text_width(lv_obj_t *label, const char *text) {
 
 #define FADE_EDGE_PX 24
 #define FADE_CACHE_MAX 8
-#define FADE_LABELS_MAX 96
+#define FADE_LABELS_MAX 512
 #define FADE_POLL_MS 80
 
 // One size, and the two masks for it: `both` while the text moves, `tail` while
@@ -222,46 +221,28 @@ static fade_label_t fade_labels[FADE_LABELS_MAX];
 static int fade_label_count;
 static lv_timer_t *fade_timer;
 
-// List rows obey the scroll_names switch. Their state lives here and not in
-// fade_labels[]: that table can fill, and LVGL's long mode reads CLIP whenever
-// animpark has parked a label.
-typedef struct {
-	lv_obj_t *label;
-	bool enabled;
-} scroll_list_entry_t;
-
-#define SCROLL_LIST_MAX 64
-static scroll_list_entry_t list_entries[SCROLL_LIST_MAX];
-static int list_entry_count;
+// List rows obey the scroll_names switch. Their state lives on the label
+// itself: a fixed table would fill on a long Files or Playlists page, and a
+// label that missed the table would scroll even with the switch off. LVGL's
+// long mode cannot carry the state either, because animpark writes CLIP while
+// a label is parked.
+#define LIST_MARK_OFF ((void *)(uintptr_t)1)
+#define LIST_MARK_ON ((void *)(uintptr_t)2)
 
 static void fade_update(lv_obj_t *label);
 
-static bool list_enabled(lv_obj_t *label) {
-	for (int i = 0; i < list_entry_count; i++) {
-		if (list_entries[i].label == label) {
-			return list_entries[i].enabled;
-		}
-	}
-	return true;
+static bool is_list_label(lv_obj_t *label) {
+	void *mark = lv_obj_get_user_data(label);
+	return mark == LIST_MARK_OFF || mark == LIST_MARK_ON;
 }
 
-static void list_remove(lv_obj_t *label) {
-	for (int i = 0; i < list_entry_count; i++) {
-		if (list_entries[i].label != label) {
-			continue;
-		}
-		list_entries[i] = list_entries[list_entry_count - 1];
-		list_entry_count--;
-		return;
-	}
-}
+static bool list_enabled(lv_obj_t *label) { return lv_obj_get_user_data(label) != LIST_MARK_OFF; }
 
 static void apply_mode(lv_obj_t *label) {
 	if (animpark_is_parked(label)) {
 		return;
 	}
-	lv_label_set_long_mode(label,
-						   list_enabled(label) ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_DOT);
+	lv_label_set_long_mode(label, list_enabled(label) ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_DOT);
 	fade_update(label);
 }
 
@@ -368,7 +349,6 @@ static void resume_cb(lv_event_t *e);
 static void fade_delete_cb(lv_event_t *e) {
 	lv_obj_t *label = lv_event_get_target(e);
 	lv_display_remove_event_cb_with_user_data(lv_obj_get_display(label), resume_cb, label);
-	list_remove(label);
 	for (int i = 0; i < fade_label_count; i++) {
 		if (fade_labels[i].label != label) {
 			continue;
@@ -465,8 +445,7 @@ static void resume_cb(lv_event_t *e) {
 }
 
 static void scroll_unpark(lv_obj_t *label) {
-	lv_label_set_long_mode(label,
-						   list_enabled(label) ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_DOT);
+	lv_label_set_long_mode(label, list_enabled(label) ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_DOT);
 	fade_label_t *entry = fade_entry(label);
 	if (entry && entry->resume) {
 		// Added after the label's own handler, which set_long_mode has just
@@ -502,11 +481,7 @@ void scrolltext_apply_list(lv_obj_t *label) {
 		return;
 	}
 	scrolltext_apply(label);
-	if (list_entry_count < SCROLL_LIST_MAX) {
-		list_entries[list_entry_count].label = label;
-		list_entries[list_entry_count].enabled = scrolltext_auto_enabled();
-		list_entry_count++;
-	}
+	lv_obj_set_user_data(label, scrolltext_auto_enabled() ? LIST_MARK_ON : LIST_MARK_OFF);
 	apply_mode(label);
 }
 
@@ -618,11 +593,13 @@ void scrolltext_set(lv_obj_t *label, const char *text) {
 
 void scrolltext_settings_changed(void) {
 	bool on = scrolltext_auto_enabled();
-	for (int i = 0; i < list_entry_count; i++) {
-		list_entries[i].enabled = on;
-		apply_mode(list_entries[i].label);
-	}
+	void *mark = on ? LIST_MARK_ON : LIST_MARK_OFF;
 	for (int i = 0; i < fade_label_count; i++) {
-		apply_duration(fade_labels[i].label, lv_label_get_text(fade_labels[i].label));
+		lv_obj_t *label = fade_labels[i].label;
+		if (is_list_label(label)) {
+			lv_obj_set_user_data(label, mark);
+			apply_mode(label);
+		}
+		apply_duration(label, lv_label_get_text(label));
 	}
 }
