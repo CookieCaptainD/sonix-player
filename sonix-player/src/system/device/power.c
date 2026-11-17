@@ -1258,28 +1258,48 @@ static void suspend_to_ram(void) {
 
 	// If the RTC alarm is what woke the device there is no user: the automatic
 	// shutdown deadline arrived, so it shuts down here, before the idle markers
-	// restart. A user wake before the deadline leaves the alarm armed, and
-	// turning the screen on disarms it a moment later.
+	// restart. The alarm is a one-shot and is consumed on every wake path.
 	//
 	// The deadline is read off CLOCK_BOOTTIME rather than the wall clock (see
-	// g_rtc_alarm_boot_at), and a queued power press counts as a user: the
-	// disarm below only runs on the next tick, so without that test a press
-	// within a couple of seconds of the deadline would switch the device off in
-	// the user's hand.
+	// g_rtc_alarm_boot_at), and a queued power press counts as a user: without
+	// that test a press within a couple of seconds of the deadline would switch
+	// the device off in the user's hand.
 	pthread_mutex_lock(&g_lock);
 	bool user_woke_it = g_power_button_pending;
 	pthread_mutex_unlock(&g_lock);
 
 	bool rtc_woke_it = rc == 0 && g_rtc_alarm_armed && !user_woke_it;
-	if (rtc_woke_it && g_rtc_auto_off_armed && (int32_t)(boottime_ms() - g_rtc_alarm_boot_at) >= 0) {
+	// Copy what this wake was for before disarming clears it, then decide from
+	// the copies. g_rtc_usb_boot_at is deliberately not consulted here: it is
+	// only stamped when the cable check owns the alarm and may be stale.
+	bool usb_check_wake = g_rtc_usb_check_armed;
+	bool auto_off_armed = g_rtc_auto_off_armed;
+	bool battery_armed = g_rtc_battery_armed;
+	rtc_alarm_disarm();
+	if (rtc_woke_it && auto_off_armed && (int32_t)(boottime_ms() - g_rtc_alarm_boot_at) >= 0) {
 		power_auto_off_now("RTC wake after mem: the idle time has run out");
 	}
 	// The battery's own wake: a few seconds of slack, as the RTC counts whole
-	// seconds and the wake takes a moment.
+	// seconds and the wake takes a moment. A cable check owning the alarm rules
+	// out a battery look at the same time.
 	bool battery_wake =
-		rtc_woke_it && g_rtc_battery_armed && (int32_t)(boottime_ms() - g_rtc_battery_boot_at) >= -5000;
+		rtc_woke_it && battery_armed && !usb_check_wake && (int32_t)(boottime_ms() - g_rtc_battery_boot_at) >= -5000;
 	if (battery_wake) {
 		printf("power: mem: RTC wake to look at the battery\n");
+	}
+
+	// A cable check that found a cable is a user-visible insert: bring the
+	// screen back so the charging screen can appear. One that found nothing
+	// leaves the screen dark and goes back to sleep after a short awake window.
+	bool cable_found = false;
+	if (usb_check_wake) {
+		if (usb_vbus_present()) {
+			printf("power: mem: RTC check for a cable -- cable found\n");
+			cable_found = true;
+			power_screen_on();
+		} else {
+			printf("power: mem: RTC check for a cable -- none found\n");
+		}
 	}
 
 	// No recovery of the old stream: there is nothing left to recover -- the
@@ -1292,7 +1312,8 @@ static void suspend_to_ram(void) {
 	// would push the shutdown out by a whole period on every suspend. That
 	// shutdown counts on CLOCK_BOOTTIME, which counted the sleep; a real user
 	// wake stamps the marker through power_screen_on().
-	g_mem_active_ms = lv_tick_get();
+	g_mem_active_ms =
+		usbwake_mem_active_after_wake(lv_tick_get(), g_mem_after_ms, usb_check_wake, cable_found);
 	g_screen_off_at = lv_tick_get();
 	g_mem_last_attempt_ms = lv_tick_get();
 	g_mem_skip_logged[0] = '\0';

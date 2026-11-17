@@ -27,6 +27,8 @@ int main(void) {
 	assert(usbwake_mem_active_after_wake(100000, 60000, true, false) == 46000);
 	assert(usbwake_mem_active_after_wake(100000, 60000, true, true) == 100000);
 	assert(usbwake_mem_active_after_wake(100000, 5000, true, false) == 100000);
+	assert(usbwake_mem_active_after_wake(200000, 60000, false, false) == 200000);
+	assert(usbwake_mem_active_after_wake(200000, 60000, true, false) == 146000);
 
 	return 0;
 }
