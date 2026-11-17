@@ -2471,6 +2471,7 @@ static void index_theme_refresh(void) {
 		}
 		if (panels[i]->index_hint) {
 			lv_obj_set_style_bg_color(panels[i]->index_hint, theme()->accent, 0);
+			lv_obj_set_style_text_color(panels[i]->index_hint_label, theme_on_accent(), 0);
 		}
 		reorder_icon_paint(panels[i]);
 	}

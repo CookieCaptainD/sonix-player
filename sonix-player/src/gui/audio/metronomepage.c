@@ -439,6 +439,7 @@ static void refresh_theme(void) {
 		lv_obj_set_style_text_color(pill_labels[i], t->text_primary, 0);
 	}
 	lv_obj_set_style_bg_color(play_btn, t->accent, 0);
+	lv_obj_set_style_image_recolor(play_glyph, theme_on_accent(), 0);
 	theme_apply_slider_knob(slider);
 	paint_dots();
 	lv_obj_invalidate(drawing);
