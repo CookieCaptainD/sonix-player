@@ -182,6 +182,7 @@ static void start_cb(lv_event_t *e) {
 static void refresh_theme(void) {
 	if (start_btn) {
 		lv_obj_set_style_bg_color(start_btn, theme()->accent, 0);
+		lv_obj_set_style_text_color(start_label, theme_on_accent(), 0);
 	}
 }
 
