@@ -89,8 +89,15 @@ static bool voltage_seen;
 // page is not required for the DAC toggle to work.
 static bool charge_known;
 static bool charge_wanted_off;		 // the state the tick keeps enforcing
-static bool charge_saved_bit = true; // REG18h[1] before the first stop; always 1 (see below)
-static bool charge_blocked;			 // last state the PMIC confirmed
+// REG18h[1] before the first stop. The block in axpcharge_set_charging() saves
+// the healthy value, never a stale clear bit, so this is always 1; it stays a
+// field so the "put back what was there" intent is written down rather than
+// implied.
+static bool charge_saved_bit = true;
+static bool charge_blocked; // last state the PMIC confirmed
+// True only after a verified write that left the charge bit set: the power tick
+// clears the boot suppression on this, never on a request that is still queued.
+static bool charge_allowed_confirmed;
 static long long charge_next_ms;
 
 static long long now_ms(void) {
@@ -259,6 +266,15 @@ static void log_first_contact(void) {
 	}
 	printf("axpcharge: found REG64h=0x%02x, REG62h=0x%02x (%d mA)\n", volt, cur,
 		   current_ma(cur & AXP_CURRENT_MASK));
+
+	// Whether the boot release really set the charge bit is the first thing a
+	// "still charging" report needs: a clear bit here says the write did not
+	// land, a set bit says the current has another explanation.
+	uint8_t module;
+	if (axp_read(AXP_REG_MODULE, &module)) {
+		printf("axpcharge: REG18h=0x%02x; cell charge %s\n", module,
+			   (module & AXP_MODULE_CHARGE) ? "enabled" : "disabled");
+	}
 }
 
 #ifdef HOST_BUILD
@@ -303,6 +319,10 @@ static bool charge_apply_locked(bool reassert, bool quiet) {
 	}
 	bool was_blocked = charge_blocked;
 	charge_blocked = charge_wanted_off;
+	// Only a verified write sets this, and an allowed one is the only state it
+	// reports: it lets the power tick clear the suppression raised when the
+	// boot release failed, and a queued request must never read as confirmed.
+	charge_allowed_confirmed = (charge_bit_value() & AXP_MODULE_CHARGE) != 0;
 	if (!quiet && charge_blocked != was_blocked) {
 		if (axp_read(AXP_REG_MODULE, &v)) {
 			printf("axpcharge: cell charging %s (REG18h=0x%02x)\n", charge_blocked ? "stopped" : "allowed", v);
@@ -347,9 +367,11 @@ bool axpcharge_set_charging(bool on) {
 	}
 
 	// First stop: remember the bit, so allowing charging again can put back
-	// what was there. A clear bit found before the first stop is stale, not
-	// healthy (startup releases charging before any DAC mode can exist), so it
-	// still counts as set: charge_saved_bit therefore always ends up 1.
+	// what was there. This read is the defensive path: the startup release has
+	// already forced the healthy value and set charge_known, so on a device it
+	// is unreachable and it runs only under AXPCHARGE_TEST. A clear bit found
+	// here is stale rather than a setting the user made, so it still counts as
+	// set and charge_saved_bit ends up 1.
 	if (!on && !charge_known) {
 		uint8_t v;
 		if (!axp_read(AXP_REG_MODULE, &v)) {
@@ -383,6 +405,13 @@ bool axpcharge_charging_blocked(void) {
 	bool blocked = charge_blocked;
 	pthread_mutex_unlock(&axp_lock);
 	return blocked;
+}
+
+bool axpcharge_charging_confirmed_allowed(void) {
+	pthread_mutex_lock(&axp_lock);
+	bool allowed = charge_allowed_confirmed;
+	pthread_mutex_unlock(&axp_lock);
+	return allowed;
 }
 
 bool axpcharge_charging_release(void) {
@@ -490,6 +519,7 @@ void axpcharge_test_reset(void) {
 	charge_wanted_off = false;
 	charge_saved_bit = true;
 	charge_blocked = false;
+	charge_allowed_confirmed = false;
 	charge_next_ms = 0;
 
 	axpcharge_test_set_millivolts(3900);
@@ -510,5 +540,21 @@ void axpcharge_test_fail_write(bool fail) { host_fail_write = fail; }
 void axpcharge_test_fail_read(bool fail) { host_fail_read = fail; }
 
 void axpcharge_test_set_applies(bool applies) { host_applies = applies; }
+
+// Holds the file's own lock from the test thread, so the crash handler's
+// trylock path can be exercised. The tests are single-threaded: the mutex is
+// taken by the thread that will also call the quiet release, and only a
+// trylock can fail for that thread.
+static bool test_lock_held;
+
+void axpcharge_test_hold_lock(bool hold) {
+	if (hold && !test_lock_held) {
+		pthread_mutex_lock(&axp_lock);
+		test_lock_held = true;
+	} else if (!hold && test_lock_held) {
+		pthread_mutex_unlock(&axp_lock);
+		test_lock_held = false;
+	}
+}
 
 #endif /* AXPCHARGE_TEST */

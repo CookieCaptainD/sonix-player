@@ -65,6 +65,14 @@ bool axpcharge_set_charging(bool on);
 // True while the PMIC has confirmed that cell charging is stopped.
 bool axpcharge_charging_blocked(void);
 
+// True only when the PMIC has confirmed that charging is allowed (not merely
+// that a request is queued): set by a verified read-back that left the charge
+// bit set, cleared by a confirmed stop, and left alone by a failed write. The
+// power tick clears the suppression raised when the boot release failed only
+// once this is true, so the top bar cannot claim a charge the PMIC has not
+// agreed to.
+bool axpcharge_charging_confirmed_allowed(void);
+
 // Re-enables charging. Called at startup, at DAC exit, at poweroff, and from
 // the crash handler. Unlike a user request this one is retried by the tick
 // until the PMIC confirms it. Returns the result of the immediate attempt.

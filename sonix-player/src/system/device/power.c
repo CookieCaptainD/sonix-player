@@ -523,8 +523,15 @@ static void apply_charge_limit(void) {
 // unconditional suppression into a new way for the icon to lie.
 bool power_set_charging_allowed(bool allowed) {
 	if (axpcharge_charging_control_supported()) {
-		g_charging_blocked = !allowed;
 		bool ok = axpcharge_set_charging(allowed);
+		// Only once the PMIC has confirmed it. A refused request leaves the
+		// flag as it was -- the confirmed state -- instead of announcing a
+		// block that is not in force. On the R1 no MP2731 node exists, so
+		// apply_charge_limit() never reads it; the flag is kept truthful all
+		// the same rather than set ahead of the answer.
+		if (ok) {
+			g_charging_blocked = !allowed;
+		}
 		printf("power: charging %s%s\n", allowed ? "allowed" : "forbidden",
 			   ok ? "" : " (the PMIC did not take it)");
 		return ok;
@@ -540,7 +547,7 @@ bool power_set_charging_allowed(bool allowed) {
 
 	printf("power: charging %s\n", allowed ? "allowed again" : "forbidden");
 	apply_charge_limit(); // one place decides, including this
-	return g_charge_node != NULL;
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1862,7 +1869,11 @@ static void power_timer_cb(lv_timer_t *timer) {
 	// A suppression raised at boot when the release failed is stale as soon as
 	// the tick's retry has got the PMIC to confirm it -- but not while DAC mode
 	// is the reason it was raised, which is the user's choice and outlasts it.
-	if (!usbdac_is_active() && axpcharge_charging_control_supported() && !axpcharge_charging_blocked()) {
+	// Confirmed allowed, not merely requested: after a failed release the retry
+	// can still be five seconds away, and clearing the suppression then would
+	// make the top bar claim a charge the cell is not getting.
+	if (!usbdac_is_active() && axpcharge_charging_control_supported() &&
+		axpcharge_charging_confirmed_allowed()) {
 		system_suppress_charging(false);
 	}
 }

@@ -192,9 +192,10 @@ bool power_charging_held(void);
 // shutdown, so a device switched off at its charge limit would come back to a
 // cable that does nothing until the next boot resets the chip.
 //
-// Returns whether the release was handled now: on the AXP2101 (R1) the PMIC's
-// own answer, on the MP2731 (R3 Pro II) whether there was a node to write -- the
-// driver's writes have no result of their own.
+// Returns whether the release was handled now. On the AXP2101 (R1) that is the
+// PMIC's own answer; on the MP2731 (R3 Pro II) it is whether there was a node to
+// write, because the driver's writes have no result of their own. Where neither
+// path exists nothing can be holding the charge off, so the answer is true.
 bool power_charging_release(void);
 
 // The same, for the crash handler: the AXP2101 part never blocks on the PMIC

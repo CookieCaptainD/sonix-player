@@ -32,6 +32,11 @@ void axpcharge_test_fail_read(bool fail);
 // The answer axpcharge_charging_control_supported() gives on the host.
 void axpcharge_test_set_applies(bool applies);
 
+// Takes or releases axpcharge.c's own PMIC lock from the test thread, so the
+// crash handler's trylock path can be exercised: while it is held, the quiet
+// release must answer false and touch nothing.
+void axpcharge_test_hold_lock(bool hold);
+
 // What the stubbed gauge and cable detect report. Both are implemented in
 // tools/test_axpcharge.c, beside the stubs whose state they set; the other
 // hooks below live in axpcharge.c.

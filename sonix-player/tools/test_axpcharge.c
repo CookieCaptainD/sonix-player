@@ -164,6 +164,64 @@ static void case_release_enables(void) {
 	CHECK(!axpcharge_charging_blocked(), "release_enables reports unblocked");
 }
 
+// 6d. A release that could not confirm the allowed state must not read as
+//     confirmed: the power tick clears the boot suppression on that answer, and
+//     the retry may still be five seconds away.
+static void case_boot_release_failure_not_confirmed(void) {
+	axpcharge_test_reset();
+	// Where a run that was killed with the DAC toggle off left the bit.
+	axpcharge_test_set_reg(REG18, 0x08);
+	axpcharge_test_fail_write(true);
+	CHECK(!axpcharge_charging_release(), "boot_release_failure_not_confirmed release fails");
+	CHECK(!axpcharge_charging_confirmed_allowed(), "boot_release_failure_not_confirmed not confirmed");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "boot_release_failure_not_confirmed leaves the bit clear");
+	axpcharge_test_fail_write(false);
+	axpcharge_test_advance_ms(6000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "boot_release_failure_not_confirmed tick restores the bit");
+	CHECK(axpcharge_charging_confirmed_allowed(), "boot_release_failure_not_confirmed tick confirms allowed");
+}
+
+// 6e. A confirmed stop is not a confirmed allowance, whatever was true before.
+static void case_stop_confirms_not_allowed(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_charging_release(), "stop_confirms_not_allowed starts allowed");
+	CHECK(axpcharge_charging_confirmed_allowed(), "stop_confirms_not_allowed starts confirmed");
+	CHECK(axpcharge_set_charging(false), "stop_confirms_not_allowed stops");
+	CHECK(!axpcharge_charging_confirmed_allowed(), "stop_confirms_not_allowed not confirmed allowed");
+}
+
+// 6f. A confirmed resume after a stop is one.
+static void case_resume_confirms_allowed(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "resume_confirms_allowed stops first");
+	CHECK(!axpcharge_charging_confirmed_allowed(), "resume_confirms_allowed stop is not allowed");
+	CHECK(axpcharge_set_charging(true), "resume_confirms_allowed resumes");
+	CHECK(axpcharge_charging_confirmed_allowed(), "resume_confirms_allowed confirms allowed");
+}
+
+// 6g. The crash handler's release confirms in the same way, without printing.
+static void case_release_quiet_enables(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "release_quiet_enables stops first");
+	CHECK(!axpcharge_charging_confirmed_allowed(), "release_quiet_enables stop is not allowed");
+	CHECK(axpcharge_charging_release_quiet(), "release_quiet_enables returns true");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_quiet_enables restores the bit");
+	CHECK(axpcharge_charging_confirmed_allowed(), "release_quiet_enables confirms allowed");
+}
+
+// 6h. A lock the crash handler cannot take leaves the register alone, and the
+//     next boot's release or the driver is the backstop.
+static void case_release_quiet_trylock_fails(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "release_quiet_trylock_fails stops first");
+	axpcharge_test_hold_lock(true);
+	CHECK(!axpcharge_charging_release_quiet(), "release_quiet_trylock_fails returns false");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_quiet_trylock_fails leaves the register");
+	axpcharge_test_hold_lock(false);
+	CHECK(!axpcharge_charging_confirmed_allowed(), "release_quiet_trylock_fails confirms nothing");
+}
+
 // 7. A nearly flat cell with VBUS in is the one case a stop is refused.
 static void case_low_cell_refuses(void) {
 	axpcharge_test_reset();
@@ -194,6 +252,31 @@ static void case_tick_reclears_driver_write(void) {
 	CHECK(axpcharge_test_reg(REG18) == 0x0c, "tick_reclears_driver_write clears bit 1 again");
 }
 
+// 9b. The bound is one second, not one tick: half a second after a stop the
+//     driver's write is left alone, so the pulse window is what the spec says.
+static void case_no_reassert_before_1s(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "no_reassert_before_1s stops first");
+	axpcharge_test_set_reg(REG18, 0x0e);
+	axpcharge_test_advance_ms(500);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x0e, "no_reassert_before_1s left alone at 500 ms");
+	axpcharge_test_advance_ms(600);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x0c, "no_reassert_before_1s re-cleared after one second");
+}
+
+// 9c. The interlock exists for a shared cable: with no VBUS there is nothing to
+//     draw from and a low cell does not refuse the stop.
+static void case_low_cell_without_vbus_allows(void) {
+	axpcharge_test_reset();
+	axpcharge_test_set_millivolts(3200);
+	axpcharge_test_set_vbus(false);
+	CHECK(axpcharge_set_charging(false), "low_cell_without_vbus_allows returns true");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "low_cell_without_vbus_allows clears the bit");
+	CHECK(!axpcharge_charging_confirmed_allowed(), "low_cell_without_vbus_allows confirms the stop");
+}
+
 // 10. A register that cannot be read is not written blind.
 static void case_read_failure_reverts(void) {
 	axpcharge_test_reset();
@@ -212,9 +295,16 @@ int main(void) {
 	case_release_retries();
 	case_release_waits_5s();
 	case_release_enables();
+	case_boot_release_failure_not_confirmed();
+	case_stop_confirms_not_allowed();
+	case_resume_confirms_allowed();
+	case_release_quiet_enables();
+	case_release_quiet_trylock_fails();
 	case_low_cell_refuses();
 	case_unknown_model_no_write();
 	case_tick_reclears_driver_write();
+	case_no_reassert_before_1s();
+	case_low_cell_without_vbus_allows();
 	case_read_failure_reverts();
 	printf("all axpcharge cases passed\n");
 	return 0;

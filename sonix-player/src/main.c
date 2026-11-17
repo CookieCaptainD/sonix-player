@@ -482,8 +482,9 @@ static void crash_handler(int sig, siginfo_t *info, void *context) {
 	// if it went down holding the charge limit -- or in DAC mode with the cell
 	// charger switched off -- the battery would never fill again -- the charger
 	// driver keeps that bit until the next boot. The quiet variant is the one
-	// for here: it never waits on the PMIC lock and never logs, both of which
-	// matter in a process that is already dying.
+	// for here: it never waits on the PMIC lock and adds no logging of its own,
+	// both of which matter in a process that is already dying. It does still
+	// look the charger node up, so that one line may appear.
 	power_charging_release_quiet();
 
 	for (;;) {
