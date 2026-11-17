@@ -82,17 +82,22 @@ static void case_resume_sets_bit1(void) {
 }
 
 // 4. A refused stop leaves the register alone and is not retried behind the UI.
+//    charge_known is made true first, so this is the kind of stop the tick
+//    would retry; the failure is cleared before the tick, so a retry would
+//    really clear bit 1.
 static void case_refused_off_reverts(void) {
 	axpcharge_test_reset();
 	axpcharge_test_set_reg(REG18, 0x0e);
+	CHECK(axpcharge_set_charging(false), "refused_off_reverts stops first");
+	CHECK(axpcharge_set_charging(true), "refused_off_reverts resumes first");
 	axpcharge_test_fail_write(true);
 	CHECK(!axpcharge_set_charging(false), "refused_off_reverts returns false");
 	CHECK(axpcharge_test_reg(REG18) == 0x0e, "refused_off_reverts leaves the bit");
 	CHECK(!axpcharge_charging_blocked(), "refused_off_reverts not blocked");
-	axpcharge_test_advance_ms(2000);
+	axpcharge_test_fail_write(false);
+	axpcharge_test_advance_ms(6000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x0e, "refused_off_reverts not retried by the tick");
-	axpcharge_test_fail_write(false);
 }
 
 // 5. A refused resume leaves the stop in place and is not retried either.
@@ -104,28 +109,56 @@ static void case_refused_on_reverts(void) {
 	CHECK(!axpcharge_set_charging(true), "refused_on_reverts returns false");
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "refused_on_reverts leaves the bit clear");
 	CHECK(axpcharge_charging_blocked(), "refused_on_reverts still blocked");
-	axpcharge_test_advance_ms(2000);
+	axpcharge_test_fail_write(false);
+	axpcharge_test_advance_ms(6000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "refused_on_reverts not retried by the tick");
-	axpcharge_test_fail_write(false);
 }
 
 // 6. Unlike a user request, a failed release stays queued and the tick retries
-//    it until the PMIC takes it. advance_ms must not drop the pending release.
+//    it until the PMIC takes it, on the usual five-second period.
 static void case_release_retries(void) {
 	axpcharge_test_reset();
 	CHECK(axpcharge_set_charging(false), "release_retries stops first");
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_retries starts stopped");
 	axpcharge_test_fail_write(true);
 	CHECK(!axpcharge_charging_release(), "release_retries immediate attempt fails");
-	axpcharge_test_advance_ms(2000);
+	axpcharge_test_advance_ms(6000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_retries still stopped after a failed tick");
 	axpcharge_test_fail_write(false);
-	axpcharge_test_advance_ms(2000);
+	axpcharge_test_advance_ms(6000);
 	axpcharge_tick();
 	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_retries tick restores the bit");
 	CHECK(!axpcharge_charging_blocked(), "release_retries tick clears blocked");
+}
+
+// 6b. A failed release waits the five seconds; only a requested stop earns the
+//     one-second period.
+static void case_release_waits_5s(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "release_waits_5s stops first");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_waits_5s starts stopped");
+	axpcharge_test_fail_write(true);
+	CHECK(!axpcharge_charging_release(), "release_waits_5s immediate attempt fails");
+	axpcharge_test_advance_ms(2000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_waits_5s not retried after two seconds");
+	axpcharge_test_fail_write(false);
+	axpcharge_test_advance_ms(4000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_waits_5s retried after five seconds");
+	CHECK(!axpcharge_charging_blocked(), "release_waits_5s clears blocked");
+}
+
+// 6c. A release that succeeds at once re-enables charging and reports it.
+static void case_release_enables(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "release_enables stops first");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_enables starts stopped");
+	CHECK(axpcharge_charging_release(), "release_enables returns true");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_enables restores the bit");
+	CHECK(!axpcharge_charging_blocked(), "release_enables reports unblocked");
 }
 
 // 7. A nearly flat cell with VBUS in is the one case a stop is refused.
@@ -174,6 +207,8 @@ int main(void) {
 	case_refused_off_reverts();
 	case_refused_on_reverts();
 	case_release_retries();
+	case_release_waits_5s();
+	case_release_enables();
 	case_low_cell_refuses();
 	case_unknown_model_no_write();
 	case_tick_reclears_driver_write();
