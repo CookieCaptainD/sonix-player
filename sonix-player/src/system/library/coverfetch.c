@@ -2,9 +2,11 @@
 
 #include <ctype.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "src/system/core/json.h"
@@ -27,6 +29,11 @@
 #endif
 // The JSON is small; a cap keeps a broken server from eating the heap.
 #define COVERFETCH_MAX_BYTES (256 * 1024)
+// An image is capped at 4 MB. Read one byte over so an oversized body is
+// rejected instead of being silently truncated to the cap by http_get_ex().
+#define COVERFETCH_MAX_IMAGE_BYTES (4 * 1024 * 1024)
+#define COVERFETCH_IMAGE_NAME "cover.jpg"
+#define COVERFETCH_PART_SUFFIX ".coverfetch.part"
 #define COVERFETCH_MAX_RESULTS 5
 #define COVERFETCH_MAX_KEYS 256
 
@@ -40,8 +47,13 @@ static int negative_count = 0;
 
 #ifdef COVERFETCH_TEST
 static int records_outstanding = 0;
+static char test_save_dir[1024];
 
 int coverfetch_test_outstanding_records(void) { return records_outstanding; }
+
+void coverfetch_test_set_dir(const char *dir) {
+	snprintf(test_save_dir, sizeof(test_save_dir), "%s", dir ? dir : "");
+}
 #endif
 
 bool coverfetch_negative_has(const char *key) {
@@ -239,4 +251,111 @@ void coverfetch_free(coverfetch_record_t *records, int count) {
 	records_outstanding--;
 #endif
 	free(records);
+}
+
+// Same rules as albumart.c:43-61, whose copy is file-local. Only these three
+// families reach the image decoder, and a real image needs at least 12 bytes.
+static bool is_supported_image(const uint8_t *data, size_t size) {
+	if (!data || size < 12) {
+		return false;
+	}
+	if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+		return true;
+	}
+	static const uint8_t png_magic[] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+	if (memcmp(data, png_magic, sizeof(png_magic)) == 0) {
+		return true;
+	}
+	if (memcmp(data, "GIF8", 4) == 0 && (data[4] == '7' || data[4] == '9') && data[5] == 'a') {
+		return true;
+	}
+	return false;
+}
+
+bool coverfetch_save(const char *track_path, const char *dir_path, const coverfetch_record_t *record, bool replace) {
+	if (!record || !record->url[0]) {
+		return false;
+	}
+
+	char derived[1024];
+	const char *dir = dir_path;
+#ifdef COVERFETCH_TEST
+	if (test_save_dir[0]) {
+		dir = test_save_dir;
+	}
+#endif
+	if (!dir || !dir[0]) {
+		if (!track_path || !track_path[0]) {
+			return false;
+		}
+		const char *slash = strrchr(track_path, '/');
+		if (!slash) {
+			dir = ".";
+		} else {
+			size_t n = (size_t)(slash - track_path);
+			if (n >= sizeof(derived)) {
+				return false;
+			}
+			memcpy(derived, track_path, n);
+			derived[n] = '\0';
+			dir = derived;
+		}
+	}
+
+	char target[1200];
+	int n = snprintf(target, sizeof(target), "%s/%s", dir, COVERFETCH_IMAGE_NAME);
+	if (n < 0 || (size_t)n >= sizeof(target)) {
+		return false;
+	}
+
+	// Gap protection first: no request at all when there is nothing to fill.
+	struct stat st;
+	if (!replace && stat(target, &st) == 0) {
+		return false;
+	}
+
+	// The same one-request-at-a-time rule as the search, held only for the
+	// request itself -- writing the file must not block another caller.
+	char *body = NULL;
+	size_t len = 0;
+	int status = 0;
+	pthread_mutex_lock(&http_lock);
+	bool ok = http_get_ex(record->url, NULL, false, &body, &len, COVERFETCH_MAX_IMAGE_BYTES + 1,
+						  COVERFETCH_TIMEOUT_SECS, &status);
+	pthread_mutex_unlock(&http_lock);
+	if (!ok || !body || len < 12 || len > COVERFETCH_MAX_IMAGE_BYTES ||
+		!is_supported_image((const uint8_t *)body, len)) {
+		free(body);
+		return false;
+	}
+
+	char temp[1200];
+	n = snprintf(temp, sizeof(temp), "%s%s", target, COVERFETCH_PART_SUFFIX);
+	if (n < 0 || (size_t)n >= sizeof(temp)) {
+		free(body);
+		return false;
+	}
+
+	FILE *f = fopen(temp, "wb");
+	if (!f) {
+		free(body);
+		return false;
+	}
+	bool good = fwrite(body, 1, len, f) == len;
+	if (good) {
+		good = fflush(f) == 0;
+	}
+	if (good) {
+		good = fsync(fileno(f)) == 0;
+	}
+	if (fclose(f) != 0) {
+		good = false;
+	}
+	free(body);
+
+	if (!good || rename(temp, target) != 0) {
+		remove(temp);
+		return false;
+	}
+	return true;
 }
