@@ -1259,7 +1259,23 @@ static int volume_step_delta(int code) {
 // reaches the stream itself, so synchronised, bluealsa passes it on to the
 // headphones, and separate, bluealsa attenuates on this side.
 static void apply_volume_step(int code) {
-	device_state_change_volume_percent(volume_step_delta(code));
+	int delta = volume_step_delta(code);
+	int current = device_state_get_volume_percent();
+	int target = current + delta;
+	if (target < 0) target = 0;
+	if (target > 100) target = 100;
+
+	volume_output_t out = volume_profile_output();
+	int cfg_ceiling = volume_limit_configured_ceiling(out);
+	if (delta > 0 && volume_limit_enabled() && cfg_ceiling < 100 && target > cfg_ceiling &&
+		!volume_limit_override_active(out)) {
+		// Explicit confirmation required before allowing the volume above the
+		// configured safety limit.
+		gui_request_volume_above_limit(target);
+		return;
+	}
+
+	device_state_change_volume_percent(delta);
 	gui_notify_volume(device_state_get_volume_percent());
 }
 

@@ -6,6 +6,7 @@
 #include "src/gui/shell/icons.h"
 #include "src/gui/nowplaying/player.h"
 #include "src/gui/settings/screensaver.h"
+#include "src/gui/shell/confirm.h"
 #include "src/gui/shell/theme.h"
 #include "src/system/audio/alsa-controls.h"
 
@@ -95,10 +96,44 @@ static void set_icon_for(int percent) {
 	lv_image_set_src(overlay_icon, icon);
 }
 
-// The finger moved the slider: apply it and keep the pill up.
+static void refresh_overlay_to_current(void) {
+	int percent = get_volume_percent();
+	lv_slider_set_value(overlay_slider, percent, LV_ANIM_OFF);
+	set_icon_for(percent);
+	shown_percent = percent;
+	lv_label_set_text_fmt(overlay_label, "%d", percent);
+	apply_label_color(percent);
+	lv_timer_reset(hide_timer);
+	lv_timer_resume(hide_timer);
+}
+
+static void allow_above_limit_ok(void *user) {
+	int percent = (int)(intptr_t)user;
+	volume_output_t out = volume_profile_output();
+	volume_limit_set_override_above(out, true);
+	set_volume_percent(percent);
+	refresh_overlay_to_current();
+}
+
+// The finger moved the slider: apply it and keep the pill up. If the user tries
+// to go above the configured safety limit, ask for explicit confirmation before
+// allowing it.
 static void slider_changed_cb(lv_event_t *e) {
 	(void)e;
 	int percent = (int)lv_slider_get_value(overlay_slider);
+
+	volume_output_t out = volume_profile_output();
+	int cfg_ceiling = volume_limit_configured_ceiling(out);
+	if (volume_limit_enabled() && cfg_ceiling < 100 && percent > cfg_ceiling &&
+		!volume_limit_override_active(out)) {
+		// Hold at the limit until the user explicitly confirms going above it.
+		lv_slider_set_value(overlay_slider, cfg_ceiling, LV_ANIM_OFF);
+		set_volume_percent(cfg_ceiling);
+		refresh_overlay_to_current();
+		confirm_show("volume_limit_confirm_title", "volume_limit_confirm_note", "allow", allow_above_limit_ok,
+					 (void *)(intptr_t)percent);
+		return;
+	}
 
 	set_volume_percent(percent);
 

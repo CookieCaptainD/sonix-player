@@ -111,6 +111,10 @@ void gui_notify_key(gui_key_t key);
 // on screen.
 void gui_notify_volume(int percent);
 
+// Ask the user to explicitly confirm raising the volume above the configured
+// safety limit to `target_percent`. Runs on the UI thread.
+void gui_request_volume_above_limit(int target_percent);
+
 // The power key was held down.
 void gui_notify_power_menu(void);
 
