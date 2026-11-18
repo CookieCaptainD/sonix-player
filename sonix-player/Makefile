@@ -60,10 +60,12 @@ endif
 CFLAGS = -O3 -g -Wall -MMD -MP -D_FILE_OFFSET_BITS=64 -I. -I$(LVGL_DIR) -DLV_CONF_INCLUDE_SIMPLE=1 -DGB_CORE=1
 # On the host the audio libraries are the system ones (libopusfile-dev,
 # libwavpack-dev); on the target they are the ones this Makefile builds below.
+# libxmp is not packaged for the host here, so a static copy is built into
+# HOST_XMP_PREFIX below and its header directory is added explicitly.
 # opusfile.h includes <opus_multistream.h> unprefixed, so the opus/ directory
 # has to be among the -I in both cases.
 HOST_CFLAGS = $(CFLAGS) -DHOST_BUILD=1 $(shell sdl2-config --cflags) $(shell pkg-config --cflags freetype2) \
-			  $(shell pkg-config --cflags opusfile wavpack)
+			  $(shell pkg-config --cflags opusfile wavpack) -I$(HOST_XMP_PREFIX)/include
 # -include glibc_compat.h must enter EVERY translation unit of the target
 # build: it carries the .symver lines that keep five maths functions on the
 # names the device's glibc 2.22 knows, and a .symver applies only to its own
@@ -151,7 +153,7 @@ TARGET_CXXFLAGS = $(TARGET_CFLAGS) $(GB_CFLAGS)
 # distributions do not ship, and the link fails with "cannot find -lstdc++".
 GB_LDFLAGS = -static-libstdc++ -static-libgcc
 HOST_LDFLAGS = $(shell sdl2-config --libs) -lpthread -lm -ldl -lasound $(shell pkg-config --libs freetype2) \
-			   $(shell pkg-config --libs opusfile wavpack)
+			   $(shell pkg-config --libs opusfile wavpack) $(HOST_XMP_LIB)
 #
 # --gc-sections: the other half of -ffunction-sections (see TARGET_CFLAGS).
 TARGET_LDFLAGS = $(FREETYPE_PREFIX)/lib/libfreetype.a $(AUDIO_LIBS) -lpthread -lm -ldl -lasound \
@@ -173,9 +175,12 @@ FREETYPE_PREFIX = $(CURDIR)/freetype-target
 #
 #   libogg + libopus + opusfile -> .opus (src/system/decode/opusdec.c)
 #   libwavpack                  -> .wv   (src/system/decode/wavpackdec.c)
+#   libxmp                      -> tracker modules (it/mod/s3m/xm/...)
 #
 # The configure options below were settled against these versions.
 # ALAC is not here: its decoder is a single file under src/system/decode/alac/.
+# libxmp installs its header as xmp.h, not libxmp.h; the existing
+# -I$(AUDIO_PREFIX)/include in TARGET_CFLAGS is enough to find it.
 AUDIO_PREFIX = $(CURDIR)/audio-target
 
 OGG_VER = 1.3.5
@@ -206,9 +211,26 @@ WAVPACK_URL_MIRROR = https://github.com/dbry/WavPack/releases/download/$(WAVPACK
 WAVPACK_SRC = $(CURDIR)/wavpack-$(WAVPACK_VER)
 WAVPACK_LIB = $(AUDIO_PREFIX)/lib/libwavpack.a
 
+# libxmp 4.6.2 is published as a GitHub release tarball; the old SourceForge
+# files for this version are gone (404). The release tarball carries a ready
+# configure script, unlike the plain git tag archive.
+XMP_VER = 4.6.2
+XMP_TARBALL = libxmp-$(XMP_VER).tar.gz
+XMP_URL = https://github.com/libxmp/libxmp/releases/download/libxmp-$(XMP_VER)/$(XMP_TARBALL)
+XMP_SRC = $(CURDIR)/libxmp-$(XMP_VER)
+XMP_LIB = $(AUDIO_PREFIX)/lib/libxmp.a
+
+# The host has no libxmp in its pkg-config prefix, so build the same static
+# library there with the native compiler; the objects pick up its header via
+# HOST_CFLAGS and the link picks up the archive via HOST_LDFLAGS.
+HOST_XMP_PREFIX = $(CURDIR)/host-xmp
+HOST_XMP_LIB = $(HOST_XMP_PREFIX)/lib/libxmp.a
+HOST_XMP_SRC = $(CURDIR)/host-xmp-src
+
 # The order matters: with static libraries the linker resolves left to right,
-# and opusfile calls opus which calls ogg.
-AUDIO_LIBS = $(OPUSFILE_LIB) $(OPUS_LIB) $(OGG_LIB) $(WAVPACK_LIB)
+# and opusfile calls opus which calls ogg. libxmp is independent, so it goes
+# last.
+AUDIO_LIBS = $(OPUSFILE_LIB) $(OPUS_LIB) $(OGG_LIB) $(WAVPACK_LIB) $(XMP_LIB)
 
 
 # Source files. src/gb holds a .c as well (the miniz shell) alongside the C++
@@ -228,6 +250,10 @@ HOST_OBJS = $(APP_SRCS:src/%.c=build_host/%.o) $(APP_CXX_SRCS:src/%.cpp=build_ho
 			$(LVGL_SRCS:$(LVGL_DIR)/%.c=build_host/lvgl/%.o)
 TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=build_target/%.opp) \
 			  $(LVGL_SRCS:$(LVGL_DIR)/%.c=build_target/lvgl/%.o)
+
+# The host libxmp has to exist before the objects are compiled: its header is
+# on HOST_CFLAGS, so xmp.h must already be installed by then.
+$(HOST_OBJS): $(HOST_XMP_LIB)
 
 .PHONY: all host target clean compile_commands.json
 
@@ -402,7 +428,8 @@ clean:
 # The bundled libraries and their extracted sources. The downloaded tarballs stay.
 .PHONY: libs-clean
 libs-clean:
-	rm -rf $(FREETYPE_PREFIX) $(AUDIO_PREFIX) $(FREETYPE_SRC) $(OGG_SRC) $(OPUS_SRC) $(OPUSFILE_SRC) $(WAVPACK_SRC)
+	rm -rf $(FREETYPE_PREFIX) $(AUDIO_PREFIX) $(FREETYPE_SRC) $(OGG_SRC) $(OPUS_SRC) $(OPUSFILE_SRC) $(WAVPACK_SRC) \
+		$(XMP_SRC) $(HOST_XMP_PREFIX) $(HOST_XMP_SRC)
 
 # Make sure the cross compiler is built before trying to make any of the target
 # objects with it.
@@ -510,6 +537,44 @@ $(WAVPACK_LIB): $(CROSS_CC)
 		$(CROSS_TOOLS)
 	$(CROSS_PATH) $(MAKE) -C $(WAVPACK_SRC)
 	$(CROSS_PATH) $(MAKE) -C $(WAVPACK_SRC) install
+
+# Cross-build libxmp, once. 4.6.2 has no --disable-external-libs option (that
+# belonged to older releases); --disable-shared/--enable-static plus CROSS_COMMON
+# is the whole configuration, and no depacker is left out.
+$(XMP_LIB): $(CROSS_CC)
+	@echo "Building static libxmp $(XMP_VER) for the target..."
+	@if [ ! -f $(XMP_TARBALL) ]; then \
+		wget -O $(XMP_TARBALL) $(XMP_URL); \
+	fi
+	rm -rf $(XMP_SRC) && tar xf $(XMP_TARBALL)
+	cd $(XMP_SRC) && $(CROSS_PATH) ./configure $(CROSS_COMMON) $(CROSS_TOOLS)
+	$(CROSS_PATH) $(MAKE) -C $(XMP_SRC)
+	$(CROSS_PATH) $(MAKE) -C $(XMP_SRC) install
+
+# Host copy, built with the native compiler into its own prefix and source dir
+# so it cannot race with the cross build above.
+$(HOST_XMP_LIB):
+	@echo "Building static libxmp $(XMP_VER) for the host..."
+	@if [ ! -f $(XMP_TARBALL) ]; then \
+		wget -O $(XMP_TARBALL) $(XMP_URL); \
+	fi
+	rm -rf $(HOST_XMP_SRC) && mkdir -p $(HOST_XMP_SRC) && \
+		tar xf $(XMP_TARBALL) --strip-components=1 -C $(HOST_XMP_SRC)
+	cd $(HOST_XMP_SRC) && ./configure --prefix=$(HOST_XMP_PREFIX) --disable-shared --enable-static CC=$(CC)
+	$(MAKE) -C $(HOST_XMP_SRC)
+	$(MAKE) -C $(HOST_XMP_SRC) install
+
+# Host benches for the two new decoders. Neither is part of the player build.
+.PHONY: test-trackerdec test-mididec
+test-trackerdec: $(HOST_XMP_LIB)
+	$(CC) -O2 -g -Wall -Wextra -std=c11 -Isrc -I$(HOST_XMP_PREFIX)/include \
+		src/system/decode/trackerdec.c tools/test_trackerdec.c $(HOST_XMP_LIB) -lm -o /tmp/test_trackerdec
+	/tmp/test_trackerdec
+
+test-mididec:
+	$(CC) -O2 -g -Wall -Wextra -std=c99 -I$(CURDIR) \
+		src/system/decode/mididec.c tools/test_mididec.c -lm -o /tmp/test_mididec
+	/tmp/test_mididec
 
 # Header dependencies recorded by -MMD (see CFLAGS). The dashes keep make quiet
 # on the first build, when no .d files exist yet. The C++ objects end in .opp
