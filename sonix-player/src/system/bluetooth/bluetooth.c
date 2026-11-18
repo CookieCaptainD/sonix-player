@@ -3669,6 +3669,7 @@ int bluetooth_pin_mode(void) {
 	case BTSTACK_PAIR_PASSKEY: return 1;
 	case BTSTACK_PAIR_CONFIRM: return 2;
 	case BTSTACK_PAIR_DISPLAY: return 3;
+	case BTSTACK_PAIR_AUTHORIZE: return 4;
 	default: return -1;
 	}
 }
