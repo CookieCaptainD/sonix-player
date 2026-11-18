@@ -51,8 +51,7 @@ static int row_count(const char *db_path) {
 	}
 	sqlite3_stmt *st = NULL;
 	int n = 0;
-	if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM PODCAST_EPISODES", -1, &st, NULL) == SQLITE_OK &&
-		sqlite3_step(st) == SQLITE_ROW) {
+	if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM PODCAST_EPISODES", -1, &st, NULL) == SQLITE_OK && sqlite3_step(st) == SQLITE_ROW) {
 		n = sqlite3_column_int(st, 0);
 	}
 	sqlite3_finalize(st);
