@@ -32,6 +32,17 @@
 // whether VBUS is coming in or going out.
 #define MP2731_ONLINE "/sys/class/power_supply/mp2731-charger/online"
 
+// The other end's VBUS state, logged on change. Without that line a port being
+// polled and a port that sees nothing look the same in the field log.
+#define USB_ONLINE "/sys/class/power_supply/usb/online"
+
+// The reporter has no shell on the device, so the log has to carry the values
+// at the moment of insert. Print every second for the first minute after boot
+// and for a short window after a role or supply change, then only while there
+// is something on the port.
+#define SNAPSHOT_BOOT_SECS 60
+#define SNAPSHOT_CHANGE_SECS 10
+
 // The R1 has no Type-C class. Its CC controller is a TCS1421 set by two GPIOs,
 // and the platform driver takes the mode by name through one attribute and
 // reads the current one back: "Sink", "Source", "StrongDRP" or "NormalDRP".
@@ -795,25 +806,52 @@ static void snapshot_value(const char *path, char *out, size_t out_size) {
 	fclose(f);
 }
 
-// The six values asked for in the field report, on one line once a second while
-// there is anything on the port. An empty port has nothing to explain and
-// would fill the log with the same line for hours, so it is left out.
+// The six values asked for in the field report, on one line at most once a
+// second. The boot and change windows print them even when the port claims to
+// be empty: in the test 2 session that claim hid the whole insert, so a log
+// gated on "cable attached" could not say what the port was doing.
 static void log_port_snapshot(time_t now) {
+	static time_t boot_at;
+	static time_t change_until;
 	static time_t last_at;
-	if (last_at && now <= last_at) {
-		return;
-	}
-	if (!partner_present() && !usb_vbus_present() && !host_bus_has_device()) {
-		return;
-	}
-	last_at = now;
+	static char prev_port_type[96], prev_power_role[96], prev_data_role[96];
+	static char prev_online[96], prev_usb_online[96];
+	static bool have_prev;
 
-	char port_type[96], power_role[96], data_role[96], otg[96], online[96];
+	if (boot_at == 0) {
+		boot_at = now;
+	}
+
+	char port_type[96], power_role[96], data_role[96], otg[96], online[96], usb_online[96];
 	snapshot_value(TYPEC_PORT_TYPE, port_type, sizeof(port_type));
 	snapshot_value(TYPEC_POWER_ROLE, power_role, sizeof(power_role));
 	snapshot_value(TYPEC_DATA_ROLE, data_role, sizeof(data_role));
 	snapshot_value(MP2731_OTG, otg, sizeof(otg));
 	snapshot_value(MP2731_ONLINE, online, sizeof(online));
+	snapshot_value(USB_ONLINE, usb_online, sizeof(usb_online));
+
+	if (!have_prev || strcmp(port_type, prev_port_type) || strcmp(power_role, prev_power_role) ||
+		strcmp(data_role, prev_data_role) || strcmp(online, prev_online) ||
+		strcmp(usb_online, prev_usb_online)) {
+		if (have_prev && strcmp(usb_online, prev_usb_online)) {
+			fprintf(stderr, "usbaudio: %s <- %s\n", USB_ONLINE, usb_online);
+		}
+		snprintf(prev_port_type, sizeof(prev_port_type), "%s", port_type);
+		snprintf(prev_power_role, sizeof(prev_power_role), "%s", power_role);
+		snprintf(prev_data_role, sizeof(prev_data_role), "%s", data_role);
+		snprintf(prev_online, sizeof(prev_online), "%s", online);
+		snprintf(prev_usb_online, sizeof(prev_usb_online), "%s", usb_online);
+		have_prev = true;
+		change_until = now + SNAPSHOT_CHANGE_SECS;
+	}
+
+	bool due = secs_since(boot_at, now) < SNAPSHOT_BOOT_SECS || now <= change_until ||
+			partner_present() || usb_vbus_present() || host_bus_has_device();
+	if (!due || (last_at && now <= last_at)) {
+		return;
+	}
+	last_at = now;
+
 	fprintf(stderr,
 			"usbaudio: snapshot port0 port_type=%s power_role=%s data_role=%s partner=%d usb_otg=%s online=%s\n",
 			port_type, power_role, data_role, partner_present() ? 1 : 0, otg, online);
