@@ -68,6 +68,31 @@ void player_layout_set(player_layout_t layout);
 bool player_cover_accent(void);
 void player_cover_accent_set(bool on);
 
+// ---------------------------------------------------------------------------
+// A/B playback
+//
+// The points belong to the loaded track: both are dropped on a track change,
+// and neither survives switching the feature off. The button is an entry into
+// the same cycle the track menu calls when the icon is hidden; the loop itself
+// is driven by the normal progress poll, so it keeps running with the screen
+// dark and whichever page is on show.
+// ---------------------------------------------------------------------------
+
+// Master switch. False also clears the points and hides the button and the
+// track-menu entry.
+void player_ab_set_enabled(bool enabled);
+
+// Whether the Now Playing button is shown. Hiding it does not turn off a loop
+// that is already up; the track menu takes over as the way to cycle it.
+void player_ab_set_show_button(bool show);
+
+// Drop both points, leaving the two settings as they were.
+void player_ab_clear(void);
+
+// The three taps: set A at the current position, set B there, clear both.
+// A B that would land less than a second after A is refused with a message.
+void player_ab_cycle(void);
+
 // The output the music was going to has just been unplugged -- a jack pulled
 // out, a USB-C DAC removed, headphones that walked out of range. Pauses, so
 // that taking the headphones off does not cost three tracks of an album, and

@@ -28,6 +28,7 @@
 #include "src/gui/shell/topbar.h"
 #include "src/system/device/power.h"
 #include "src/system/playback/sleeptimer.h"
+#include "src/system/playback/abloop.h"
 #include "src/system/gearboy/gearboy.h"
 #include "src/system/streaming/radio.h"
 #include "src/system/audio/audio.h"
@@ -93,6 +94,41 @@ static lv_obj_t *repeat_btn_icon;
 static lv_obj_t *prev_icon; // static so the over-cover recolor can reach them
 static lv_obj_t *next_icon;
 static lv_timer_t *progress_slider_timer;
+
+// A/B playback. The state is owned here; abloop.c only knows how to move it
+// around. The two points are markers on the progress slider rather than on the
+// waveform, so they travel with it when the alternative layout reparents it.
+static abloop_state_t ab_state;
+static lv_obj_t *ab_btn;
+static lv_obj_t *ab_btn_icon;
+static lv_obj_t *ab_mark_a;
+static lv_obj_t *ab_mark_b;
+// -1 while no marker is being dragged, otherwise the marker's index.
+static int ab_drag_which = -1;
+static double ab_drag_secs;
+static bool ab_smooth_was_paused;
+static double ab_prev_secs;
+// Kept in step with the audio side's suppression flag, so the setter is only
+// called when the answer actually changes.
+static bool ab_fade_suppressed;
+// The file the markers belong to, for clearing the points on a track change.
+static char ab_loaded_file[512];
+static bool ab_was_live;
+
+static bool playing_local_file(const device_state_t *state);
+static void ab_button_sync(void);
+static void ab_markers_sync(void);
+static void paint_ab_button(void);
+static void ab_fade_sync(void);
+
+// The one source rule for the whole feature: a loop, its button and its
+// markers are for a file on the card. The helper answers for live sources,
+// AirPlay, Qobuz, Tidal, DLNA, podcasts and books alike.
+static bool ab_source_ok(void) {
+	device_state_t state;
+	device_state_get(&state);
+	return playing_local_file(&state);
+}
 
 // Runs only while a sleep timer is counting, which is the only time there is
 // anything to ask. Paused otherwise, so an option nobody switched on does not
@@ -423,7 +459,7 @@ static void apply_live_mode(bool live) {
 	// on a stream, it is misleading. The mode it cycles belongs to the track
 	// queue, so a tap there would silently change what happens to the music
 	// the radio interrupted.
-	lv_obj_t *const hidden_when_live[] = {more_btn_obj, repeat_btn_obj, progress_slider, elapsed_label,
+	lv_obj_t *const hidden_when_live[] = {more_btn_obj, repeat_btn_obj, ab_btn, progress_slider, elapsed_label,
 										  remaining_label};
 	for (size_t i = 0; i < sizeof(hidden_when_live) / sizeof(hidden_when_live[0]); i++) {
 		if (!hidden_when_live[i]) {
@@ -496,6 +532,10 @@ static void apply_live_mode(bool live) {
 		lv_image_set_src(cover_placeholder_icon, live ? &icon_radio_player
 									: (audiobook_mode ? &icon_book_headphones : &icon_music_note));
 	}
+	// The list above shows the button again on the way off a stream; the
+	// setting and the book/podcast dresses may still want it hidden.
+	ab_button_sync();
+	ab_markers_sync();
 }
 
 // Dresses the player for a book or for a track. Cheap and idempotent, like
@@ -594,6 +634,10 @@ static void apply_audiobook_mode(bool book, bool podcast) {
 		const lv_image_dsc_t *mark = book ? &icon_book_headphones : podcast ? &icon_podcast_cover : &icon_music_note;
 		lv_image_set_src(cover_placeholder_icon, mark);
 	}
+	// A/B belongs to music: a book's chapters and an episode's queue are not
+	// regions of one file to repeat, so neither the button nor the discs stay.
+	ab_button_sync();
+	ab_markers_sync();
 }
 
 // ---------------------------------------------------------------------------
@@ -867,11 +911,107 @@ static int view_value(double position) {
 // The other way round: the second of the file that slider value `value` is.
 static double view_seconds(int value) { return view_start + view_length * value / 1000.0; }
 
+// A marker is a small disc on the bar. The inset keeps it within the bar at
+// either end, where LVGL would otherwise clip it to the slider's own box.
+#define AB_MARK_SIZE 10
+#define AB_MARK_INSET (PROGRESS_KNOB_GROW + PROGRESS_KNOB_RING)
+
+// The same scale in both directions, so a drag lands where the disc was drawn.
+static int ab_mark_x(int value) {
+	int span = lv_obj_get_width(progress_slider) - 2 * AB_MARK_INSET;
+	if (span < 0) {
+		span = 0;
+	}
+	return AB_MARK_INSET + span * value / 1000;
+}
+
+static int ab_mark_value(int x) {
+	int span = lv_obj_get_width(progress_slider) - 2 * AB_MARK_INSET;
+	if (span <= 0) {
+		return 0;
+	}
+	int value = (x - AB_MARK_INSET) * 1000 / span;
+	if (value < 0) {
+		value = 0;
+	}
+	if (value > 1000) {
+		value = 1000;
+	}
+	return value;
+}
+
+// Where the disc sits vertically: the middle of the bar, which over the
+// waveform is the middle of the shape rather than the thin standard track.
+static int ab_mark_y(void) { return lv_obj_get_height(progress_slider) / 2 - AB_MARK_SIZE / 2; }
+
+static void ab_mark_place(lv_obj_t *mark, int value) {
+	int x = ab_mark_x(value) - AB_MARK_SIZE / 2;
+	int y = ab_mark_y();
+	if (lv_obj_get_x(mark) != x || lv_obj_get_y(mark) != y) {
+		lv_obj_set_pos(mark, x, y);
+	}
+}
+
+// Shows the points that exist and puts each disc at its place on the view.
+// The dragged disc keeps the position the finger gave it until the release.
+static void ab_markers_sync(void) {
+	bool source_ok = ab_source_ok();
+	bool show_a = ab_state.enabled && source_ok && ab_state.a_set;
+	bool show_b = ab_state.enabled && source_ok && ab_state.b_set;
+	if (ab_mark_a) {
+		lv_obj_set_hidden(ab_mark_a, !show_a);
+		if (show_a && ab_drag_which != 0) {
+			ab_mark_place(ab_mark_a, view_value(ab_state.a_secs));
+		}
+	}
+	if (ab_mark_b) {
+		lv_obj_set_hidden(ab_mark_b, !show_b);
+		if (show_b && ab_drag_which != 1) {
+			ab_mark_place(ab_mark_b, view_value(ab_state.b_secs));
+		}
+	}
+}
+
+// Three faces: grey with no points, a dim accent once A is down, and the full
+// accent with both points set. The glyph is the same; only its tint changes.
+static void paint_ab_button(void) {
+	if (!ab_btn_icon) {
+		return;
+	}
+	bool active = abloop_active(&ab_state);
+	lv_color_t tint = ab_state.a_set ? chrome_accent() : theme()->text_secondary;
+	lv_opa_t opa = active ? LV_OPA_COVER : LV_OPA_60;
+	lv_obj_set_style_image_recolor(ab_btn_icon, tint, 0);
+	lv_obj_set_style_image_recolor_opa(ab_btn_icon, opa, 0);
+}
+
+// The switch owns the button as well as the loop: switching A/B off hides it,
+// and hiding the button on its own is not the same as switching the loop off.
+static void ab_button_sync(void) {
+	if (!ab_btn) {
+		return;
+	}
+	bool hidden = !ab_state.enabled || !ab_state.show_button || !ab_source_ok();
+	lv_obj_set_hidden(ab_btn, hidden);
+}
+
+// Suppressing the fade is a flag on the audio side; leave the user's fade
+// setting alone and only write when the answer changes.
+static void ab_fade_sync(void) {
+	bool active = abloop_active(&ab_state);
+	if (active != ab_fade_suppressed) {
+		ab_fade_suppressed = active;
+		audio_set_fade_suppressed(active);
+	}
+}
+
 // Writes the two clocks that sit under the ends of the progress bar: elapsed
 // on the left, total length on the right -- both of the file, or both of the
 // chapter (see view_start).
 static void set_progress_label(double current_secs, double total_secs) {
 	view_update(current_secs, total_secs);
+	// The discs use the same view, so a change of scale moves all three.
+	ab_markers_sync();
 	double shown = 0;
 	if (view_length > 0) {
 		lv_slider_set_value(progress_slider, view_value(current_secs), LV_ANIM_OFF);
@@ -1118,8 +1258,8 @@ static lv_color_t alt_ink(void) {
 
 static void lyrics_repaint_lit(void);
 
-// The two glyphs that wear the accent, repainted whenever the accent of the
-// moment can have moved: the play/pause disc and the repeat/shuffle mode.
+// The glyphs that wear the accent, repainted whenever the accent of the
+// moment can have moved: play/pause, the repeat mode and the A/B button.
 static void paint_transport_tint(void) {
 	if (play_btn_icon) {
 		lv_obj_set_style_image_recolor(play_btn_icon, chrome_accent(), 0);
@@ -1128,11 +1268,19 @@ static void paint_transport_tint(void) {
 	if (repeat_btn_icon) {
 		update_repeat_button();
 	}
+	paint_ab_button();
 	update_speed_button();
 	// The progress bar, which Waveform hides under the shape of the track.
 	if (progress_slider) {
 		lv_obj_set_style_bg_color(progress_slider, chrome_accent(), LV_PART_INDICATOR);
 		lv_obj_set_style_bg_color(progress_slider, chrome_accent(), LV_PART_KNOB);
+	}
+	lv_color_t mark_tint = chrome_accent();
+	if (ab_mark_a) {
+		lv_obj_set_style_bg_color(ab_mark_a, mark_tint, 0);
+	}
+	if (ab_mark_b) {
+		lv_obj_set_style_bg_color(ab_mark_b, mark_tint, 0);
 	}
 	lyrics_repaint_lit(); // the sung line wears it too
 }
@@ -1268,6 +1416,7 @@ static void slider_over_waveform(bool over) {
 		lv_obj_set_style_bg_opa(progress_slider, LV_OPA_TRANSP, LV_PART_INDICATOR);
 		lv_obj_set_style_opa(progress_slider, LV_OPA_TRANSP, LV_PART_KNOB);
 		lv_obj_move_foreground(progress_slider); // over the canvas, which takes no presses anyway
+		ab_markers_sync(); // the bar changed both parent and height
 		return;
 	}
 
@@ -1280,6 +1429,7 @@ static void slider_over_waveform(bool over) {
 	lv_obj_set_style_bg_opa(progress_slider, LV_OPA_30, LV_PART_MAIN);
 	lv_obj_remove_local_style_prop(progress_slider, LV_STYLE_BG_OPA, LV_PART_INDICATOR);
 	lv_obj_remove_local_style_prop(progress_slider, LV_STYLE_OPA, LV_PART_KNOB);
+	ab_markers_sync();
 }
 
 // ---------------------------------------------------------------------------
@@ -3546,6 +3696,14 @@ static void refresh_now_playing(void) {
 	device_state_t state;
 	device_state_get(&state);
 
+	// The points belong to one file. Every route into a new one -- a queue
+	// jump, a restore, a stream coming or going -- comes through here.
+	if (state.live != ab_was_live || strcmp(state.current_file, ab_loaded_file) != 0) {
+		ab_was_live = state.live;
+		snprintf(ab_loaded_file, sizeof(ab_loaded_file), "%s", state.current_file);
+		player_ab_clear();
+	}
+
 	apply_live_mode(state.live);
 	apply_connecting();
 	// Before anything is drawn: which arrangement this source gets decides
@@ -4125,13 +4283,25 @@ static void handle_track_finished(void) {
 // next poll, while the PCM held for gapless still has its queue to play.
 static void track_end_async(void *user) {
 	(void)user;
+	// A finished track takes its points with it; the next one starts clean.
+	// This runs on the GUI thread, which is the only thread that owns ab_state.
+	abloop_clear(&ab_state);
+	// The audio hook has already put the flag back; bring the mirror on side
+	// with it so the next poll does not write the old answer again.
+	ab_fade_sync();
 	if (device_state_take_completion()) {
 		handle_track_finished();
 	}
 }
 
 // Playback thread.
-static void track_end_hook(void) { gui_post(track_end_async, NULL); }
+static void track_end_hook(void) {
+	// Only the audio flag is touched here: it is a volatile boolean written on
+	// this thread. ab_state belongs to the GUI thread, so its clear is posted
+	// with the rest of the end-of-track work rather than done here.
+	audio_set_fade_suppressed(false);
+	gui_post(track_end_async, NULL);
+}
 
 // Reads the current device state and reconciles the UI against it. This is the
 // single point that keeps the play/pause button and the progress bar from
@@ -4194,6 +4364,29 @@ static void update_progress(void) {
 
 	set_progress_label(state.progress_current_secs, current_total_length);
 	wave_refresh(cover_shown_path, state.progress_current_secs);
+
+	// A/B loop. Kept in this poll so it runs with the screen dark and whatever
+	// page is on show -- the reason the stock firmware's version was no use.
+	// The seek goes through device_state_seek(), so the queue is left alone.
+	{
+		bool active = abloop_active(&ab_state);
+		ab_fade_sync();
+		bool source_ok = playing_local_file(&state);
+		if (active && state.status == AUDIO_STATUS_PLAYING && source_ok && ab_drag_which < 0 &&
+			!lv_timer_get_paused(progress_slider_timer)) {
+			if (abloop_should_loop(&ab_state, ab_prev_secs, state.progress_current_secs)) {
+				device_state_seek(ab_state.a_secs);
+				ab_prev_secs = ab_state.a_secs;
+			} else {
+				ab_prev_secs = state.progress_current_secs;
+			}
+		} else {
+			// A seek, a pause or a drag while A/B was up must not look like a
+			// crossing of B at the next tick that is allowed to loop.
+			ab_prev_secs = state.progress_current_secs;
+		}
+	}
+
 	if (state.status == AUDIO_STATUS_PLAYING && !state.live) {
 		device_state_read_ahead(state.progress_current_secs, state.progress_total_secs);
 	}
@@ -4507,7 +4700,9 @@ static void progress_slider_event_cb(lv_event_t *e) {
 		}
 	}
 
-	if (code == LV_EVENT_RELEASED) {
+	// PRESS_LOST is the other way a gesture can end: without it the timer
+	// would stay paused and the A/B poll would sit out every later tick.
+	if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
 		lv_timer_resume(progress_slider_timer);
 
 		int value = lv_slider_get_value(progress_slider);
@@ -4515,6 +4710,10 @@ static void progress_slider_event_cb(lv_event_t *e) {
 		double seconds = view_seconds(value);
 
 		device_state_seek(seconds);
+		// The poll was paused for the whole gesture, so it still holds the
+		// position from before it. Left as it was, the next tick would read
+		// this seek as a crossing of B and jump straight back to A.
+		ab_prev_secs = seconds;
 
 		lv_timer_resume(progress_slider_timer);
 	}
@@ -4533,6 +4732,103 @@ static void progress_slider_event_cb(lv_event_t *e) {
 		// bars would stand still under the finger and only jump at the release.
 		wave_preview(seconds);
 	}
+}
+
+// Drags one of the two points. The event is stopped here: the slider is the
+// disc's parent, and would read the same press as a request to seek. Like the
+// slider, both polls stand down for the gesture, but the seek is left until
+// the finger comes off -- and PRESS_LOST ends the gesture just as RELEASED does.
+static void ab_mark_event_cb(lv_event_t *e) {
+	bool is_b = (bool)(uintptr_t)lv_event_get_user_data(e);
+	lv_event_code_t code = lv_event_get_code(e);
+	lv_obj_t *mark = lv_event_get_target(e);
+	lv_event_stop_bubbling(e);
+
+	if (code == LV_EVENT_PRESSED) {
+		lv_indev_t *indev = lv_indev_active();
+		if (!indev || view_length <= 0) {
+			return;
+		}
+		ab_drag_which = is_b ? 1 : 0;
+		ab_drag_secs = is_b ? ab_state.b_secs : ab_state.a_secs;
+		lv_timer_pause(progress_slider_timer);
+		ab_smooth_was_paused = !smooth_timer || lv_timer_get_paused(smooth_timer);
+		if (smooth_timer && !ab_smooth_was_paused) {
+			lv_timer_pause(smooth_timer);
+		}
+		return;
+	}
+
+	if (ab_drag_which != (is_b ? 1 : 0)) {
+		return;
+	}
+
+	if (code == LV_EVENT_PRESSING) {
+		lv_indev_t *indev = lv_indev_active();
+		if (!indev) {
+			return;
+		}
+		lv_point_t point;
+		lv_indev_get_point(indev, &point);
+		lv_area_t coords;
+		lv_obj_get_coords(progress_slider, &coords);
+		double secs = view_seconds(ab_mark_value(point.x - coords.x1));
+		if (secs < view_start) {
+			secs = view_start;
+		}
+		if (secs > view_start + view_length) {
+			secs = view_start + view_length;
+		}
+		ab_drag_secs = secs;
+		ab_mark_place(mark, view_value(secs));
+		formatDoubleSeconds(secs - view_start, progress_label_text, sizeof(progress_label_text));
+		lv_label_set_text(elapsed_label, progress_label_text);
+		return;
+	}
+
+	if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+		ab_drag_which = -1;
+		lv_timer_resume(progress_slider_timer);
+		if (smooth_timer && !ab_smooth_was_paused) {
+			lv_timer_resume(smooth_timer);
+		}
+		if (is_b) {
+			// The same rule as the button's second tap: B has to stay a
+			// second past A, or the point is refused and the disc goes back.
+			// No seek either: the finger did not place a valid point.
+			if (!abloop_set_b(&ab_state, ab_drag_secs)) {
+				toast_error(tr("ab_b_after_a"));
+				ab_markers_sync();
+				return;
+			}
+		} else {
+			abloop_set_a(&ab_state, ab_drag_secs);
+		}
+		device_state_seek(ab_drag_secs);
+		// As on the slider: the poll missed the gesture and would otherwise
+		// take the jump as a crossing of B on its first tick back.
+		ab_prev_secs = ab_drag_secs;
+		ab_fade_sync();
+		paint_ab_button();
+		ab_markers_sync();
+	}
+}
+
+// The button is only a way into the same three-state cycle the track menu
+// calls when the icon is hidden.
+static void ab_btn_event_cb(lv_event_t *e) {
+	(void)e;
+	player_ab_cycle();
+}
+
+// The settings pages are built once at boot, so a change of the two switches
+// has to repaint anything already on screen. Refreshes are sent by the setters
+// and by whoever changes a related setting.
+static void ab_refresh_cb(lv_event_t *e) {
+	(void)e;
+	paint_ab_button();
+	ab_button_sync();
+	ab_markers_sync();
 }
 
 // The poll: collects finished artwork and reconciles the UI with playback.
@@ -5084,6 +5380,69 @@ void player_sheet_attach_drag(lv_obj_t *obj, bool opening) {
 	lv_obj_add_event_cb(obj, sheet_drag_cb, LV_EVENT_PRESS_LOST, (void *)(uintptr_t)opening);
 }
 
+// Drops both points. The switch and the button setting are left as they were;
+// the file the discs belong to is unchanged too.
+void player_ab_clear(void) {
+	abloop_clear(&ab_state);
+	ab_prev_secs = 0;
+	ab_fade_sync();
+	paint_ab_button();
+	ab_markers_sync();
+}
+
+// The master switch. Turning it off is more than pausing the loop: the points
+// go as well, so nothing survives to a later track or to turning it back on.
+void player_ab_set_enabled(bool enabled) {
+	ab_state.enabled = enabled;
+	if (!enabled) {
+		abloop_clear(&ab_state);
+		ab_prev_secs = 0;
+	}
+	ab_fade_sync();
+	paint_ab_button();
+	ab_button_sync();
+	ab_markers_sync();
+}
+
+// Hiding the icon does not touch a loop that is already running: the track
+// menu takes over as the way to set or clear the points.
+void player_ab_set_show_button(bool show) {
+	ab_state.show_button = show;
+	ab_button_sync();
+	if (ab_btn) {
+		lv_obj_send_event(ab_btn, LV_EVENT_REFRESH, NULL);
+	}
+}
+
+// The three faces of the button, and of the track-menu entry in the other
+// task: no points, A down, A and B down. The last tap clears both.
+void player_ab_cycle(void) {
+	if (!ab_state.enabled) {
+		return;
+	}
+	device_state_t state;
+	device_state_get(&state);
+	if (!playing_local_file(&state)) {
+		return;
+	}
+
+	if (!ab_state.a_set) {
+		abloop_set_a(&ab_state, state.progress_current_secs);
+	} else if (!ab_state.b_set) {
+		if (!abloop_set_b(&ab_state, state.progress_current_secs)) {
+			toast_error(tr("ab_b_after_a"));
+			return; // A stays; only a second tap at a valid place sets B.
+		}
+	} else {
+		abloop_clear(&ab_state);
+		ab_prev_secs = state.progress_current_secs;
+	}
+
+	ab_fade_sync();
+	paint_ab_button();
+	ab_markers_sync();
+}
+
 // Builds the player sheet: artwork, controls and the poll that drives them.
 void player_init(gui_config_t *cfg) {
 	// The artwork decodes on the shared worker; make sure it exists before
@@ -5169,6 +5528,9 @@ void player_init(gui_config_t *cfg) {
 	lv_obj_set_style_bg_opa(song_text, 0, 0);
 	lv_obj_set_style_border_width(song_text, 0, 0);
 	lv_obj_set_style_pad_all(song_text, 0, 0);
+	// Room for the A/B button, which sits in this corner without taking a row
+	// of its own: the controls block is sized to the rows it already has.
+	lv_obj_set_style_pad_left(song_text, 44, 0);
 	lv_obj_set_flex_flow(song_text, LV_FLEX_FLOW_COLUMN);
 	lv_obj_set_scrollable(song_text, false);
 
@@ -5219,6 +5581,26 @@ void player_init(gui_config_t *cfg) {
 	lv_label_set_text(format_label, "");
 	lv_obj_add_style(format_label, &theme_style_text_dim, 0);
 	lv_obj_set_style_text_font(format_label, &font_ui_18, 0);
+
+	// A/B: under the cover, at the left of the track information, in all three
+	// arrangements. It is floated out of the flex flow: the controls block has
+	// room for exactly the rows it already has, and another one would push the
+	// transport off the bottom of the shorter panel.
+	ab_btn = lv_btn_create(player_menu);
+	lv_obj_set_ignore_layout(ab_btn, true);
+	lv_obj_set_size(ab_btn, 36, 36);
+	lv_obj_align(ab_btn, LV_ALIGN_TOP_LEFT, 0, 0);
+	lv_obj_set_style_bg_opa(ab_btn, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_shadow_width(ab_btn, 0, 0);
+	lv_obj_set_style_pad_all(ab_btn, 0, 0);
+	lv_obj_add_event_cb(ab_btn, ab_btn_event_cb, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(ab_btn, ab_refresh_cb, LV_EVENT_REFRESH, NULL);
+	lv_obj_set_ext_click_area(ab_btn, 12);
+
+	ab_btn_icon = lv_image_create(ab_btn);
+	lv_image_set_src(ab_btn_icon, &icon_ab_repeat);
+	lv_obj_add_style(ab_btn_icon, &theme_style_icon, 0);
+	lv_obj_center(ab_btn_icon);
 
 	// The shape of the track, and the slider laid over it that still does the
 	// seeking. Two things in the same place rather than one: drawing a
@@ -5273,6 +5655,33 @@ void player_init(gui_config_t *cfg) {
 	lv_obj_set_style_shadow_offset_y(progress_slider, 1, LV_PART_KNOB);
 
 	lv_obj_add_event_cb(progress_slider, progress_slider_event_cb, LV_EVENT_ALL, NULL);
+
+	// The two points sit on the slider itself, so they follow it into the
+	// waveform when that arrangement puts the shape of the track over it.
+	{
+		lv_event_code_t codes[] = {LV_EVENT_PRESSED, LV_EVENT_PRESSING, LV_EVENT_RELEASED, LV_EVENT_PRESS_LOST};
+		for (int i = 0; i < 2; i++) {
+			lv_obj_t *mark = lv_obj_create(progress_slider);
+			lv_obj_remove_style_all(mark);
+			lv_obj_set_size(mark, AB_MARK_SIZE, AB_MARK_SIZE);
+			lv_obj_set_style_radius(mark, LV_RADIUS_CIRCLE, 0);
+			lv_obj_set_style_bg_color(mark, chrome_accent(), 0);
+			lv_obj_set_style_bg_opa(mark, LV_OPA_COVER, 0);
+			lv_obj_set_style_border_color(mark, lv_color_white(), 0);
+			lv_obj_set_style_border_width(mark, 2, 0);
+			lv_obj_set_ext_click_area(mark, 6);
+			lv_obj_set_hidden(mark, true);
+			for (size_t c = 0; c < sizeof(codes) / sizeof(codes[0]); c++) {
+				lv_obj_add_event_cb(mark, ab_mark_event_cb, codes[c], (void *)(uintptr_t)i);
+			}
+			lv_obj_add_event_cb(mark, ab_refresh_cb, LV_EVENT_REFRESH, NULL);
+			if (i == 0) {
+				ab_mark_a = mark;
+			} else {
+				ab_mark_b = mark;
+			}
+		}
+	}
 
 	// Polls playback to keep the slider, the clock and the play/pause icon in
 	// sync. It runs from here on, slowing down rather than stopping when
@@ -5700,6 +6109,8 @@ void player_init(gui_config_t *cfg) {
 					: (saved == (int)PLAYER_LAYOUT_STUDIO)		? PLAYER_LAYOUT_STUDIO
 																: PLAYER_LAYOUT_STANDARD;
 	cover_accent = config_get_bool("screen", "cover_accent", false);
+	player_ab_set_enabled(config_get_bool("player", "ab_enabled", false));
+	player_ab_set_show_button(config_get_bool("player", "ab_show_button", true));
 	layout_alt_now = false; // apply_layout() below puts the standard one up first
 	layout_studio_now = false;
 	apply_layout();
