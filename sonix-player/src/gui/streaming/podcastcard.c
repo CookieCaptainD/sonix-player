@@ -466,6 +466,8 @@ typedef struct {
 	int chosen_count;
 	lv_obj_t *sel_close_btn;
 	lv_obj_t *sel_action_btn;
+	lv_obj_t *sel_all_btn;	// choose every episode the filter shows
+	lv_obj_t *sel_heard_btn; // mark the chosen episodes heard
 	cover_image_t hero_image;
 	bool hero_waiting;
 	ep_row_t rows[EP_ROW_POOL];
@@ -1538,8 +1540,20 @@ static void selection_show(page_t *p) {
 	lv_obj_set_hidden(p->corner_btn, p->selecting);
 	lv_obj_set_hidden(p->sel_close_btn, !p->selecting);
 	lv_obj_set_hidden(p->sel_action_btn, !p->selecting);
+	if (p->sel_all_btn) {
+		lv_obj_set_hidden(p->sel_all_btn, !p->selecting);
+	}
+	if (p->sel_heard_btn) {
+		lv_obj_set_hidden(p->sel_heard_btn, !p->selecting);
+	}
 	if (p->selecting) {
 		lv_obj_move_foreground(p->sel_action_btn);
+		if (p->sel_all_btn) {
+			lv_obj_move_foreground(p->sel_all_btn);
+		}
+		if (p->sel_heard_btn) {
+			lv_obj_move_foreground(p->sel_heard_btn);
+		}
 	}
 	// Room under the last row while the round button is up, so that row can be
 	// scrolled clear of it.
@@ -1583,6 +1597,120 @@ static void selection_toggle(page_t *p, ep_row_t *row) {
 		return;
 	}
 	row_paint_choice(p, row);
+}
+
+// "All" means every episode the active filter shows, not every episode loaded:
+// the indices in `shown` are the same ones the rows and the filter use.
+static void select_all_cb(lv_event_t *e) {
+	if (switcher_back_drag_active() || player_sheet_drag_active()) {
+		return;
+	}
+	page_t *p = lv_event_get_user_data(e);
+	if (!p->selecting) {
+		return;
+	}
+	bool added = false;
+	for (int i = 0; i < p->shown_count; i++) {
+		int index = p->shown[i];
+		if (index < 0 || index >= p->count || p->chosen[index]) {
+			continue;
+		}
+		p->chosen[index] = 1;
+		p->chosen_count++;
+		added = true;
+	}
+	if (added) {
+		rows_invalidate(p);
+		window_update(p);
+	}
+}
+
+// Kept between the question and the answer: selection_stop() clears chosen[]
+// while the confirmation is up.
+static int *heard_indices;
+static int heard_count;
+static page_t *heard_page;
+
+static void heard_pending_free(void) {
+	free(heard_indices);
+	heard_indices = NULL;
+	heard_count = 0;
+	heard_page = NULL;
+}
+
+static void mark_many_confirmed(void *user) {
+	(void)user;
+	page_t *p = heard_page;
+	if (!p) {
+		heard_pending_free();
+		return;
+	}
+	const podcast_episode_t **episodes = calloc((size_t)heard_count, sizeof(*episodes));
+	const char **paths = calloc((size_t)heard_count, sizeof(*paths));
+	int n_episodes = 0;
+	int n_paths = 0;
+	for (int i = 0; i < heard_count; i++) {
+		int index = heard_indices[i];
+		p->episodes[index].played = true;
+		p->episodes[index].position = 0;
+		p->episodes[index].started = true;
+		if (p->feed) {
+			const podcast_episode_t *item = podcastpage_feed_episode(p->episodes[index].item);
+			if (item) {
+				episodes[n_episodes++] = item;
+			}
+		} else if (p->episodes[index].path) {
+			paths[n_paths++] = p->episodes[index].path;
+		}
+	}
+	bool ok = podcaststate_set_played_many(episodes, n_episodes, p->feed ? open_feed.image : NULL, paths, n_paths, true);
+	free(episodes);
+	free(paths);
+	heard_pending_free();
+	if (!ok) {
+		toast_error(tr("podcast_mark_heard_busy"));
+		return;
+	}
+	p->states_seen = podcaststate_revision();
+	if (p->feed) {
+		feed_read_states();
+	} else {
+		card_find_resume(p);
+	}
+	refill(p, true);
+}
+
+static void mark_many_heard_cb(lv_event_t *e) {
+	if (switcher_back_drag_active() || player_sheet_drag_active()) {
+		return;
+	}
+	page_t *p = lv_event_get_user_data(e);
+	if (!p->selecting || p->chosen_count == 0) {
+		return;
+	}
+	heard_pending_free();
+	heard_indices = malloc((size_t)p->chosen_count * sizeof(*heard_indices));
+	if (!heard_indices) {
+		return;
+	}
+	for (int i = 0; i < p->count && heard_count < p->chosen_count; i++) {
+		if (p->chosen[i]) {
+			heard_indices[heard_count++] = i;
+		}
+	}
+	heard_page = p;
+	selection_stop(p);
+	if (heard_count == 0) {
+		heard_pending_free();
+		return;
+	}
+	char message[96];
+	if (heard_count == 1) {
+		snprintf(message, sizeof(message), "%s", tr("podcast_one_episode"));
+	} else {
+		snprintf(message, sizeof(message), tr("podcast_episodes_2"), heard_count);
+	}
+	confirm_show("podcast_mark_heard", message, "podcast_mark_heard", mark_many_confirmed, NULL);
 }
 
 // The chosen files, kept between the question and the answer: the selection
@@ -2303,6 +2431,43 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 	lv_obj_set_style_image_recolor_opa(action_icon, LV_OPA_COVER, 0);
 	lv_obj_center(action_icon);
 	lv_obj_set_hidden(p->sel_action_btn, true);
+
+	// The two shortcuts sit at the bottom left, opposite the action button.
+	// They share the extra bottom padding the selection mode reserves, so the
+	// rows below them can still be scrolled clear.
+	p->sel_all_btn = lv_btn_create(p->screen);
+	lv_obj_set_size(p->sel_all_btn, 56, 56);
+	lv_obj_set_style_radius(p->sel_all_btn, LV_RADIUS_CIRCLE, 0);
+	lv_obj_add_style(p->sel_all_btn, &theme_style_card, 0);
+	lv_obj_set_style_border_width(p->sel_all_btn, 0, 0);
+	lv_obj_set_style_shadow_width(p->sel_all_btn, 0, 0);
+	lv_obj_set_style_pad_all(p->sel_all_btn, 0, 0);
+	lv_obj_align(p->sel_all_btn, LV_ALIGN_BOTTOM_LEFT, cfg->padding + 6, -cfg->padding - 6);
+	lv_obj_add_event_cb(p->sel_all_btn, select_all_cb, LV_EVENT_CLICKED, p);
+	lv_obj_t *all_icon = lv_image_create(p->sel_all_btn);
+	lv_image_set_src(all_icon, &icon_library_checked);
+	lv_obj_add_style(all_icon, &theme_style_icon, 0);
+	lv_obj_set_style_image_recolor(all_icon, theme()->accent, 0);
+	lv_obj_set_style_image_recolor_opa(all_icon, LV_OPA_COVER, 0);
+	lv_obj_center(all_icon);
+	lv_obj_set_hidden(p->sel_all_btn, true);
+
+	p->sel_heard_btn = lv_btn_create(p->screen);
+	lv_obj_set_size(p->sel_heard_btn, 56, 56);
+	lv_obj_set_style_radius(p->sel_heard_btn, LV_RADIUS_CIRCLE, 0);
+	lv_obj_add_style(p->sel_heard_btn, &theme_style_card, 0);
+	lv_obj_set_style_border_width(p->sel_heard_btn, 0, 0);
+	lv_obj_set_style_shadow_width(p->sel_heard_btn, 0, 0);
+	lv_obj_set_style_pad_all(p->sel_heard_btn, 0, 0);
+	lv_obj_align(p->sel_heard_btn, LV_ALIGN_BOTTOM_LEFT, cfg->padding + 74, -cfg->padding - 6);
+	lv_obj_add_event_cb(p->sel_heard_btn, mark_many_heard_cb, LV_EVENT_CLICKED, p);
+	lv_obj_t *heard_icon = lv_image_create(p->sel_heard_btn);
+	lv_image_set_src(heard_icon, &icon_check);
+	lv_obj_add_style(heard_icon, &theme_style_icon, 0);
+	lv_obj_set_style_image_recolor(heard_icon, theme()->accent, 0);
+	lv_obj_set_style_image_recolor_opa(heard_icon, LV_OPA_COVER, 0);
+	lv_obj_center(heard_icon);
+	lv_obj_set_hidden(p->sel_heard_btn, true);
 
 	switcher_attach_back_gesture(p->screen);
 	switcher_attach_back_gesture(p->page);
