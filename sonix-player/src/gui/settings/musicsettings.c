@@ -1352,6 +1352,13 @@ static void nowplaying_at_boot_cb(lv_event_t *e) {
 	config_save();
 }
 
+static lv_obj_t *lyrics_download_prompt_switch;
+
+static void lyrics_download_prompt_cb(lv_event_t *e) {
+	config_set_bool("music", "lyrics_download_prompt", lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
+	config_save();
+}
+
 static void go_to_current_cb(lv_event_t *e) {
 	medialist_set_go_to_current(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
 }
@@ -1603,6 +1610,15 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 	option_note(container, "musicsettings_nowplaying_at_boot_note");
 	if (config_get_bool("music", "nowplaying_at_boot", false)) {
 		lv_obj_add_state(nowplaying_at_boot_switch, LV_STATE_CHECKED);
+	}
+
+	// Whether swiping to lyrics on a track with no words offers an LRCLIB
+	// search. The fallback keeps the prompt on for existing users.
+	settingsrow_toggle(container, "musicsettings_lyrics_download_prompt", &lyrics_download_prompt_switch,
+					   lyrics_download_prompt_cb);
+	option_note(container, "musicsettings_lyrics_download_prompt_note");
+	if (config_get_bool("music", "lyrics_download_prompt", true)) {
+		lv_obj_add_state(lyrics_download_prompt_switch, LV_STATE_CHECKED);
 	}
 
 	switcher_attach_back_gesture(nowplaying_screen);
