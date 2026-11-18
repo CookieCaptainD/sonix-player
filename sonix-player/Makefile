@@ -399,6 +399,19 @@ compile_commands.json:
 clean:
 	rm -rf build_host build_target build_gen $(HOST_BIN) $(TARGET_BIN) $(TARGET_DEBUG_BIN) $(LAUNCH_BIN) compile_commands.json compile_flags.txt
 
+# The DoP output decision, on the host, with the ALSA probe stubbed out.
+# Nothing here enters the host or target player binary.
+DSDROUTE_TEST_BIN = build_host/test_dsdroute
+.PHONY: test-dsdroute
+test-dsdroute: $(DSDROUTE_TEST_BIN)
+	$(DSDROUTE_TEST_BIN)
+
+$(DSDROUTE_TEST_BIN): tools/test_dsdroute.c src/system/audio/dsdroute.c \
+		src/system/audio/dsdroute.h src/system/audio/dsdroute_test.h
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -Wall -Wextra -DHOST_BUILD=1 -DDSDROUTE_TEST=1 -I. -o $@ \
+		tools/test_dsdroute.c src/system/audio/dsdroute.c
+
 # The bundled libraries and their extracted sources. The downloaded tarballs stay.
 .PHONY: libs-clean
 libs-clean:
