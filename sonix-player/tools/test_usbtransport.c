@@ -32,9 +32,7 @@ static void expect_int(const char *name, int got, int want) {
 	failures++;
 }
 
-static void expect_bool(const char *name, bool got, bool want) {
-	expect_int(name, got ? 1 : 0, want ? 1 : 0);
-}
+static void expect_bool(const char *name, bool got, bool want) { expect_int(name, got ? 1 : 0, want ? 1 : 0); }
 
 typedef struct {
 	const char *name;
@@ -47,20 +45,10 @@ typedef struct {
 
 int main(void) {
 	static const case_t cases[] = {
-		{"detect path, new DAC", true, false, true, 30, 100},
-		{"USB DAC, automatic, remembered 42", true, false, true, 42, 100},
-		{"USB DAC, automatic, remembered 0", true, false, true, 0, 100},
-		{"USB DAC, automatic, remembered 100", true, false, true, 100, 100},
-		{"USB DAC, automatic, Bluetooth active", true, true, true, 42, -1},
-		{"USB DAC, automatic off", true, false, false, 42, -1},
-		{"not USB output", false, false, true, 42, -1},
-		{"Bluetooth output with automatic on", false, false, true, 42, -1},
-		{"second call stays at 100", true, false, true, 42, 100},
-		{"USB DAC, automatic, remembered 99", true, false, true, 99, 100},
+		{"detect path, new DAC", true, false, true, 30, 100}, {"USB DAC, automatic, remembered 42", true, false, true, 42, 100}, {"USB DAC, automatic, remembered 0", true, false, true, 0, 100}, {"USB DAC, automatic, remembered 100", true, false, true, 100, 100}, {"USB DAC, automatic, Bluetooth active", true, true, true, 42, -1}, {"USB DAC, automatic off", true, false, false, 42, -1}, {"not USB output", false, false, true, 42, -1}, {"Bluetooth output with automatic on", false, false, true, 42, -1}, {"second call stays at 100", true, false, true, 42, 100}, {"USB DAC, automatic, remembered 99", true, false, true, 99, 100},
 	};
 	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-		int got = usbtransport_forced_percent(cases[i].usb_output, cases[i].bluetooth_active, cases[i].automatic,
-											  cases[i].remembered);
+		int got = usbtransport_forced_percent(cases[i].usb_output, cases[i].bluetooth_active, cases[i].automatic, cases[i].remembered);
 		expect_int(cases[i].name, got, cases[i].want);
 	}
 

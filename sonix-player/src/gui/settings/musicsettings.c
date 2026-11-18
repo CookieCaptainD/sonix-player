@@ -1971,8 +1971,7 @@ void musicsettings_init(gui_config_t *cfg) {
 		lv_obj_add_state(gain_switch, LV_STATE_CHECKED);
 	}
 
-	settingsrow_toggle(container, "musicsettings_dac_transport_volume", &dac_transport_switch,
-					   dac_transport_toggle_cb);
+	settingsrow_toggle(container, "musicsettings_dac_transport_volume", &dac_transport_switch, dac_transport_toggle_cb);
 	if (config_get_bool("usb", "transport_auto_volume", true)) {
 		lv_obj_add_state(dac_transport_switch, LV_STATE_CHECKED);
 	}

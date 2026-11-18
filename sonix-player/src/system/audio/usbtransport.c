@@ -10,6 +10,4 @@ int usbtransport_forced_percent(bool usb_output, bool bluetooth_active, bool aut
 	return 100;
 }
 
-bool usbtransport_automatic_enabled(void) {
-	return config_get_bool("usb", "transport_auto_volume", true);
-}
+bool usbtransport_automatic_enabled(void) { return config_get_bool("usb", "transport_auto_volume", true); }
