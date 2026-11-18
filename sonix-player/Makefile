@@ -369,6 +369,15 @@ check-abi:
 	fi; \
 	echo "check-abi: no symbol beyond glibc $(DEVICE_GLIBC_MAJOR).$(DEVICE_GLIBC_MINOR)."
 
+# Host test for the bulk mark-as-heard state write. Links every host object
+# except main.o, so the test runs the real state module and its SQLite file.
+.PHONY: test-podcast-bulk-heard
+test-podcast-bulk-heard: $(filter-out build_host/main.o,$(HOST_OBJS))
+	@mkdir -p build_tests
+	$(CC) $(HOST_CFLAGS) -c tests/test_podcast_bulk_heard.c -o build_tests/test_podcast_bulk_heard.o
+	$(HOST_LD) -o build_tests/test_podcast_bulk_heard build_tests/test_podcast_bulk_heard.o $(filter-out build_host/main.o,$(HOST_OBJS)) $(HOST_LDFLAGS)
+	./build_tests/test_podcast_bulk_heard
+
 # The flags every target object was compiled with, the optimisation levels
 # included. Rewritten only when they differ, so a change of flags rebuilds
 # everything and nothing else does.
