@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "src/system/bluetooth/dbuslite.h"
+#include "src/system/core/config.h"
 
 #define BLUEZ_SERVICE "org.bluez"
 #define BLUEZ_ROOT "/org/bluez"
@@ -837,6 +838,12 @@ static void on_call(dbus_conn_t *c, const dbus_msg_t *m, void *user) {
 	}
 
 	if (strcmp(m->member, "RequestAuthorization") == 0) {
+		if (!config_get_bool("bluetooth", "confirm_pairing", false)) {
+			fprintf(stderr, "btstack: agent RequestAuthorization -> accepted\n");
+			dbus_reply_begin(c, m, "");
+			dbus_reply_send(c);
+			return;
+		}
 		fprintf(stderr, "btstack: agent RequestAuthorization\n");
 		set_pair_request(BTSTACK_PAIR_AUTHORIZE, m, "", "");
 		return;
