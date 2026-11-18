@@ -545,6 +545,7 @@ static void *worker_func(void *unused) {
 		track_now(&t);
 		if (strcmp(t.id, sent_track) != 0) {
 			snprintf(sent_track, sizeof(sent_track), "%s", t.id);
+			printf("btplayer: metadata -> '%s' / '%s'\n", t.title, t.artist);
 			emit_metadata(&t);
 		}
 
