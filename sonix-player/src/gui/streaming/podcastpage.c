@@ -12,6 +12,7 @@
 #include "src/system/playback/sleeptimer.h"
 #include "src/gui/shell/icons.h"
 #include "src/gui/shell/keyboard.h"
+#include "src/gui/shell/listsort.h"
 #include "src/gui/nowplaying/player.h"
 #include "src/gui/shell/pagetimer.h"
 #include "src/gui/shell/popover.h"
@@ -29,6 +30,7 @@
 #include "src/gui/wireless/wifisettings.h"
 #include "src/system/decode/growfile.h"
 #include "src/system/playback/device_state.h"
+#include "src/system/core/config.h"
 #include "src/system/core/lang.h"
 #include "src/system/playback/playlist.h"
 #include "src/system/streaming/podcast.h"
@@ -99,6 +101,8 @@ static lv_obj_t *busy_layer;
 static lv_obj_t *busy_label;
 static lv_obj_t *search_btn;
 static lv_obj_t *settings_btn;
+static lv_obj_t *sort_btn;
+static lv_obj_t *sort_icon;
 
 // The three tabs at the top -- the followed podcasts, the ones on the card and
 // the chart -- and the row that holds them. Shown only while one of the lists
@@ -228,6 +232,8 @@ static void fill_list(int from);
 static void busy_hide(void);
 static void prefetch_urgent(const char *wanted_path);
 static bool show_card_now(void);
+static bool show_followed_now(void);
+static void sort_paint(void);
 static void backfill_start(void);
 
 static void submit(const job_t *job) {
@@ -1119,9 +1125,112 @@ static void refresh_card_empty(void);
 // another page of the same one appended at the end. No widget is created or
 // destroyed either way -- the list is only as long as the body object says it
 // is, and the pool slides over it.
+static listsort_mode_t podcast_sort_choice(void) {
+	long value = config_get_int("podcast", "list_order", LISTSORT_SOURCE);
+	if (value < LISTSORT_SOURCE || value > LISTSORT_ZA) {
+		return LISTSORT_SOURCE;
+	}
+	return (listsort_mode_t)value;
+}
+
+static void podcast_sort_set(listsort_mode_t mode) {
+	config_set_int("podcast", "list_order", (long)mode);
+	config_save();
+}
+
+// Sorts the local lists in place before the cover addresses and the on-card
+// marks are rebuilt from them. Search and trending keep the service's order.
+static void sort_apply(void) {
+	listsort_mode_t mode = podcast_sort_choice();
+	if (mode == LISTSORT_SOURCE || result_count <= 0) {
+		return;
+	}
+
+	bool card = result_kind == JOB_CARD;
+	if (!card && result_kind != JOB_FOLLOWED) {
+		return;
+	}
+	int count = result_count;
+	if (card && count > PODCASTCARD_MAX_SHOWS) {
+		count = PODCASTCARD_MAX_SHOWS;
+	}
+	if (!card && count > PODCAST_MAX_HELD) {
+		count = PODCAST_MAX_HELD;
+	}
+
+	char (*keys)[LIBRARY_SORT_KEY_MAX] = malloc((size_t)count * sizeof(*keys));
+	int *order = malloc((size_t)count * sizeof(*order));
+	size_t item_size = card ? sizeof(podcastcard_show_t) : sizeof(podcast_feed_t);
+	void *sorted = malloc((size_t)count * item_size);
+	if (!keys || !order || !sorted) {
+		free(keys);
+		free(order);
+		free(sorted);
+		return;
+	}
+
+	for (int i = 0; i < count; i++) {
+		const char *name = card ? podcastcard_show_name(&card_shows[i]) : result_feeds[i].title;
+		library_sort_key(name, keys[i], sizeof(keys[i]));
+		order[i] = i;
+	}
+	listsort_order(order, count, keys, mode);
+
+	if (card) {
+		podcastcard_show_t *out = sorted;
+		for (int i = 0; i < count; i++) {
+			out[i] = card_shows[order[i]];
+		}
+		memcpy(card_shows, out, (size_t)count * item_size);
+	} else {
+		podcast_feed_t *out = sorted;
+		for (int i = 0; i < count; i++) {
+			out[i] = result_feeds[order[i]];
+		}
+		memcpy(result_feeds, out, (size_t)count * item_size);
+	}
+
+	free(keys);
+	free(order);
+	free(sorted);
+}
+
+static void sort_paint(void) {
+	if (!sort_icon) {
+		return;
+	}
+	listsort_mode_t mode = podcast_sort_choice();
+	lv_image_set_src(sort_icon, mode == LISTSORT_ZA ? &icon_sort_za
+							  : mode == LISTSORT_AZ ? &icon_sort_az
+													: &icon_sort_series);
+}
+
+static void sort_picked(void *user) {
+	podcast_sort_set((listsort_mode_t)(intptr_t)user);
+	if (list_kind == JOB_FOLLOWED) {
+		show_followed_now();
+	} else {
+		show_card_now();
+	}
+	sort_paint();
+}
+
+static void sort_clicked_cb(lv_event_t *e) {
+	listsort_mode_t current = podcast_sort_choice();
+	popover_item_t items[3];
+	for (int i = 0; i < 3; i++) {
+		items[i].label = listsort_label((listsort_mode_t)i);
+		items[i].action = sort_picked;
+		items[i].user = (void *)(intptr_t)i;
+		items[i].checked = (listsort_mode_t)i == current;
+	}
+	popover_show(lv_event_get_current_target(e), items, 3);
+}
+
 static void fill_list(int from) {
 	if (from == 0) {
 		art_forget_rows();
+		sort_apply();
 	}
 
 	list_kind = result_kind;
@@ -2502,13 +2611,15 @@ static void refresh_corner_buttons(void) {
 	bool online = podcast_configured() && network_up();
 	bool search = online && home_view;
 	bool local = home_view || !online;
+	bool sort = list_kind == JOB_FOLLOWED || list_kind == JOB_CARD;
 	if (list_title && g_cfg) {
 		// The heading gets the width the buttons are not using.
-		settingsrow_title_corner_slots(list_title, g_cfg, (search ? 1 : 0) + (local ? 1 : 0));
+		settingsrow_title_corner_slots(list_title, g_cfg,
+									   (search ? 1 : 0) + (local ? 1 : 0) + (sort ? 1 : 0));
 	}
-	lv_obj_t *const buttons[] = {search_btn, settings_btn};
-	const bool shown[] = {search, local};
-	for (int i = 0; i < 2; i++) {
+	lv_obj_t *const buttons[] = {search_btn, settings_btn, sort_btn};
+	const bool shown[] = {search, local, sort};
+	for (int i = 0; i < 3; i++) {
 		if (!buttons[i]) {
 			continue;
 		}
@@ -2518,6 +2629,7 @@ static void refresh_corner_buttons(void) {
 			lv_obj_set_hidden(buttons[i], true);
 		}
 	}
+	sort_paint();
 }
 
 // The tab colours are set by hand, so a theme change does not touch them on
@@ -3523,7 +3635,7 @@ static void states_follow(void) {
 		// and the scroll; anything else is drawn again.
 		static podcastcard_show_t fresh[PODCASTCARD_MAX_SHOWS];
 		int n = podcastcard_shows(fresh, PODCASTCARD_MAX_SHOWS);
-		bool same = n == list_count;
+		bool same = n == list_count && podcast_sort_choice() != LISTSORT_ZA;
 		for (int i = 0; i < n && same; i++) {
 			same = strcmp(fresh[i].folder, card_shows[i].folder) == 0;
 		}
@@ -3997,9 +4109,12 @@ void podcastpage_init(gui_config_t *cfg) {
 	build_page(cfg);
 
 	// Slots are counted from the edge leftwards: the gear against it, the
-	// magnifier beside it. The downloaded episodes are the "on the card" pill.
+	// magnifier beside it, then the list order. The downloaded episodes are the
+	// "on the card" pill.
 	settings_btn = corner_button(cfg, 0, &icon_music_settings, open_settings_cb);
 	search_btn = corner_button(cfg, 1, &icon_search, open_search_cb);
+	sort_btn = corner_button(cfg, 2, &icon_sort_series, sort_clicked_cb);
+	sort_icon = lv_obj_get_child(sort_btn, 0);
 
 	build_search_page(cfg);
 	build_settings_page(cfg);
