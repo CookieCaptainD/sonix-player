@@ -1,5 +1,7 @@
 #include "audio.h"
 #include "src/system/audio/alsa-controls.h"
+#include "src/system/audio/dsdroute.h"
+#include "src/system/audio/usbaudio.h"
 #include "src/system/bluetooth/bluetooth.h"
 #include "src/system/decode/decode.h"
 #include "src/system/decode/growfile.h"
@@ -598,6 +600,7 @@ static int stream_bits = 0; // source bit depth (16/24/32), for the format line
 // track's real identity is its multiple, not "24 bit at 176.4 kHz" -- that is
 // only what the carrier looks like.
 static int stream_dsd_multiple = 0;
+static bool dsd_notice_pending;
 // Also for the format line and the details page: what is inside the file and
 // at how many kbps. A lossy format has no bit depth of its own -- see
 // decoder_is_lossy() -- and is described by bitrate instead.
@@ -3211,8 +3214,22 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 		return;
 	}
 
-	// Headphones have no DSD mode to switch into: DSD goes to them as PCM.
-	bool dsd_as_pcm = decoder_passthrough(dec) && output_is_bluetooth() && decoder_dsd_to_pcm(dec);
+	// A DoP stream must reach the DAC without resampling. ALSA's plug layer
+	// accepts any rate and interpolates on the way to the card, which changes
+	// the marker byte and the bit pattern. Probe the hardware side before
+	// asking the decoder for passthrough, then let the existing DSD to PCM
+	// path carry anything the output cannot take.
+	char dsd_route[64];
+	audio_get_output_device(dsd_route, sizeof(dsd_route));
+	bool passthrough_source = decoder_passthrough(dec);
+	bool dsd_as_pcm = passthrough_source &&
+					  dsdroute_should_convert(
+						  passthrough_source, output_is_bluetooth(),
+						  dsdroute_carries_dop(dsd_route, decoder_sample_rate(dec), 32, decoder_channels(dec))) &&
+					  decoder_dsd_to_pcm(dec);
+	if (dsd_as_pcm) {
+		audio_note_dsd_conversion();
+	}
 
 	int channels = decoder_channels(dec);
 	int sample_rate = decoder_sample_rate(dec);
@@ -3260,7 +3277,7 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 	stream_sample_rate = sample_rate;
 	stream_channels = channels;
 	stream_bits = source_bits;
-	stream_dsd_multiple = dsd_multiple;
+	stream_dsd_multiple = dsdroute_label_multiple(dsd_multiple, dsd_as_pcm);
 	stream_bitrate_kbps = decoder_bitrate_kbps(dec);
 	stream_lossy = decoder_is_lossy(dec);
 	snprintf(stream_codec, sizeof(stream_codec), "%s", decoder_codec_name(dec));
@@ -3280,9 +3297,11 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 	// The DAC has to be told before the stream starts, or the first periods
 	// reach it while it is still reading the words as PCM -- which at DoP
 	// levels is a bang.
-	if (passthrough) {
+	usbaudio_set_dsd(passthrough && usbaudio_active());
+	if (passthrough && !usbaudio_active()) {
 		// Any held PCM goes first: a DAC about to switch to DSD must not still
-		// have the previous track's PCM tail queued.
+		// have the previous track's PCM tail queued. The internal DAC is out
+		// of the path when the sound leaves over USB, so leave it in PCM mode.
 		gapless_release();
 		set_dac_dop(1);
 	}
@@ -3316,14 +3335,14 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 		pcm_handle = open_pcm_device(channels, sample_rate, out_bits, &period_size);
 	}
 	if (!pcm_handle && passthrough) {
-		// DSD256 asks the card for 705.6 kHz, which an output that is not this
-		// device's own DAC may simply refuse. The track does not play and the
-		// log says why rather than leaving a silent stop to be guessed at; only
-		// Bluetooth is sent PCM instead (decoder_dsd_to_pcm, above).
-		fprintf(stderr, "audio: DoP at %d Hz refused by this output; the track cannot play\n", sample_rate);
+		// The probe above keeps this path for outputs that refuse DoP outright.
+		// The track does not play and the log names the device rather than
+		// leaving a silent stop to be guessed at.
+		fprintf(stderr, "audio: DoP at %d Hz refused by %s; the track cannot play\n", sample_rate, dsd_route);
 	}
 	if (!pcm_handle) {
 		set_dac_dop(0);
+		usbaudio_set_dsd(false);
 		decoder_close(dec);
 		pthread_mutex_lock(&audio_mutex);
 		audio_command = AUDIO_CMD_STOP;
@@ -3346,6 +3365,7 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 		fprintf(stderr, "Audio: Out of memory for period buffer\n");
 		snd_pcm_close(pcm_handle);
 		set_dac_dop(0);
+		usbaudio_set_dsd(false);
 		decoder_close(dec);
 		pthread_mutex_lock(&audio_mutex);
 		audio_command = AUDIO_CMD_STOP;
@@ -3927,6 +3947,7 @@ static void play_decoded_file(const char *filepath, decode_format_t format) {
 		}
 	}
 	pcm_device_open = keep_open;
+	usbaudio_set_dsd(false);
 	pthread_mutex_lock(&audio_mutex);
 	stream_dsd_multiple = 0;
 	pthread_mutex_unlock(&audio_mutex);
@@ -4480,6 +4501,20 @@ int audio_get_dsd_multiple(void) {
 	int m = stream_dsd_multiple;
 	pthread_mutex_unlock(&audio_mutex);
 	return m;
+}
+
+void audio_note_dsd_conversion(void) {
+	pthread_mutex_lock(&audio_mutex);
+	dsd_notice_pending = true;
+	pthread_mutex_unlock(&audio_mutex);
+}
+
+bool audio_take_dsd_notice(void) {
+	pthread_mutex_lock(&audio_mutex);
+	bool pending = dsd_notice_pending;
+	dsd_notice_pending = false;
+	pthread_mutex_unlock(&audio_mutex);
+	return pending;
 }
 
 // Playback speed, for audiobooks. Applied on the next block, so it can be

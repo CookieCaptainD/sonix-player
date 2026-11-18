@@ -61,4 +61,9 @@ void usbaudio_apply_volume(int percent);
 // the level any more and the software volume takes it over -- see swvolume.c.
 bool usbaudio_has_volume_control(void);
 
+// Set while a DoP stream leaves over the port. Software gain cannot scale a
+// DoP word stream, so the dongle's own control has to carry the level even
+// when the user has not turned on hardware volume.
+void usbaudio_set_dsd(bool active);
+
 #endif /* USBAUDIO_H */

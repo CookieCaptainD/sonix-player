@@ -521,7 +521,10 @@ static int dsd_gain_index; // 0..6; 0 is no compensation at all
 // offset while a DoP stream is open. Off the DoP path this returns `raw`
 // untouched, so nothing changes for PCM.
 static long with_dsd_gain(long raw) {
-	if (current_dop != 1 || dsd_gain_index <= 0) {
+	// The compensation is a register on the internal DAC. Sound leaving over
+	// USB never reaches that register, so applying it there only desynchronises
+	// the log from the level the listener hears.
+	if (current_dop != 1 || dsd_gain_index <= 0 || usbaudio_active()) {
 		return raw;
 	}
 

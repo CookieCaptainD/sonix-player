@@ -2,6 +2,7 @@
 
 #include "src/system/audio/audio.h"
 #include "src/system/audio/alsa-controls.h"
+#include "src/system/audio/dsdroute.h"
 #include "src/system/audio/swvolume.h"
 #include "src/system/core/config.h"
 #include "src/system/bluetooth/bluetooth.h"
@@ -51,6 +52,7 @@
 #define ID_SETTLE_SECS 3
 
 static int active_card = -1;			// the USB card in use, -1 when none
+static bool dsd_active;					// a DoP stream is leaving over the port
 static char active_name[64];			// its id, for the interface
 static char volume_control[64];			// the control the level is written to
 static long volume_min, volume_max;
@@ -486,8 +488,11 @@ static void find_volume_control(int card) {
 // The value written is read back. A driver is allowed to round it; sitting at
 // the top of its range after being asked for well below is a control that does
 // nothing, and then it is given up and the samples take the whole level.
+void usbaudio_set_dsd(bool active) { dsd_active = active; }
+
 void usbaudio_apply_volume(int percent) {
 	if (active_card < 0) {
+		dsd_active = false;
 		swvolume_clear_usb_gain();
 		return;
 	}
@@ -505,7 +510,10 @@ void usbaudio_apply_volume(int percent) {
 		return;
 	}
 
-	bool hardware = volume_has_db && config_get_int("usb", "hardware_volume", 0);
+	// A DoP stream cannot take a software gain: scaling its words would break
+	// the marker byte. Force the device control for DSD, and honour the user's
+	// setting for every PCM source.
+	bool hardware = volume_has_db && dsdroute_force_hw_volume(dsd_active, config_get_int("usb", "hardware_volume", 0));
 	long value = volume_max;
 	long hw_db = 0;
 	if (mute) {
@@ -714,6 +722,7 @@ void usbaudio_poll(void) {
 	} else {
 		active_name[0] = '\0';
 		volume_control[0] = '\0';
+		dsd_active = false;
 		swvolume_clear_usb_gain();
 		fprintf(stderr, "usbaudio: the port is empty again; playback goes back to the jacks\n");
 		audio_set_output_device(NULL);

@@ -82,7 +82,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Channel balance** and **Mono audio**.
 - The EQ, PEQ and MSEB also work on radio and streaming.
 - **DAC settings** - 4 digital filters, DRE, NOS, high gain, and gain compensation for DSD.
-- **DSD** - played natively, or converted to PCM when the output cannot take it (for example over Bluetooth).
+- **DSD** - played natively when the output can carry it. Converted to 176.4 kHz PCM on the jack, USB audio out and Bluetooth when the output cannot carry the DoP rate. A notice says when this happens.
 
 ## Volume and outputs
 
@@ -92,7 +92,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Volume steps** - how much one press of the volume key changes the volume.
 - **Line out** - the jack goes to a fixed level for an amplifier, and your volume comes back when you turn it off.
 - **USB DAC** - connect the player to a computer and it becomes its sound card, from 32 kHz to 384 kHz. You can choose whether it charges at the same time.
-- **USB audio out** - plug a USB DAC or USB-C headphones into the player.
+- **USB audio out** - plug a USB DAC or USB-C headphones into the player. DSD volume uses the device's own volume control.
 
 ## Streaming
 

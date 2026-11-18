@@ -3877,6 +3877,12 @@ static void fav_btn_event_cb(lv_event_t *e) {
 
 // The format line, the way the stock player writes it: "16/44.1 FLAC".
 static void update_format_label(const device_state_t *state) {
+	// The playback thread sets this when a DSD track had to become PCM. Take it
+	// here so LVGL stays on the interface thread, once for the whole track.
+	if (audio_take_dsd_notice()) {
+		toast_error("player_dsd_to_pcm");
+	}
+
 	// The mark beside it in Studio, which is the same question asked of the
 	// stream rather than of the library. Here because this is where the format
 	// line is worked out, and the two say one thing between them.

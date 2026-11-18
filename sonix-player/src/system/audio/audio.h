@@ -169,9 +169,15 @@ bool audio_stream_is_lossy(void);
 // container's, that is, the extension.
 void audio_get_stream_codec(char *out, size_t size);
 
-// 64/128/256 while a DSD track is playing, 0 otherwise. It is always going to
-// the DAC untouched over DoP; see dsd.h.
+// 64/128/256 while a DSD track reaches the output as DoP, 0 otherwise. A
+// track converted to PCM because the output cannot carry the carrier reports
+// zero, so the format label follows the stream that is actually sent.
 int audio_get_dsd_multiple(void);
+
+// Set on the playback thread when a DSD track was converted to PCM. The GUI
+// takes the flag on its own thread and shows one notice per track.
+void audio_note_dsd_conversion(void);
+bool audio_take_dsd_notice(void);
 
 void audio_seek(double seconds);
 
