@@ -541,13 +541,19 @@ $(WAVPACK_LIB): $(CROSS_CC)
 # Cross-build libxmp, once. 4.6.2 has no --disable-external-libs option (that
 # belonged to older releases); --disable-shared/--enable-static plus CROSS_COMMON
 # is the whole configuration, and no depacker is left out.
+#
+# libxmp calls powf, and the toolchain's default powf is GLIBC_2.27 while the
+# device has 2.22. The player's own sources get the .symver through -include
+# TARGET_CFLAGS; a third-party static library needs the same -include or it
+# brings the new symbol back into the link and the device boot loops.
+XMP_CFLAGS = $(LIB_CFLAGS) -include $(CURDIR)/src/system/core/glibc_compat.h
 $(XMP_LIB): $(CROSS_CC)
 	@echo "Building static libxmp $(XMP_VER) for the target..."
 	@if [ ! -f $(XMP_TARBALL) ]; then \
 		wget -O $(XMP_TARBALL) $(XMP_URL); \
 	fi
 	rm -rf $(XMP_SRC) && tar xf $(XMP_TARBALL)
-	cd $(XMP_SRC) && $(CROSS_PATH) ./configure $(CROSS_COMMON) $(CROSS_TOOLS)
+	cd $(XMP_SRC) && $(CROSS_PATH) ./configure $(CROSS_COMMON) $(CROSS_TOOLS) CFLAGS="$(XMP_CFLAGS)"
 	$(CROSS_PATH) $(MAKE) -C $(XMP_SRC)
 	$(CROSS_PATH) $(MAKE) -C $(XMP_SRC) install
 
