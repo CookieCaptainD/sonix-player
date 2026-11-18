@@ -101,7 +101,7 @@ typedef enum {
 	USB_PORT_ACT_BECOME_SINK,	// write port_type=sink (hand over)
 	USB_PORT_ACT_BOOST_ON,		// write usb_otg=1
 	USB_PORT_ACT_BOOST_OFF,		// write usb_otg=0 (counts as a cycle)
-	USB_PORT_ACT_RESET,			// port_type=sink + usb_otg=0, caller arms reset_pending
+	USB_PORT_ACT_RESET,			// restore port_type=dual + usb_otg=0, caller arms reset_pending
 } usb_port_action_t;
 
 // The one thing to do next. The caller executes it and updates its counters;

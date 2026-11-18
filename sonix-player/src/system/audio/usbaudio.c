@@ -983,10 +983,12 @@ static void typec_arbitrate(bool audio_present, time_t now) {
 		break;
 
 	case USB_PORT_ACT_RESET:
-		// Both halves in one go: the role back to sink so the controller
-		// leaves host mode, and the boost off so the MP2731 stops sourcing.
-		// RESET_SECS of quiet then follow before dual is offered again.
-		write_port_type("sink");
+		// Both halves in one go: restore dual role so the controller leaves
+		// host mode but a bus-powered sink can still attach on CC, and turn
+		// the boost off so the MP2731 stops sourcing. Forcing sink here made
+		// a DAC that also presents Rd invisible until the cable was replugged.
+		// RESET_SECS of quiet then follow before the port is offered again.
+		usbaudio_ensure_dual();
 		otg_boost_set(false);
 		reset_pending = true;
 		reset_at = now;
