@@ -480,6 +480,20 @@ $(AXPCHARGE_TEST_BIN): tools/test_axpcharge.c src/system/device/axpcharge.c \
 	$(CC) $(CFLAGS) -DHOST_BUILD=1 -DAXPCHARGE_TEST=1 -o $@ \
 		tools/test_axpcharge.c src/system/device/axpcharge.c -lpthread
 
+# Test target for the pure USB wake helpers on the host. Only this test is
+# test-only: usbwake.c itself links into both the host and target builds via
+# APP_SRCS.
+USBWAKE_TEST_BIN = build_host/test_usb_wake
+.PHONY: test-usb-wake
+test-usb-wake: $(USBWAKE_TEST_BIN)
+	$(USBWAKE_TEST_BIN)
+
+$(USBWAKE_TEST_BIN): tools/test_usb_wake.c src/system/device/usbwake.c \
+		src/system/device/usbwake.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DHOST_BUILD=1 -o $@ \
+		tools/test_usb_wake.c src/system/device/usbwake.c
+
 # The bundled libraries and their extracted sources. The downloaded tarballs stay.
 .PHONY: libs-clean
 libs-clean:
