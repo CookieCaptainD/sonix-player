@@ -6,36 +6,36 @@
 
 #include "lvgl/lvgl.h"
 
-#include "src/gui/shell/confirm.h"
-#include "src/gui/shell/icons.h"
-#include "src/gui/fonts/fonts.h"
-#include "src/gui/library/libraryscan.h"
-#include "src/gui/nowplaying/player.h"
-#include "src/gui/shell/confirm.h"
 #include "src/gui/audio/eqpage.h"
 #include "src/gui/audio/msebsettings.h"
 #include "src/gui/audio/peqpage.h"
+#include "src/gui/fonts/fonts.h"
+#include "src/gui/library/libraryscan.h"
+#include "src/gui/library/medialist.h"
 #include "src/gui/nowplaying/coverflow.h"
+#include "src/gui/nowplaying/player.h"
 #include "src/gui/settings/artistexceptions.h"
 #include "src/gui/settings/lastfmsettings.h"
-#include "src/gui/library/medialist.h"
+#include "src/gui/settings/listenbrainzsettings.h"
+#include "src/gui/shell/confirm.h"
+#include "src/gui/shell/icons.h"
 #include "src/gui/shell/settingsrow.h"
 #include "src/gui/shell/switcher.h"
 #include "src/gui/shell/theme.h"
-#include "src/system/audio/alsa-controls.h"
 #include "src/gui/shell/topbar.h"
-#include "src/system/playback/playlist.h"
-#include "src/system/playback/sleeptimer.h"
+#include "src/system/audio/alsa-controls.h"
 #include "src/system/audio/audio.h"
-#include "src/system/bluetooth/bluetooth.h"
 #include "src/system/audio/eq.h"
-#include "src/system/playback/device_state.h"
-#include "src/system/decode/decode.h"
 #include "src/system/audio/replaygain.h"
+#include "src/system/bluetooth/bluetooth.h"
 #include "src/system/core/config.h"
 #include "src/system/core/lang.h"
+#include "src/system/decode/decode.h"
 #include "src/system/library/library.h"
 #include "src/system/library/metadata.h"
+#include "src/system/playback/device_state.h"
+#include "src/system/playback/playlist.h"
+#include "src/system/playback/sleeptimer.h"
 
 lv_obj_t *musicsettings_screen;
 
@@ -260,9 +260,7 @@ static int fade_seconds_setting(void) {
 	return v;
 }
 
-static void fade_apply_setting(void) {
-	audio_set_fade(config_get_bool("audio", "fade", false), fade_seconds_setting());
-}
+static void fade_apply_setting(void) { audio_set_fade(config_get_bool("audio", "fade", false), fade_seconds_setting()); }
 
 static void fade_refresh_labels(void) {
 	lv_label_set_text_fmt(fade_value, "%d s", fade_seconds_setting());
@@ -306,8 +304,7 @@ static void build_fade_page(gui_config_t *cfg) {
 		lv_obj_add_state(gapless_switch, LV_STATE_CHECKED);
 	}
 
-	fade_card = settingsrow_toggle_slider(container, "fade", FADE_STEPS, &fade_switch, &fade_value,
-										  &fade_slider, fade_toggle_cb, fade_slider_cb);
+	fade_card = settingsrow_toggle_slider(container, "fade", FADE_STEPS, &fade_switch, &fade_value, &fade_slider, fade_toggle_cb, fade_slider_cb);
 	lv_slider_set_value(fade_slider, fade_seconds_setting() - FADE_MIN_SECONDS, LV_ANIM_OFF);
 
 	lv_obj_t *note = lv_label_create(container);
@@ -370,11 +367,8 @@ static void build_soundfield_page(gui_config_t *cfg) {
 	soundfield_screen = lv_obj_create(NULL);
 	lv_obj_t *container = settingsrow_page(soundfield_screen, cfg, "musicsettings_soundfield");
 
-	soundfield_card = settingsrow_toggle_slider(container, "musicsettings_soundfield", SOUNDFIELD_STEPS, &soundfield_switch,
-											   &soundfield_value, &soundfield_slider, soundfield_toggle_cb,
-											   soundfield_slider_cb);
-	lv_slider_set_value(soundfield_slider,
-						(soundfield_get_width() - SOUNDFIELD_WIDTH_MIN) / SOUNDFIELD_WIDTH_STEP, LV_ANIM_OFF);
+	soundfield_card = settingsrow_toggle_slider(container, "musicsettings_soundfield", SOUNDFIELD_STEPS, &soundfield_switch, &soundfield_value, &soundfield_slider, soundfield_toggle_cb, soundfield_slider_cb);
+	lv_slider_set_value(soundfield_slider, (soundfield_get_width() - SOUNDFIELD_WIDTH_MIN) / SOUNDFIELD_WIDTH_STEP, LV_ANIM_OFF);
 
 	lv_obj_t *note = lv_label_create(container);
 	lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
@@ -396,8 +390,7 @@ static void build_soundfield_page(gui_config_t *cfg) {
 // and the detail is further down for whoever wants it.
 // ---------------------------------------------------------------------------
 
-static lv_obj_t *corner_button(lv_obj_t *screen, gui_config_t *cfg, int slot, const lv_image_dsc_t *glyph,
-							   lv_event_cb_t cb, void *user);
+static lv_obj_t *corner_button(lv_obj_t *screen, gui_config_t *cfg, int slot, const lv_image_dsc_t *glyph, lv_event_cb_t cb, void *user);
 
 static lv_obj_t *crossfeed_screen;
 static lv_obj_t *crossfeed_switch;
@@ -463,12 +456,9 @@ static void crossfeed_reset_cb(lv_event_t *e) {
 	crossfeed_set_level(CROSSFEED_LEVEL_DEFAULT);
 	crossfeed_set_cutoff(CROSSFEED_CUTOFF_DEFAULT);
 	crossfeed_set_delay(CROSSFEED_DELAY_DEFAULT);
-	lv_slider_set_value(crossfeed_slider, (CROSSFEED_LEVEL_DEFAULT - CROSSFEED_LEVEL_MIN) / CROSSFEED_LEVEL_STEP,
-						LV_ANIM_ON);
-	lv_slider_set_value(crossfeed_cut_slider, (CROSSFEED_CUTOFF_DEFAULT - CROSSFEED_CUTOFF_MIN) / CROSSFEED_CUTOFF_STEP,
-						LV_ANIM_ON);
-	lv_slider_set_value(crossfeed_delay_slider, (CROSSFEED_DELAY_DEFAULT - CROSSFEED_DELAY_MIN) / CROSSFEED_DELAY_STEP,
-						LV_ANIM_ON);
+	lv_slider_set_value(crossfeed_slider, (CROSSFEED_LEVEL_DEFAULT - CROSSFEED_LEVEL_MIN) / CROSSFEED_LEVEL_STEP, LV_ANIM_ON);
+	lv_slider_set_value(crossfeed_cut_slider, (CROSSFEED_CUTOFF_DEFAULT - CROSSFEED_CUTOFF_MIN) / CROSSFEED_CUTOFF_STEP, LV_ANIM_ON);
+	lv_slider_set_value(crossfeed_delay_slider, (CROSSFEED_DELAY_DEFAULT - CROSSFEED_DELAY_MIN) / CROSSFEED_DELAY_STEP, LV_ANIM_ON);
 	crossfeed_refresh();
 }
 
@@ -479,21 +469,14 @@ static void build_crossfeed_page(gui_config_t *cfg) {
 	settingsrow_title_corner_slots(settingsrow_page_title(crossfeed_screen), cfg, 1);
 	corner_button(crossfeed_screen, cfg, 0, &icon_reset, crossfeed_reset_cb, NULL);
 
-	crossfeed_card =
-		settingsrow_toggle_slider(container, "musicsettings_amount", CROSSFEED_LEVEL_STEPS, &crossfeed_switch,
-								  &crossfeed_value, &crossfeed_slider, crossfeed_toggle_cb, crossfeed_level_cb);
-	lv_slider_set_value(crossfeed_slider, (crossfeed_get_level() - CROSSFEED_LEVEL_MIN) / CROSSFEED_LEVEL_STEP,
-						LV_ANIM_OFF);
+	crossfeed_card = settingsrow_toggle_slider(container, "musicsettings_amount", CROSSFEED_LEVEL_STEPS, &crossfeed_switch, &crossfeed_value, &crossfeed_slider, crossfeed_toggle_cb, crossfeed_level_cb);
+	lv_slider_set_value(crossfeed_slider, (crossfeed_get_level() - CROSSFEED_LEVEL_MIN) / CROSSFEED_LEVEL_STEP, LV_ANIM_OFF);
 
-	crossfeed_detail_card = settingsrow_slider(container, "musicsettings_cutoff_frequency", CROSSFEED_CUTOFF_STEPS,
-											   &crossfeed_cut_value, &crossfeed_cut_slider, crossfeed_cutoff_cb);
-	lv_slider_set_value(crossfeed_cut_slider, (crossfeed_get_cutoff() - CROSSFEED_CUTOFF_MIN) / CROSSFEED_CUTOFF_STEP,
-						LV_ANIM_OFF);
+	crossfeed_detail_card = settingsrow_slider(container, "musicsettings_cutoff_frequency", CROSSFEED_CUTOFF_STEPS, &crossfeed_cut_value, &crossfeed_cut_slider, crossfeed_cutoff_cb);
+	lv_slider_set_value(crossfeed_cut_slider, (crossfeed_get_cutoff() - CROSSFEED_CUTOFF_MIN) / CROSSFEED_CUTOFF_STEP, LV_ANIM_OFF);
 
-	crossfeed_delay_card = settingsrow_slider(container, "musicsettings_delay", CROSSFEED_DELAY_STEPS, &crossfeed_delay_value,
-											  &crossfeed_delay_slider, crossfeed_delay_cb);
-	lv_slider_set_value(crossfeed_delay_slider, (crossfeed_get_delay() - CROSSFEED_DELAY_MIN) / CROSSFEED_DELAY_STEP,
-						LV_ANIM_OFF);
+	crossfeed_delay_card = settingsrow_slider(container, "musicsettings_delay", CROSSFEED_DELAY_STEPS, &crossfeed_delay_value, &crossfeed_delay_slider, crossfeed_delay_cb);
+	lv_slider_set_value(crossfeed_delay_slider, (crossfeed_get_delay() - CROSSFEED_DELAY_MIN) / CROSSFEED_DELAY_STEP, LV_ANIM_OFF);
 
 	crossfeed_refresh();
 	switcher_attach_back_gesture(crossfeed_screen);
@@ -562,8 +545,7 @@ static void build_balance_page(gui_config_t *cfg) {
 	lv_obj_t *container = settingsrow_page(balance_screen, cfg, "musicsettings_balance_mono");
 	settingsrow_title_corner_slots(settingsrow_page_title(balance_screen), cfg, 0);
 
-	balance_card = settingsrow_toggle_slider(container, "musicsettings_balance", BALANCE_STEPS, &balance_switch,
-											 &balance_value, &balance_slider, balance_toggle_cb, balance_slider_cb);
+	balance_card = settingsrow_toggle_slider(container, "musicsettings_balance", BALANCE_STEPS, &balance_switch, &balance_value, &balance_slider, balance_toggle_cb, balance_slider_cb);
 	lv_slider_set_value(balance_slider, (balance_get_value() - BALANCE_MIN) / BALANCE_STEP, LV_ANIM_OFF);
 
 	lv_obj_t *note = lv_label_create(container);
@@ -598,10 +580,8 @@ static void refresh_active_chevrons(void);
 static lv_obj_t *vlimit_screen;
 static lv_obj_t *vlimit_switch;
 #define VLIMIT_OUTPUT_COUNT 3
-static lv_obj_t *vlimit_cards[VLIMIT_OUTPUT_COUNT], *vlimit_values[VLIMIT_OUTPUT_COUNT],
-	*vlimit_sliders[VLIMIT_OUTPUT_COUNT];
-static const volume_output_t VLIMIT_OUTPUTS[VLIMIT_OUTPUT_COUNT] = {VOLUME_OUTPUT_PHONES, VOLUME_OUTPUT_BALANCED,
-																	 VOLUME_OUTPUT_USB};
+static lv_obj_t *vlimit_cards[VLIMIT_OUTPUT_COUNT], *vlimit_values[VLIMIT_OUTPUT_COUNT], *vlimit_sliders[VLIMIT_OUTPUT_COUNT];
+static const volume_output_t VLIMIT_OUTPUTS[VLIMIT_OUTPUT_COUNT] = {VOLUME_OUTPUT_PHONES, VOLUME_OUTPUT_BALANCED, VOLUME_OUTPUT_USB};
 
 #define VLIMIT_STEPS (100 - VOLUME_LIMIT_MIN + 1)
 
@@ -662,12 +642,9 @@ static void build_volume_limit_page(gui_config_t *cfg) {
 
 	settingsrow_toggle(container, "on", &vlimit_switch, vlimit_toggle_cb);
 
-	static const char *const NAMES[VLIMIT_OUTPUT_COUNT] = {"musicsettings_volume_limit_phones",
-														   "musicsettings_volume_limit_balanced",
-														   "musicsettings_volume_limit_usb"};
+	static const char *const NAMES[VLIMIT_OUTPUT_COUNT] = {"musicsettings_volume_limit_phones", "musicsettings_volume_limit_balanced", "musicsettings_volume_limit_usb"};
 	for (int i = 0; i < VLIMIT_OUTPUT_COUNT; i++) {
-		vlimit_cards[i] = settingsrow_slider(container, NAMES[i], VLIMIT_STEPS, &vlimit_values[i], &vlimit_sliders[i],
-											 NULL);
+		vlimit_cards[i] = settingsrow_slider(container, NAMES[i], VLIMIT_STEPS, &vlimit_values[i], &vlimit_sliders[i], NULL);
 		lv_obj_add_event_cb(vlimit_sliders[i], vlimit_slider_cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
 		lv_obj_add_event_cb(vlimit_sliders[i], vlimit_released_cb, LV_EVENT_RELEASED, NULL);
 	}
@@ -724,8 +701,7 @@ static void rg_toggle_cb(lv_event_t *e) {
 	bool on = lv_obj_has_state(rg_switch, LV_STATE_CHECKED);
 	// Switching it back on returns to whichever of the two modes was last
 	// chosen, rather than always to track gain.
-	replaygain_set_mode(on ? (replaygain_mode_t)config_get_int("audio", "replaygain_last", REPLAYGAIN_TRACK)
-						   : REPLAYGAIN_OFF);
+	replaygain_set_mode(on ? (replaygain_mode_t)config_get_int("audio", "replaygain_last", REPLAYGAIN_TRACK) : REPLAYGAIN_OFF);
 	rg_apply_to_loaded_track();
 	rg_refresh();
 }
@@ -803,8 +779,7 @@ static void dsd_gain_pick_cb(lv_event_t *e) {
 
 // The round corner buttons on the MSEB and equalizer pages, the same shape the
 // music page uses for its gear and its search.
-static lv_obj_t *corner_button(lv_obj_t *screen, gui_config_t *cfg, int slot, const lv_image_dsc_t *glyph,
-							   lv_event_cb_t cb, void *user) {
+static lv_obj_t *corner_button(lv_obj_t *screen, gui_config_t *cfg, int slot, const lv_image_dsc_t *glyph, lv_event_cb_t cb, void *user) {
 	lv_obj_t *button = lv_btn_create(screen);
 	lv_obj_set_size(button, 56, 56);
 	lv_obj_set_style_bg_opa(button, LV_OPA_TRANSP, 0);
@@ -1072,9 +1047,7 @@ static void scan_row_cb(lv_event_t *e) {
 	libraryscan_choose_folders();
 }
 
-static void album_chain_cb(lv_event_t *e) {
-	device_state_set_album_chaining(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void album_chain_cb(lv_event_t *e) { device_state_set_album_chaining(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 // ---------------------------------------------------------------------------
 // Playback options
@@ -1097,9 +1070,7 @@ static lv_obj_t *album_head_switch;
 static lv_obj_t *quality_badges_switch;
 static lv_obj_t *go_to_current_switch;
 
-static void folder_chain_cb(lv_event_t *e) {
-	device_state_set_folder_chaining(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void folder_chain_cb(lv_event_t *e) { device_state_set_folder_chaining(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 // The dim paragraph under a toggle that needs one.
 static lv_obj_t *option_note(lv_obj_t *parent, const char *text) {
@@ -1153,9 +1124,7 @@ static void detect_changes_cb(lv_event_t *e) {
 	retagged_show();
 }
 
-static void detect_retagged_cb(lv_event_t *e) {
-	library_set_detect_retagged(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void detect_retagged_cb(lv_event_t *e) { library_set_detect_retagged(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 // How tracks are filed: artists and genres split, albums joined. The index is
 // filed again once, when the page is left, however many of these were touched
@@ -1176,16 +1145,7 @@ typedef struct {
 } split_pill_t;
 
 static const split_pill_t SPLIT_ARTIST_PILLS[] = {
-	{";", LIBRARY_SPLIT_SEMICOLON},
-	{"/", LIBRARY_SPLIT_SLASH},
-	{"&", LIBRARY_SPLIT_AMPERSAND},
-	{",", LIBRARY_SPLIT_COMMA},
-	{"feat.", LIBRARY_SPLIT_FEAT},
-	{"vs.", LIBRARY_SPLIT_VS},
-	{"x", LIBRARY_SPLIT_X},
-	{"+", LIBRARY_SPLIT_PLUS},
-	{"with", LIBRARY_SPLIT_WITH},
-	{"and", LIBRARY_SPLIT_AND},
+	{";", LIBRARY_SPLIT_SEMICOLON}, {"/", LIBRARY_SPLIT_SLASH}, {"&", LIBRARY_SPLIT_AMPERSAND}, {",", LIBRARY_SPLIT_COMMA}, {"feat.", LIBRARY_SPLIT_FEAT}, {"vs.", LIBRARY_SPLIT_VS}, {"x", LIBRARY_SPLIT_X}, {"+", LIBRARY_SPLIT_PLUS}, {"with", LIBRARY_SPLIT_WITH}, {"and", LIBRARY_SPLIT_AND},
 };
 static const split_pill_t SPLIT_GENRE_PILLS[] = {
 	{";", LIBRARY_SPLIT_SEMICOLON},
@@ -1299,22 +1259,16 @@ static void build_scan_page(gui_config_t *cfg) {
 	lv_obj_set_state(retagged_switch, LV_STATE_CHECKED, library_detect_retagged());
 	retagged_show();
 
-	settingsrow_toggle_pills(container, "musicsettings_split_artists", split_artists_cb, &split_artists_switch,
-							 &split_artists_pills);
+	settingsrow_toggle_pills(container, "musicsettings_split_artists", split_artists_cb, &split_artists_switch, &split_artists_pills);
 	for (int i = 0; i < SPLIT_ARTIST_COUNT; i++) {
-		split_artist_pill[i] = settingsrow_pill_text(split_artists_pills, SPLIT_ARTIST_PILLS[i].text, (int)SPLIT_ARTIST_PILLS[i].bit,
-											   split_artist_pill_cb);
+		split_artist_pill[i] = settingsrow_pill_text(split_artists_pills, SPLIT_ARTIST_PILLS[i].text, (int)SPLIT_ARTIST_PILLS[i].bit, split_artist_pill_cb);
 	}
-	split_album_artists_row = settingsrow_toggle(container, "musicsettings_split_album_artists",
-												 &split_album_artists_switch, split_album_artists_cb);
-	unsplit_row = settingsrow_add(container, "musicsettings_unsplit_artists", NULL, switch_screen_cb,
-								  artistexceptions_screen);
+	split_album_artists_row = settingsrow_toggle(container, "musicsettings_split_album_artists", &split_album_artists_switch, split_album_artists_cb);
+	unsplit_row = settingsrow_add(container, "musicsettings_unsplit_artists", NULL, switch_screen_cb, artistexceptions_screen);
 
-	settingsrow_toggle_pills(container, "musicsettings_split_genres", split_genres_cb, &split_genres_switch,
-							 &split_genres_pills);
+	settingsrow_toggle_pills(container, "musicsettings_split_genres", split_genres_cb, &split_genres_switch, &split_genres_pills);
 	for (int i = 0; i < SPLIT_GENRE_COUNT; i++) {
-		split_genre_pill[i] =
-			settingsrow_pill_text(split_genres_pills, SPLIT_GENRE_PILLS[i].text, (int)SPLIT_GENRE_PILLS[i].bit, genre_pill_cb);
+		split_genre_pill[i] = settingsrow_pill_text(split_genres_pills, SPLIT_GENRE_PILLS[i].text, (int)SPLIT_GENRE_PILLS[i].bit, genre_pill_cb);
 	}
 	option_note(container, "musicsettings_split_note");
 
@@ -1337,13 +1291,9 @@ static void build_scan_page(gui_config_t *cfg) {
 // of the track that is playing. Their switches first, the pages further down.
 // ---------------------------------------------------------------------------
 
-static void album_view_cb(lv_event_t *e) {
-	medialist_set_album_view(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void album_view_cb(lv_event_t *e) { medialist_set_album_view(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
-static void album_head_cb(lv_event_t *e) {
-	medialist_set_album_head(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void album_head_cb(lv_event_t *e) { medialist_set_album_head(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 static lv_obj_t *nowplaying_at_boot_switch;
 
@@ -1352,13 +1302,9 @@ static void nowplaying_at_boot_cb(lv_event_t *e) {
 	config_save();
 }
 
-static void go_to_current_cb(lv_event_t *e) {
-	medialist_set_go_to_current(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void go_to_current_cb(lv_event_t *e) { medialist_set_go_to_current(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
-static void quality_badges_cb(lv_event_t *e) {
-	medialist_set_quality_badges(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void quality_badges_cb(lv_event_t *e) { medialist_set_quality_badges(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 // "Show artist": a switch, and under it one pill per list it can be shown on.
 // The pills are each on or off rather than one of three -- the artist can be
@@ -1368,9 +1314,7 @@ static lv_obj_t *artist_switch;
 static lv_obj_t *artist_pills;
 #define ARTIST_PILLS 5
 static lv_obj_t *artist_pill[ARTIST_PILLS];
-static const int ARTIST_PILL_BITS[ARTIST_PILLS] = {MEDIALIST_ARTIST_TRACKS, MEDIALIST_ARTIST_ALBUMS,
-												   MEDIALIST_ARTIST_GENRES, MEDIALIST_ARTIST_FAVOURITES,
-												   MEDIALIST_ARTIST_PLAYLISTS};
+static const int ARTIST_PILL_BITS[ARTIST_PILLS] = {MEDIALIST_ARTIST_TRACKS, MEDIALIST_ARTIST_ALBUMS, MEDIALIST_ARTIST_GENRES, MEDIALIST_ARTIST_FAVOURITES, MEDIALIST_ARTIST_PLAYLISTS};
 
 static void artist_refresh(void) {
 	if (!artist_switch) {
@@ -1417,15 +1361,11 @@ static void track_artist_cb(lv_event_t *e) {
 
 static lv_obj_t *coverflow_switch;
 
-static void coverflow_cb(lv_event_t *e) {
-	coverflow_set_enabled(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void coverflow_cb(lv_event_t *e) { coverflow_set_enabled(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 static lv_obj_t *cover_accent_switch;
 
-static void cover_accent_cb(lv_event_t *e) {
-	player_cover_accent_set(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void cover_accent_cb(lv_event_t *e) { player_cover_accent_set(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 // ---------------------------------------------------------------------------
 // Which of the two arrangements the now-playing page uses
@@ -1468,9 +1408,7 @@ static void layout_pick_cb(lv_event_t *e) {
 // beside it, keeps what concerns the page of the track that is playing.
 // ---------------------------------------------------------------------------
 
-static void allow_delete_cb(lv_event_t *e) {
-	medialist_set_allow_delete(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
-}
+static void allow_delete_cb(lv_event_t *e) { medialist_set_allow_delete(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)); }
 
 static void build_library_page(gui_config_t *cfg) {
 	library_screen = lv_obj_create(NULL);
@@ -1563,12 +1501,9 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 	// How the now-playing page is arranged.
 	lv_obj_t *layout_pills = NULL;
 	settingsrow_pills(container, "musicsettings_player_layout", &layout_pills);
-	layout_standard_pill =
-		settingsrow_pill(layout_pills, "musicsettings_layout_standard", PLAYER_LAYOUT_STANDARD, layout_pick_cb);
-	layout_alternative_pill =
-		settingsrow_pill(layout_pills, "musicsettings_layout_alternative", PLAYER_LAYOUT_ALTERNATIVE, layout_pick_cb);
-	layout_studio_pill =
-		settingsrow_pill(layout_pills, "musicsettings_layout_studio", PLAYER_LAYOUT_STUDIO, layout_pick_cb);
+	layout_standard_pill = settingsrow_pill(layout_pills, "musicsettings_layout_standard", PLAYER_LAYOUT_STANDARD, layout_pick_cb);
+	layout_alternative_pill = settingsrow_pill(layout_pills, "musicsettings_layout_alternative", PLAYER_LAYOUT_ALTERNATIVE, layout_pick_cb);
+	layout_studio_pill = settingsrow_pill(layout_pills, "musicsettings_layout_studio", PLAYER_LAYOUT_STUDIO, layout_pick_cb);
 
 	layout_refresh();
 	theme_register_refresh(layout_refresh);
@@ -1598,8 +1533,7 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 
 	// Whether a start with a remembered track lands on the now-playing page
 	// rather than on the home screen. Read once, at startup (main.c).
-	settingsrow_toggle(container, "musicsettings_nowplaying_at_boot", &nowplaying_at_boot_switch,
-					   nowplaying_at_boot_cb);
+	settingsrow_toggle(container, "musicsettings_nowplaying_at_boot", &nowplaying_at_boot_switch, nowplaying_at_boot_cb);
 	option_note(container, "musicsettings_nowplaying_at_boot_note");
 	if (config_get_bool("music", "nowplaying_at_boot", false)) {
 		lv_obj_add_state(nowplaying_at_boot_switch, LV_STATE_CHECKED);
@@ -1749,8 +1683,7 @@ static void build_dsd_page(gui_config_t *cfg) {
 	// its level can be touched at all. Loaded before the row: the row paints
 	// itself from what the audio side holds.
 	alsa_set_dsd_gain_index((int)config_get_int("audio", "dsd_gain", 0));
-	settingsrow_toggle_pills(container, "musicsettings_dsd_gain", dsd_gain_toggle_cb, &dsd_gain_switch,
-							 &dsd_gain_pills);
+	settingsrow_toggle_pills(container, "musicsettings_dsd_gain", dsd_gain_toggle_cb, &dsd_gain_switch, &dsd_gain_pills);
 	for (int i = 0; i < DSD_GAIN_MAX_DB; i++) {
 		char text[16];
 		snprintf(text, sizeof(text), "+%d dB", i + 1);
@@ -1836,8 +1769,7 @@ static void bit_perfect_hold(bool on) {
 		config_save();
 	}
 
-	replaygain_set_mode(on ? REPLAYGAIN_OFF
-						   : (replaygain_mode_t)config_get_int(BP_SECTION, "replaygain", REPLAYGAIN_OFF));
+	replaygain_set_mode(on ? REPLAYGAIN_OFF : (replaygain_mode_t)config_get_int(BP_SECTION, "replaygain", REPLAYGAIN_OFF));
 	rg_apply_to_loaded_track();
 	rg_refresh();
 	musicsettings_set_eq_enabled(!on && bp_saved("eq"));
@@ -1900,6 +1832,8 @@ void musicsettings_init(gui_config_t *cfg) {
 
 	lastfmsettings_init(cfg);
 	settingsrow_add(container, "lastfm", NULL, switch_screen_cb, lastfmsettings_screen());
+	listenbrainzsettings_init(cfg);
+	settingsrow_add(container, "listenbrainz", NULL, switch_screen_cb, listenbrainzsettings_screen());
 
 	settingsrow_heading(container, "musicsettings_section_playback");
 	build_playback_page(cfg);
@@ -1922,8 +1856,7 @@ void musicsettings_init(gui_config_t *cfg) {
 	rg_card = settingsrow_toggle_pills(container, "musicsettings_replay_gain", rg_toggle_cb, &rg_switch, &rg_pills);
 	rg_track_pill = settingsrow_pill(rg_pills, "track", REPLAYGAIN_TRACK, rg_pick_cb);
 	rg_album_pill = settingsrow_pill(rg_pills, "albums", REPLAYGAIN_ALBUM, rg_pick_cb);
-	rg_track_when_shuffled_pill =
-		settingsrow_pill(rg_pills, "track_when_shuffled", REPLAYGAIN_TRACK_WHEN_SHUFFLED, rg_pick_cb);
+	rg_track_when_shuffled_pill = settingsrow_pill(rg_pills, "track_when_shuffled", REPLAYGAIN_TRACK_WHEN_SHUFFLED, rg_pick_cb);
 	rg_refresh();
 
 	eqpage_init(cfg);
