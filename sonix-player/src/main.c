@@ -31,6 +31,7 @@
 #include "src/system/bluetooth/bluetooth.h"
 #include "src/system/bluetooth/btlog.h"
 #include "src/system/bluetooth/btplayer.h"
+#include "src/system/device/axpcharge.h"
 #include "src/system/core/config.h"
 #include "src/system/core/lang.h"
 #include "src/system/core/logging.h"
@@ -529,10 +530,13 @@ static void crash_handler(int sig, siginfo_t *info, void *context) {
 	sync();
 
 	// The charger back on. The player is about to sit here doing nothing, and
-	// if it went down holding the charge limit the battery would never fill
-	// again -- the charger driver keeps that bit until the next boot. One write
-	// to one sysfs node, which is safe enough to do from here.
-	power_charging_release();
+	// if it went down holding the charge limit -- or in DAC mode with the cell
+	// charger switched off -- the battery would never fill again -- the charger
+	// driver keeps that bit until the next boot. The quiet variant is the one
+	// for here: it never waits on the PMIC lock and adds no logging of its own,
+	// both of which matter in a process that is already dying. It does still
+	// look the charger node up, so that one line may appear.
+	power_charging_release_quiet();
 
 	for (;;) {
 		pause();
@@ -1941,6 +1945,20 @@ int main(int argc, char **argv) {
 #endif
 	config_init(config_file);
 
+	// Which player this is. Before the display, because on the simulator the
+	// window opens at the panel size of the model named in the file; on the
+	// device the framebuffer answers that question itself and this is read for
+	// the update file's name, the converter's name and the serial number. Also
+	// before the release below, which is gated on the model.
+	sysinfo_load();
+
+	// First hardware action after the player's identity is known: a previous run
+	// that died in DAC mode with the cell charger switched off must not survive
+	// into this boot. The charging screen runs next and must charge.
+	if (axpcharge_charging_control_supported() && !axpcharge_charging_release()) {
+		system_suppress_charging(true);
+	}
+
 	// A start by the cable is the charging screen alone, until the power key is
 	// held: before anything else opens the display, the keys or the audio.
 	chargescreen_run_if_wanted();
@@ -1992,12 +2010,6 @@ int main(int argc, char **argv) {
 	// What the three side keys do: the table is read once here, and the key
 	// threads consult it on every press.
 	keymap_init();
-
-	// Which player this is. Before the display, because on the simulator the
-	// window opens at the panel size of the model named in the file; on the
-	// device the framebuffer answers that question itself and this is read for
-	// the update file's name, the converter's name and the serial number.
-	sysinfo_load();
 
 	// The streaming services' application keys, and Qobuz with them. Before
 	// the GUI builds its pages, because the Qobuz page is drawn one way or

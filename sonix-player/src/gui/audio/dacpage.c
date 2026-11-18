@@ -188,7 +188,13 @@ static void charge_cb(lv_event_t *e) {
 	// The choice is written to the config, so a player set never to charge in
 	// DAC mode stays that way across reboots.
 	bool now_on = !usbdac_charging_enabled();
-	usbdac_set_charging(now_on);
+	// The PMIC has the last word: a refusal leaves the state as it was, so the
+	// glyph must be redrawn from the state rather than from what was asked for.
+	if (!usbdac_set_charging(now_on)) {
+		gui_notify_popup("dac_usb_charging_failed");
+		refresh_charge_glyph();
+		return;
+	}
 	refresh_charge_glyph();
 
 	// The two glyphs differ by one thin diagonal stroke, which at 34 px is not

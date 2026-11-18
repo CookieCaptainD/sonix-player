@@ -44,7 +44,7 @@ into each image.
 | headphone outputs | 3.5 mm, 4.4 mm balanced | 3.5 mm |
 | DAC controls | digital filters, DRE, NOS | digital filters, NOS |
 | touch | Goodix gt9xx, open-source driver, five fingers | Hynitron CST8xx, open-source driver, two fingers |
-| charger | MP2731 | the AXP2101 PMIC |
+| charger | MP2731 | the AXP2101 PMIC; the DAC page's charging toggle clears its charge-enable bit |
 | kernel | custom 4.4.94, see [hiby-custom-kernel](https://github.com/Jepl4r/hiby-custom-kernel) | the same |
 | double tap to wake | yes | no |
 | buttons | volume on the left flank, playback on the right | all on the right flank, one skip key |
