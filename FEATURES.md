@@ -69,6 +69,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - Swipe on the cover to show the lyrics. Synced lyrics follow the song line by line, and the screen stays on while you read them.
 - Lyrics are read from a `.lrc` or `.txt` file with the same name as the track, or from the tags of the file.
 - **Download from LRCLIB** - when a track has no lyrics, the player can look for them online and you pick the one you want (synced or text only). If Wi-Fi is off, it asks to turn it on and starts the search by itself.
+- **Ask to download lyrics** - Music settings > Now Playing has a switch for the prompt that appears when you swipe to lyrics on a track with no words. It is on by default; turning it off stops the prompt. The search button on the lyrics page still works for tracks that have lyrics.
 
 ## Sound
 
