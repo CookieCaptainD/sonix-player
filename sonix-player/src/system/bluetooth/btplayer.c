@@ -34,6 +34,7 @@ static pthread_t worker;
 static bool worker_started;
 static volatile bool stopping;
 static volatile bool registered;
+static volatile bool reconnect_requested;
 
 static dbus_conn_t *conn;
 
@@ -348,6 +349,12 @@ static void *worker_func(void *unused) {
 			continue;
 		}
 
+		if (reconnect_requested) {
+			reconnect_requested = false;
+			fprintf(stderr, "btplayer: re-registering after stack restart\n");
+			teardown();
+		}
+
 		if (conn && !dbus_alive(conn)) {
 			fprintf(stderr, "btplayer: the bus dropped; reconnecting\n");
 			teardown();
@@ -401,6 +408,10 @@ void btplayer_init(void) {
 	}
 	worker_started = true;
 	printf("thread: btplayer runs in the background\n");
+}
+
+void btplayer_reset(void) {
+	reconnect_requested = true;
 }
 
 void btplayer_stop(void) {
