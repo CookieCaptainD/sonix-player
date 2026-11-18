@@ -911,6 +911,7 @@ static void row_paint_choice(page_t *p, ep_row_t *row) {
 
 static void selection_toggle(page_t *p, ep_row_t *row);
 static void selection_stop(page_t *p);
+static void states_refresh(page_t *p);
 
 static void row_bind(page_t *p, ep_row_t *row, int index) {
 	if (row->index == index) {
@@ -1647,13 +1648,20 @@ static void mark_many_confirmed(void *user) {
 	}
 	const podcast_episode_t **episodes = calloc((size_t)heard_count, sizeof(*episodes));
 	const char **paths = calloc((size_t)heard_count, sizeof(*paths));
+	if (!episodes || !paths) {
+		free(episodes);
+		free(paths);
+		heard_pending_free();
+		toast_error(tr("podcast_mark_heard_failed"));
+		return;
+	}
 	int n_episodes = 0;
 	int n_paths = 0;
 	for (int i = 0; i < heard_count; i++) {
 		int index = heard_indices[i];
-		p->episodes[index].played = true;
-		p->episodes[index].position = 0;
-		p->episodes[index].started = true;
+		if (index < 0 || index >= p->count) {
+			continue;
+		}
 		if (p->feed) {
 			const podcast_episode_t *item = podcastpage_feed_episode(p->episodes[index].item);
 			if (item) {
@@ -1666,11 +1674,24 @@ static void mark_many_confirmed(void *user) {
 	bool ok = podcaststate_set_played_many(episodes, n_episodes, p->feed ? open_feed.image : NULL, paths, n_paths, true);
 	free(episodes);
 	free(paths);
-	heard_pending_free();
 	if (!ok) {
-		toast_error(tr("podcast_mark_heard_busy"));
+		heard_pending_free();
+		toast_error(tr("podcast_mark_heard_failed"));
+		states_refresh(p); // the list must not show flags the card never stored
 		return;
 	}
+	// Only now that the write committed: a failed batch leaves the rows as they
+	// were, read back from the card by states_refresh() above.
+	for (int i = 0; i < heard_count; i++) {
+		int index = heard_indices[i];
+		if (index < 0 || index >= p->count) {
+			continue;
+		}
+		p->episodes[index].played = true;
+		p->episodes[index].position = 0;
+		p->episodes[index].started = true;
+	}
+	heard_pending_free();
 	p->states_seen = podcaststate_revision();
 	if (p->feed) {
 		feed_read_states();
@@ -1705,11 +1726,7 @@ static void mark_many_heard_cb(lv_event_t *e) {
 		return;
 	}
 	char message[96];
-	if (heard_count == 1) {
-		snprintf(message, sizeof(message), "%s", tr("podcast_one_episode"));
-	} else {
-		snprintf(message, sizeof(message), tr("podcast_episodes_2"), heard_count);
-	}
+	snprintf(message, sizeof(message), tr("podcast_mark_heard_count_d"), heard_count);
 	confirm_show("podcast_mark_heard", message, "podcast_mark_heard", mark_many_confirmed, NULL);
 }
 

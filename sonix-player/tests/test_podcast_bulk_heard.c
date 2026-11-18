@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "lvgl.h"
+#include "src/system/db/sqlite3.h"
 #include "src/system/streaming/podcast.h"
 #include "src/system/streaming/podcaststate.h"
 
@@ -21,9 +22,6 @@ uint16_t *display_capture_frame(int *w, int *h) {
 		*h = 0;
 	return NULL;
 }
-
-// Declared here so this test compiles before the implementation exists.
-bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image, const char *const *paths, int path_count, bool played);
 
 static int failures;
 
@@ -45,12 +43,33 @@ static void fill_episode(podcast_episode_t *e, long long id, const char *title) 
 	snprintf(e->feed_title, sizeof(e->feed_title), "Test show");
 }
 
+static int row_count(const char *db_path) {
+	sqlite3 *db = NULL;
+	if (sqlite3_open(db_path, &db) != SQLITE_OK) {
+		sqlite3_close(db);
+		return -1;
+	}
+	sqlite3_stmt *st = NULL;
+	int n = 0;
+	if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM PODCAST_EPISODES", -1, &st, NULL) == SQLITE_OK &&
+		sqlite3_step(st) == SQLITE_ROW) {
+		n = sqlite3_column_int(st, 0);
+	}
+	sqlite3_finalize(st);
+	sqlite3_close(db);
+	return n;
+}
+
 int main(void) {
-	char dir[] = "/home/diogo/Downloads/Hiby/sonix-build/podcast149testXXXXXX";
+	const char *tmp = getenv("TMPDIR");
+	char dir[512];
+	snprintf(dir, sizeof(dir), "%s/podcast149testXXXXXX", tmp && tmp[0] ? tmp : "/tmp");
 	if (!mkdtemp(dir)) {
 		perror("mkdtemp");
 		return 2;
 	}
+	char db_path[600];
+	snprintf(db_path, sizeof(db_path), "%s/.local/podcast.db", dir);
 	podcaststate_set_root(dir);
 
 	podcast_episode_t a, b, c;
@@ -72,6 +91,12 @@ int main(void) {
 	// Repeating the batch must not duplicate rows or clear the metadata.
 	ok = podcaststate_set_played_many(eps, 3, "https://img.example/cover.jpg", NULL, 0, true);
 	check(ok && podcaststate_get_episode(b.id, &s) && s.played, "repeat is idempotent");
+	check(row_count(db_path) == 3, "repeat inserts no duplicate rows");
+
+	// The same episode twice in one selection writes one row.
+	const podcast_episode_t *dup[] = {&a, &a};
+	check(podcaststate_set_played_many(dup, 2, NULL, NULL, 0, true), "duplicate selection succeeds");
+	check(row_count(db_path) == 3, "duplicate key writes only one row");
 
 	// An empty batch is a no-op that still reports success.
 	check(podcaststate_set_played_many(NULL, 0, NULL, NULL, 0, true), "empty batch succeeds");
@@ -81,7 +106,17 @@ int main(void) {
 	check(podcaststate_get_episode(a.id, &s) && !s.played, "episode A not heard");
 	check(strcmp(s.title, "Episode A") == 0, "episode A title survives unheard");
 
+	// A write error must be reported, not committed as a partial success.
+	sqlite3 *db = NULL;
+	if (sqlite3_open(db_path, &db) == SQLITE_OK) {
+		sqlite3_exec(db, "DROP TABLE PODCAST_EPISODES", NULL, NULL, NULL);
+		sqlite3_close(db);
+	}
+	check(!podcaststate_set_played_many(eps, 3, NULL, NULL, 0, true), "write failure is reported");
+	check(!podcaststate_get_episode(a.id, &s), "failed batch leaves no false state");
+
 	podcaststate_set_root(NULL);
+	check(!podcaststate_set_played_many(eps, 1, NULL, NULL, 0, true), "no card reports failure");
 	printf("%s\n", failures == 0 ? "ALL PASS" : "FAILURES");
 	return failures == 0 ? 0 : 1;
 }

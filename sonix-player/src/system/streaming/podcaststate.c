@@ -188,8 +188,9 @@ static bool select_key(sqlite3 *db, const char *key, podcaststate_t *out) {
 	return found;
 }
 
-// Called with db_lock held.
-static void upsert(sqlite3 *db, const char *key, const podcaststate_t *s) {
+// Called with db_lock held. False when SQLite refused the row; the caller's
+// transaction must roll back rather than commit a partial batch.
+static bool upsert(sqlite3 *db, const char *key, const podcaststate_t *s) {
 	sqlite3_stmt *stmt = NULL;
 	const char *sql = "INSERT INTO PODCAST_EPISODES(key,path,title,show,image,feed_id,episode_id,position,duration,"
 					  "played,touched) VALUES(?,?,?,?,?,?,?,?,?,?,"
@@ -200,7 +201,7 @@ static void upsert(sqlite3 *db, const char *key, const podcaststate_t *s) {
 					  " played=excluded.played, touched=excluded.touched";
 	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
 		fprintf(stderr, "podcaststate: %s\n", sqlite3_errmsg(db));
-		return;
+		return false;
 	}
 	sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 2, s->path[0] ? relative(s->path) : "", -1, SQLITE_STATIC);
@@ -214,8 +215,11 @@ static void upsert(sqlite3 *db, const char *key, const podcaststate_t *s) {
 	sqlite3_bind_int(stmt, 10, s->played ? 1 : 0);
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "podcaststate: write failed: %s\n", sqlite3_errmsg(db));
+		sqlite3_finalize(stmt);
+		return false;
 	}
 	sqlite3_finalize(stmt);
+	return true;
 }
 
 // An episode of the catalogue kept in the Podcast folder stays tied to that
@@ -951,16 +955,18 @@ bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int 
 		for (int i = 0; i < n && ok; i++) {
 			podcaststate_t record = rows[i].state;
 			keep_download(db, rows[i].key, &record);
-			upsert(db, rows[i].key, &record);
+			ok = upsert(db, rows[i].key, &record);
 		}
-		if (ok && !exec(db, "COMMIT")) {
+		if (ok) {
+			ok = exec(db, "COMMIT");
+		}
+		if (!ok) {
 			exec(db, "ROLLBACK");
-			ok = false;
 		}
 	}
 	pthread_mutex_unlock(&db_lock);
 	if (ok) {
-		revision += (unsigned)n;
+		revision++;
 	}
 	free(rows);
 	return ok;
