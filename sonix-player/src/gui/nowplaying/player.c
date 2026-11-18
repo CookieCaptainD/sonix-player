@@ -5586,10 +5586,13 @@ void player_init(gui_config_t *cfg) {
 	// arrangements. It is floated out of the flex flow: the controls block has
 	// room for exactly the rows it already has, and another one would push the
 	// transport off the bottom of the shorter panel.
-	ab_btn = lv_btn_create(player_menu);
+	ab_btn = lv_btn_create(player_screen);
 	lv_obj_set_ignore_layout(ab_btn, true);
 	lv_obj_set_size(ab_btn, 36, 36);
-	lv_obj_align(ab_btn, LV_ALIGN_TOP_LEFT, 0, 0);
+	// The cover panel is created later and would paint over a child of the
+	// controls block. Live on the sheet itself, above the cover, at the foot
+	// of the artwork and clear of the track information below it.
+	lv_obj_align(ab_btn, LV_ALIGN_TOP_LEFT, 16, 424);
 	lv_obj_set_style_bg_opa(ab_btn, LV_OPA_TRANSP, 0);
 	lv_obj_set_style_shadow_width(ab_btn, 0, 0);
 	lv_obj_set_style_pad_all(ab_btn, 0, 0);
@@ -5867,6 +5870,11 @@ void player_init(gui_config_t *cfg) {
 	// taller shape of the track can reach: presses there go to the slider.
 	lv_obj_set_adv_hittest(cover_panel, true);
 	lv_obj_add_event_cb(cover_panel, cover_panel_hit_test_cb, LV_EVENT_HIT_TEST, NULL);
+	// The cover is created after the A/B button and would otherwise paint over
+	// it. Lift the button above the artwork it sits on.
+	if (ab_btn) {
+		lv_obj_move_foreground(ab_btn);
+	}
 	lv_obj_set_size(cover_panel, cover_size, cover_size);
 	lv_obj_align(cover_panel, LV_ALIGN_TOP_MID, 0, 0);
 	lv_obj_set_style_bg_color(cover_panel, theme()->cover_bg, 0);
