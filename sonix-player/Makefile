@@ -229,9 +229,12 @@ HOST_OBJS = $(APP_SRCS:src/%.c=build_host/%.o) $(APP_CXX_SRCS:src/%.cpp=build_ho
 TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=build_target/%.opp) \
 			  $(LVGL_SRCS:$(LVGL_DIR)/%.c=build_target/lvgl/%.o)
 
-.PHONY: all host target clean compile_commands.json
+.PHONY: all host target clean compile_commands.json test-abloop
 
 all: host compile_commands.json
+
+test-abloop: tools/abloop_test.c src/system/playback/abloop.c src/system/playback/abloop.h
+	gcc -std=c11 -Wall -Wextra -Werror -I. tools/abloop_test.c src/system/playback/abloop.c -o /tmp/abloop_test && /tmp/abloop_test
 
 host: $(HOST_BIN) compile_commands.json
 
