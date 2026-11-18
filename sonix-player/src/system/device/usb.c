@@ -17,6 +17,7 @@
 #include "src/system/library/audiobookdb.h"
 #include "src/system/library/library.h"
 #include "src/system/core/logging.h"
+#include "src/system/core/config.h"
 #include "src/system/bluetooth/btlog.h"
 #include "src/system/device/sysserver.h"
 #include "src/system/audio/usbaudio.h"
@@ -167,6 +168,12 @@ static bool adb_gadget_bound(void) {
 // should not have. Honoured in the two places that build or bind anything.
 static volatile bool dac_owns_usb;
 
+// Set while Charge only is on: the storage gadget must stay off the USB
+// controller, so a host on the cable sees no medium and the card stays with
+// the player. Charging reaches the cell through the power-supply nodes and
+// does not go through the gadget.
+static volatile bool charge_only;
+
 // Entering and leaving DAC mode moves the card back and forth exactly the way
 // a cable being plugged in does, which would announce "Memoria di nuovo
 // disponibile" or "Collegato al PC" for something the user did not do and
@@ -174,6 +181,8 @@ static volatile bool dac_owns_usb;
 static volatile bool suppress_popups;
 static void ensure_storage_gadget(void);
 static void take_card_back(const char *why);
+static void gadget_unbind(void);
+static bool charge_only_park(void);
 
 void usb_set_dac_mode(bool on) {
 	// The flag goes up before anything else: setting it afterwards leaves a
@@ -301,6 +310,9 @@ static void typec_force_sink(void) {
 // then just writing the block device into lun.0/file (the medium clicks in);
 // un-exporting writes it empty again. The gadget itself never unbinds.
 static void ensure_storage_gadget(void) {
+	if (charge_only_park()) {
+		return;
+	}
 	if (dac_owns_usb || usbaudio_active()) {
 		return;
 	}
@@ -462,6 +474,17 @@ static bool gadget_write_udc(const char *text) {
 
 static void gadget_unbind(void) { gadget_write_udc(""); }
 
+// Keeps the controller free of a data gadget while Charge only is on. An
+// explicit ADB or DAC session still owns the controller until it ends; their
+// exit paths call ensure_storage_gadget(), which parks here once they let go.
+static bool charge_only_park(void) {
+	if (!charge_only || adb_is_running() || dac_owns_usb || usbaudio_active()) {
+		return false;
+	}
+	gadget_unbind();
+	return true;
+}
+
 // Puts the gadget back on the controller. False when there is no gadget to put
 // back -- it has never been built, or something removed it -- and the caller
 // falls back to building one.
@@ -588,7 +611,7 @@ void usb_resume_restore(void) {
 		return;
 	}
 	ensure_storage_gadget();
-	fprintf(stderr, "usb: storage gadget rebound after resume\n");
+	fprintf(stderr, "usb: storage gadget state restored after resume%s\n", charge_only ? " (charge only)" : "");
 }
 
 // Adds the mass-storage function to the ADB gadget and rebinds it, giving the
@@ -871,6 +894,34 @@ static void take_card_back(const char *why) {
 	pthread_mutex_unlock(&storage_lock);
 }
 
+bool usb_charge_only_enabled(void) { return charge_only; }
+
+void usb_set_charge_only(bool on) {
+	if (charge_only == on) {
+		return;
+	}
+	config_set_bool("usb", "charge_only", on);
+	config_save();
+	charge_only = on;
+	owner_changed();
+
+	if (!on) {
+		if (!gadget_rebind()) {
+			ensure_storage_gadget();
+		}
+		fprintf(stderr, "usb: charge only off; storage gadget restored\n");
+		return;
+	}
+
+	take_card_back("charge only enabled");
+	if (!charge_only_park()) {
+		// ADB or DAC holds the controller; its exit path parks the gadget.
+		fprintf(stderr, "usb: charge only on; controller left with its current owner\n");
+		return;
+	}
+	fprintf(stderr, "usb: charge only on; gadget unbound and the card stays with the player\n");
+}
+
 // The watcher's own export and restore, under the same lock.
 static void locked_export(void) {
 	pthread_mutex_lock(&storage_lock);
@@ -989,9 +1040,10 @@ static void *usb_thread(void *arg) {
 				gadget_unbind();
 				parked = true;
 				fprintf(stderr, "usb: no cable and the screen is dark; gadget unbound\n");
-			} else if (parked && power_screen_is_on()) {
+			} else if (parked && power_screen_is_on() && !charge_only) {
 				// Unless ADB has been switched on meanwhile: the controller is
-				// its gadget's now, and adb_keep_controller() sees to it.
+				// its gadget's now, and adb_keep_controller() sees to it. Charge
+				// only deliberately keeps the gadget parked while the panel is on.
 				if (!adb_switched_on() && !gadget_rebind()) {
 					ensure_storage_gadget();
 				}
@@ -1008,6 +1060,9 @@ static void *usb_thread(void *arg) {
 			// is doing -- but by the cheap route first: the gadget was only
 			// unbound, not taken apart, so putting it back is one write.
 			typec_force_sink();
+			if (charge_only) {
+				continue; // the cable is here to charge; stay parked
+			}
 			if (!adb_switched_on() && !gadget_rebind()) {
 				ensure_storage_gadget();
 			}
@@ -1044,6 +1099,13 @@ static void *usb_thread(void *arg) {
 		}
 		said_adb = false;
 
+		// Charge only: the cable is here to power the player. Never hand the
+		// card to a host, even if a gadget left from another session still
+		// reads as configured.
+		if (charge_only) {
+			continue;
+		}
+
 		// VBUS alone is not a PC -- a wall charger raises it too, and taking
 		// the card away (stopping the music with it) for a power brick was
 		// exactly the "track would not start while charging" bug. Only a host
@@ -1079,6 +1141,11 @@ void usb_start(const char *device, const char *mount_point) {
 		fprintf(stderr, "usb: no configfs on this kernel; USB mode disabled\n");
 		return;
 	}
+
+	// The saved choice is in force before the first gadget is built, so a boot
+	// with Charge only on never offers a card reader to a host that is already
+	// attached.
+	charge_only = config_get_bool("usb", "charge_only", false);
 
 	// The port is a peripheral from here on, whatever is at the other end of
 	// the cable. The stock player re-applies its own saved choice at every boot

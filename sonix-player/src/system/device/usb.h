@@ -27,6 +27,13 @@ void usb_start(const char *sd_device, const char *sd_mount_point);
 // True while the gadget is exported to a host (the card is unmounted then).
 bool usb_storage_active(void);
 
+// Charge only: leave the controller without a data gadget, so a computer can
+// supply power without being offered the microSD. The card stays mounted and
+// audio keeps playing. The choice is saved in [usb] charge_only and read at
+// boot; the setter applies it to the gadget straight away.
+bool usb_charge_only_enabled(void);
+void usb_set_charge_only(bool on);
+
 // Hands the USB controller to DAC mode, and takes it back.
 //
 // While it is handed over, everything in usb.c stands down: no gadget is
