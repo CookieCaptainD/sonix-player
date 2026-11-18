@@ -494,6 +494,21 @@ $(USBWAKE_TEST_BIN): tools/test_usb_wake.c src/system/device/usbwake.c \
 	$(CC) $(CFLAGS) -DHOST_BUILD=1 -o $@ \
 		tools/test_usb_wake.c src/system/device/usbwake.c
 
+# ---------------------------------------------------------------------------
+# The cover fetch client, on the host, against stubbed HTTP and the real JSON
+# parser. Test-only: nothing here is part of the host or target builds.
+# ---------------------------------------------------------------------------
+COVERFETCH_TEST_BIN = build_host/test_coverfetch
+.PHONY: test-coverfetch
+test-coverfetch: $(COVERFETCH_TEST_BIN)
+	$(COVERFETCH_TEST_BIN)
+
+$(COVERFETCH_TEST_BIN): tools/test_coverfetch.c src/system/library/coverfetch.c \
+		src/system/library/coverfetch.h src/system/library/coverfetch_test.h \
+		src/system/core/json.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DHOST_BUILD=1 -DCOVERFETCH_TEST=1 -o $@ \
+		tools/test_coverfetch.c src/system/library/coverfetch.c src/system/core/json.c -lpthread
 # The bundled libraries and their extracted sources. The downloaded tarballs stay.
 .PHONY: libs-clean
 libs-clean:
