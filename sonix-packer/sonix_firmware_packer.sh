@@ -740,6 +740,13 @@ build_one() {
 	fi
 	say ""
 
+	# The R1 units that shipped with OFW v2.0 refuse an update that does not
+	# name itself in ota_compatibility.in. Stock v2.0 firmwares carry it and
+	# the updater checks for it on those bootloaders (see #264 / #225).
+	if [ "$MODEL_DIR" = "R1" ]; then
+		printf '%s\n' 'compatibility=hiby_r1_x1600_auto_rf_auto' > "$OTA_DIR/ota_compatibility.in"
+	fi
+
 	# ==========================================================================
 	# 9. The image
 	# ==========================================================================
