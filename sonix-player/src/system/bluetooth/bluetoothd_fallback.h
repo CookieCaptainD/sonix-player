@@ -24,6 +24,7 @@ typedef struct {
 	const char *stock_path;
 	// When this file exists the patched daemon is deliberately turned off.
 	const char *disable_flag;
+	const char *conf;
 	bool debug; // bluez's -d, only when the Bluetooth log is on
 	int deadline_ms;
 	bt_daemon_spawn_fn spawn;

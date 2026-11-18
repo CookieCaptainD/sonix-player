@@ -32,9 +32,14 @@ static bool start(const bt_daemon_fallback_t *f, const char *path) {
 	// Both binaries are launched as "bluetoothd": the rest of the player
 	// finds and stops the daemon by that name, and bluez's own re-exec keeps
 	// argv[0]. A different basename for the patched build would escape both.
-	char *argv[5] = {(char *)"bluetoothd", (char *)"-E", (char *)"-C", NULL, NULL};
+	char *argv[7] = {(char *)"bluetoothd", (char *)"-E", (char *)"-C", NULL, NULL, NULL, NULL};
+	int at = 3;
 	if (f->debug) {
-		argv[3] = (char *)"-d";
+		argv[at++] = (char *)"-d";
+	}
+	if (f->conf) {
+		argv[at++] = (char *)"-f";
+		argv[at++] = (char *)f->conf;
 	}
 	return f->spawn(path, argv, f->user);
 }
