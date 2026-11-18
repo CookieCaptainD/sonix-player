@@ -47,6 +47,7 @@ typedef struct {
 
 int main(void) {
 	static const case_t cases[] = {
+		{"detect path, new DAC", true, false, true, 30, 100},
 		{"USB DAC, automatic, remembered 42", true, false, true, 42, 100},
 		{"USB DAC, automatic, remembered 0", true, false, true, 0, 100},
 		{"USB DAC, automatic, remembered 100", true, false, true, 100, 100},

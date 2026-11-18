@@ -3,6 +3,7 @@
 #include "src/system/audio/audio.h"
 #include "src/system/audio/alsa-controls.h"
 #include "src/system/audio/swvolume.h"
+#include "src/system/audio/usbtransport.h"
 #include "src/system/core/config.h"
 #include "src/system/bluetooth/bluetooth.h"
 #include "src/system/device/usb.h"
@@ -709,7 +710,10 @@ void usbaudio_poll(void) {
 		// the top of its range. The other order puts a full-scale burst into a
 		// pair of headphones somebody is wearing.
 		find_volume_control(card);
-		usbaudio_apply_volume(get_volume_percent());
+		// A DAC is a line out: hand it the level the next device expects
+		// before the stream moves, not the level of the socket we just left.
+		int forced = usbtransport_forced_percent(true, false, usbtransport_automatic_enabled(), 0);
+		usbaudio_apply_volume(forced >= 0 ? forced : get_volume_percent());
 		audio_set_output_device(pcm);
 	} else {
 		active_name[0] = '\0';
