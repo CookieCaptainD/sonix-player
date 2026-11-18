@@ -112,7 +112,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Podcasts on the card** - your own podcasts are played too.
   > One folder per podcast inside the `Podcast` folder. Title, date and cover are read from the tags.
 - **Continue listening** - every episode remembers where you stopped.
-- **Heard and to hear** - filter the episodes and mark them as heard or not. An episode counts as heard when you stop in its last 30 seconds, 1 minute or 2 minutes (you choose).
+- **Heard and to hear** - filter the episodes and mark them as heard or not. An episode counts as heard when you stop in its last 30 seconds, 1 minute or 2 minutes (you choose). Select all the episodes a filter shows and mark them heard in one action.
 - **Play next**, delete downloaded episodes, newest or oldest first.
 - **Speed** and **stop at the end of the episode**.
 - **OPML** - import the podcasts you follow in another app, and export yours.
