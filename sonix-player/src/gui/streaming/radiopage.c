@@ -1,5 +1,6 @@
 #include "radiopage.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "src/gui/shell/azindex.h"
 #include "src/gui/shell/gui.h"
 #include "src/gui/shell/icons.h"
+#include "src/gui/shell/listsort.h"
 #include "src/gui/nowplaying/player.h"
 #include "src/gui/shell/confirm.h"
 #include "src/gui/shell/pagetimer.h"
@@ -114,7 +116,7 @@ static lv_obj_t *list_view;
 static lv_obj_t *list_body;
 static lv_obj_t *list_message; // "Loading...", "Nothing here", the error
 static lv_obj_t *list_title;
-static lv_obj_t *sort_btn;	// A-Z / Z-A, on the three category lists
+static lv_obj_t *sort_btn;	// name order on the lists, category direction on the terms
 static lv_obj_t *sort_icon;
 static azindex_t *list_index; // the letters down the right edge, same lists
 static row_t rows[ROW_POOL];
@@ -147,6 +149,13 @@ static int term_count;
 static radio_station_t stations[RADIO_MAX_HELD];
 static int station_count;
 
+// The display order of the station rows. stations[] keeps the order the source
+// gave: the directory appends further pages at the tail, and radio.txt marks
+// its station by line number. Rows read through station_order[] instead.
+static int station_order[RADIO_MAX_HELD];
+static radio_station_t station_display[RADIO_MAX_HELD];
+static char (*station_keys)[LIBRARY_SORT_KEY_MAX];
+
 // What the current station list is, so the next page can be asked for.
 static char page_value[128];	  // the term, or the search text
 static bool page_is_search;
@@ -156,6 +165,7 @@ static bool page_loading;		  // a page is in flight
 static bool page_append;		  // ...and it is a continuation, not a fresh list
 
 static void list_window_update(void);
+static void list_rebuild(void);
 static void list_reload_stored(void);
 static const char *stored_empty_message(void);
 
@@ -338,20 +348,111 @@ static void terms_sort(void) {
 	azindex_set_rows(list_index, first, term_count, desc);
 }
 
-// The corner button and the strip belong to the category lists only: a list
-// of stations is in the directory's order, most played first, and has no
-// letters to jump between.
+static listsort_mode_t station_sort_choice(void);
+
+// The corner button orders every list. The letter strip stays on the category
+// lists: a list of stations has no letters to jump between.
 static void sort_button_update(void) {
 	if (!sort_btn) {
 		return;
 	}
 	if (list_mode == LIST_TERMS) {
 		lv_image_set_src(sort_icon, terms_desc(list_browse) ? &icon_sort_za : &icon_sort_az);
-		lv_obj_set_hidden(sort_btn, false);
 	} else {
-		lv_obj_set_hidden(sort_btn, true);
+		listsort_mode_t mode = station_sort_choice();
+		lv_image_set_src(sort_icon, mode == LISTSORT_ZA ? &icon_sort_za
+									  : mode == LISTSORT_AZ ? &icon_sort_az
+															: &icon_sort_series);
 		azindex_set_rows(list_index, NULL, 0, false);
 	}
+	lv_obj_set_hidden(sort_btn, false);
+}
+
+static listsort_mode_t station_sort_choice(void) {
+	long value = config_get_int("radio", "station_sort", LISTSORT_SOURCE);
+	if (value < LISTSORT_SOURCE || value > LISTSORT_ZA) {
+		return LISTSORT_SOURCE;
+	}
+	return (listsort_mode_t)value;
+}
+
+static void station_sort_set(listsort_mode_t mode) {
+	config_set_int("radio", "station_sort", (long)mode);
+	config_save();
+}
+
+static const radio_station_t *station_at(int display) {
+	if (display < 0 || display >= station_count) {
+		return NULL;
+	}
+	return &stations[station_order[display]];
+}
+
+// radio.txt marks the playing station by its line, so the mark follows the
+// source index through the display order.
+static int station_display_index_of_source(int source) {
+	for (int i = 0; i < station_count; i++) {
+		if (station_order[i] == source) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static void stations_sort(void) {
+	station_keys = malloc((size_t)(station_count > 0 ? station_count : 1) * sizeof(*station_keys));
+	int *order = malloc((size_t)(station_count > 0 ? station_count : 1) * sizeof(*order));
+	if (!station_keys || !order) {
+		free(station_keys);
+		free(order);
+		station_keys = NULL;
+		for (int i = 0; i < station_count; i++) {
+			station_order[i] = i;
+			station_display[i] = stations[i];
+		}
+		return;
+	}
+
+	for (int i = 0; i < station_count; i++) {
+		library_sort_key(stations[i].name, station_keys[i], sizeof(station_keys[i]));
+		order[i] = i;
+	}
+	listsort_order(order, station_count, station_keys, station_sort_choice());
+
+	for (int i = 0; i < station_count; i++) {
+		station_order[i] = order[i];
+		const radio_station_t *s = station_at(i);
+		if (s) {
+			station_display[i] = *s;
+		}
+	}
+
+	free(station_keys);
+	free(order);
+	station_keys = NULL;
+}
+
+static void station_sort_picked(void *user) {
+	station_sort_set((listsort_mode_t)(intptr_t)user);
+	if (LIST_IS_STORED(list_mode)) {
+		list_reload_stored();
+	} else if (list_mode == LIST_STATIONS) {
+		stations_sort();
+	}
+	sort_button_update();
+	list_rebuild();
+}
+
+static void station_sort_menu_show(lv_obj_t *anchor) {
+	listsort_mode_t current = station_sort_choice();
+	popover_item_t items[3];
+	for (int i = 0; i < 3; i++) {
+		items[i].label = listsort_label((listsort_mode_t)i);
+		items[i].action = station_sort_picked;
+		items[i].user = (void *)(intptr_t)i;
+		items[i].checked = (listsort_mode_t)i == current;
+	}
+	popover_show(anchor, items, 3);
 }
 
 static const char *station_key(const radio_station_t *s) { return s->uuid[0] ? s->uuid : s->url; }
@@ -378,9 +479,10 @@ static void row_update_playmark(row_t *row) {
 	bool marked = false;
 	if (row->index >= 0 && row->index < list_count()) {
 		if (list_mode == LIST_CUSTOM) {
-			marked = row->index == marked_custom;
+			marked = row->index == station_display_index_of_source(marked_custom);
 		} else if (list_mode != LIST_TERMS && marked_station[0]) {
-			marked = strcmp(station_key(&stations[row->index]), marked_station) == 0;
+			const radio_station_t *s = station_at(row->index);
+			marked = s && strcmp(station_key(s), marked_station) == 0;
 		}
 	}
 	if (marked) {
@@ -423,7 +525,7 @@ static void headings_layout(void) {
 	int y = 0;
 	for (int i = 0; i < station_count && i < RADIO_CUSTOM_MAX; i++) {
 		char text[RADIO_NAME_MAX];
-		if (radio_custom_heading(i, text, sizeof(text))) {
+		if (radio_custom_heading(station_order[i], text, sizeof(text))) {
 			lv_obj_t *label = lv_label_create(list_body);
 			lv_label_set_text(label, text);
 			lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
@@ -463,7 +565,10 @@ static void row_bind(row_t *row, int index) {
 		return;
 	}
 
-	const radio_station_t *s = &stations[index];
+	const radio_station_t *s = station_at(index);
+	if (!s) {
+		return;
+	}
 	lv_label_set_text(row->name, s->name);
 
 	// Under the name: the quality badge, and on a search's hits the country
@@ -665,7 +770,11 @@ static void row_clicked_cb(lv_event_t *e) {
 
 	// A station that cannot be played says why, here, instead of being started
 	// and failing silently.
-	const char *problem = radio_station_problem(&stations[index]);
+	const radio_station_t *chosen = station_at(index);
+	if (!chosen) {
+		return;
+	}
+	const char *problem = radio_station_problem(chosen);
 	if (problem) {
 		gui_notify_popup(problem);
 		return;
@@ -673,11 +782,12 @@ static void row_clicked_cb(lv_event_t *e) {
 
 	// Otherwise start it and go to the player: connecting takes a moment, and
 	// the player is where that moment is explained. The list goes with it, for
-	// previous and next to walk; radio.txt has its own.
+	// previous and next to walk, in the order the rows show; radio.txt has its
+	// own.
 	if (list_mode != LIST_CUSTOM) {
-		radio_set_list(stations, station_count);
+		radio_set_list(station_display, station_count);
 	}
-	if (radio_play(&stations[index])) {
+	if (radio_play(chosen)) {
 		player_refresh_now_playing();
 		player_sheet_open(true);
 	} else {
@@ -737,8 +847,12 @@ static void menu_btn_cb(lv_event_t *e) {
 		return;
 	}
 
-	snprintf(menu_uuid, sizeof(menu_uuid), "%s", stations[index].uuid);
-	snprintf(menu_name, sizeof(menu_name), "%s", stations[index].name);
+	const radio_station_t *s = station_at(index);
+	if (!s) {
+		return;
+	}
+	snprintf(menu_uuid, sizeof(menu_uuid), "%s", s->uuid);
+	snprintf(menu_name, sizeof(menu_name), "%s", s->name);
 
 	static const popover_item_t items[] = {
 		{"remove_from_favourites", menu_remove_action, NULL},
@@ -788,6 +902,7 @@ static void list_reload_stored(void) {
 	if (list_mode == LIST_CUSTOM) {
 		marked_custom = radio_custom_current_index();
 	}
+	stations_sort();
 }
 
 // What an empty stored list should say.
@@ -889,6 +1004,7 @@ static void list_poll_cb(lv_timer_t *timer) {
 
 	station_count = appending ? station_count + got : got;
 	term_count = 0;
+	stations_sort();
 
 	list_rebuild_keep(appending);
 	set_message(station_count ? NULL : "radio_no_stations_found");
@@ -911,6 +1027,7 @@ static void list_loaded_cb(lv_event_t *e) {
 static void sort_clicked_cb(lv_event_t *e) {
 	(void)e;
 	if (list_mode != LIST_TERMS) {
+		station_sort_menu_show(sort_btn);
 		return;
 	}
 	terms_set_desc(list_browse, !terms_desc(list_browse));
@@ -1083,8 +1200,8 @@ static void build_list_page(gui_config_t *cfg) {
 		row->index = -1;
 	}
 
-	// A-Z / Z-A in the corner the title leaves free, and the strip of letters
-	// down the right edge: the category lists only (see sort_button_update).
+	// The corner button orders every list. The strip of letters down the right
+	// edge stays on the category lists (see sort_button_update).
 	sort_btn = lv_btn_create(radiolist_screen);
 	lv_obj_set_size(sort_btn, 56, 56);
 	lv_obj_set_style_bg_opa(sort_btn, LV_OPA_TRANSP, 0);
