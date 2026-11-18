@@ -447,6 +447,7 @@ bool audio_output_is_bluetooth(void) { return output_is_bluetooth(); }
 // ---------------------------------------------------------------------------
 
 static volatile bool fade_enabled;
+static volatile bool fade_suppressed;
 static volatile int fade_secs = 3;
 
 // Bit-perfect (audio_set_bit_perfect): the samples reach the output as the
@@ -467,9 +468,11 @@ void audio_set_fade(bool enabled, int seconds) {
 	fprintf(stderr, "audio: fade %s (%d s)\n", enabled ? "on" : "off", seconds);
 }
 
+void audio_set_fade_suppressed(bool suppressed) { fade_suppressed = suppressed; }
+
 // 0..1024 for a position in the track. Unity everywhere but the two ends.
 static int fade_gain_q10(double pos_secs, double total_secs) {
-	if (!fade_enabled) {
+	if (fade_suppressed || !fade_enabled) {
 		return 1024;
 	}
 

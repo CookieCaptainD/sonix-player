@@ -233,7 +233,8 @@ TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=buil
 
 all: host compile_commands.json
 
-test-abloop: tools/abloop_test.c src/system/playback/abloop.c src/system/playback/abloop.h
+test-abloop: tools/abloop_test.c src/system/playback/abloop.c src/system/playback/abloop.h src/system/audio/audio.h
+	grep -q 'audio_set_fade_suppressed' src/system/audio/audio.h
 	gcc -std=c11 -Wall -Wextra -Werror -I. tools/abloop_test.c src/system/playback/abloop.c -o /tmp/abloop_test && /tmp/abloop_test
 
 host: $(HOST_BIN) compile_commands.json

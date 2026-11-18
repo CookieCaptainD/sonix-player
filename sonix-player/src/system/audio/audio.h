@@ -128,6 +128,10 @@ bool audio_get_bit_perfect(void);
 // 1..12.
 void audio_set_fade(bool enabled, int seconds);
 
+// Suppress the fade while an A/B loop is active, so a loop does not ride the
+// end-of-track ramp. The stored fade setting is left as the user set it.
+void audio_set_fade_suppressed(bool suppressed);
+
 void audio_resume();
 
 void audio_stop();
