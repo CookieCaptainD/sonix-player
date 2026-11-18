@@ -850,6 +850,123 @@ void podcaststate_set_played_episode(const podcast_episode_t *episode, const cha
 	write_now(key, &s);
 }
 
+// A selection can hold hundreds of episodes. Calling the single-episode setter
+// once per row would open a transaction for each one and hold up the GUI thread;
+// build every record first, then write them in one transaction.
+typedef struct {
+	char key[600];
+	podcaststate_t state;
+} batch_row_t;
+
+bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image,
+								  const char *const *paths, int path_count, bool played) {
+	if (!db_path[0]) {
+		return false;
+	}
+	int total = (episode_count > 0 ? episode_count : 0) + (path_count > 0 ? path_count : 0);
+	if (total == 0) {
+		return true;
+	}
+	batch_row_t *rows = calloc((size_t)total, sizeof(*rows));
+	if (!rows) {
+		return false;
+	}
+
+	int n = 0;
+	for (int i = 0; i < episode_count; i++) {
+		const podcast_episode_t *e = episodes[i];
+		if (!e || e->id <= 0) {
+			continue;
+		}
+		snprintf(rows[n].key, sizeof(rows[n].key), "e:%lld", e->id);
+		podcaststate_t s;
+		if (!get_by_key(rows[n].key, &s)) {
+			memset(&s, 0, sizeof(s));
+			snprintf(s.title, sizeof(s.title), "%s", e->title);
+			snprintf(s.show, sizeof(s.show), "%s", e->feed_title);
+			snprintf(s.image, sizeof(s.image), "%s", image && image[0] ? image : e->image);
+			s.feed_id = e->feed_id;
+			s.episode_id = e->id;
+			s.duration = e->duration_secs;
+		}
+		s.played = played;
+		if (played) {
+			s.position = 0;
+		}
+		rows[n++].state = s;
+	}
+	for (int i = 0; i < path_count; i++) {
+		const char *path = paths[i];
+		if (!path || !path[0]) {
+			continue;
+		}
+		long long id = podcastcache_episode_id(path);
+		if (!key_for(path, id, rows[n].key, sizeof(rows[n].key))) {
+			continue;
+		}
+		podcaststate_t s;
+		if (!get_by_key(rows[n].key, &s)) {
+			memset(&s, 0, sizeof(s));
+			describe(path, &s);
+		}
+		snprintf(s.path, sizeof(s.path), "%s", path);
+		s.played = played;
+		if (played) {
+			s.position = 0;
+		}
+		rows[n++].state = s;
+	}
+
+	// A feed can be selected twice through two filters. Write each row once.
+	for (int i = 0; i < n; i++) {
+		for (int j = i + 1; j < n; j++) {
+			if (strcmp(rows[i].key, rows[j].key) == 0) {
+				rows[i].state = rows[j].state;
+				memmove(&rows[j], &rows[j + 1], (size_t)(n - j - 1) * sizeof(*rows));
+				n--;
+				j--;
+			}
+		}
+	}
+	if (n == 0) {
+		free(rows);
+		return true;
+	}
+
+	writer_drain();
+	pthread_mutex_lock(&current_lock);
+	for (int i = 0; i < n; i++) {
+		if (current_valid && strcmp(current_key, rows[i].key) == 0) {
+			current.played = rows[i].state.played;
+			current.position = rows[i].state.position;
+			current_dirty = false;
+		}
+	}
+	pthread_mutex_unlock(&current_lock);
+
+	bool ok = false;
+	pthread_mutex_lock(&db_lock);
+	sqlite3 *db = open_db();
+	if (db && exec(db, "BEGIN IMMEDIATE")) {
+		ok = true;
+		for (int i = 0; i < n && ok; i++) {
+			podcaststate_t record = rows[i].state;
+			keep_download(db, rows[i].key, &record);
+			upsert(db, rows[i].key, &record);
+		}
+		if (ok && !exec(db, "COMMIT")) {
+			exec(db, "ROLLBACK");
+			ok = false;
+		}
+	}
+	pthread_mutex_unlock(&db_lock);
+	if (ok) {
+		revision += (unsigned)n;
+	}
+	free(rows);
+	return ok;
+}
+
 // ---------------------------------------------------------------------------
 // setup
 // ---------------------------------------------------------------------------
