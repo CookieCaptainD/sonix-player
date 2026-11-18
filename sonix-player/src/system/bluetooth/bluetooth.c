@@ -26,6 +26,7 @@
 #include "src/system/audio/audio.h"
 #include "src/system/bluetooth/bluetoothd_fallback.h"
 #include "src/system/bluetooth/btlog.h"
+#include "src/system/bluetooth/btplayer.h"
 #include "src/system/bluetooth/btreceiver.h"
 #include "src/system/bluetooth/btstack.h"
 #include "src/system/bluetooth/btvolume.h"
@@ -3314,6 +3315,8 @@ static void *bluetooth_worker(void *arg) {
 			case JOB_CAR_MODE:
 				bring_stack_down(false);
 				bring_stack_up();
+				// bluetoothd replaced its media player objects during the restart.
+				btplayer_reset();
 				reconnect_last();
 				pthread_mutex_lock(&lock);
 				g_car_mode_restarting = false;
