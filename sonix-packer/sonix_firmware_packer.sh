@@ -449,6 +449,13 @@ build_one() {
 	KERNEL_VER="$(kernel_version "$KERNEL_IMG")"
 	[ -n "$KERNEL_VER" ] || die "cannot read the kernel version from $KERNEL_IMG."
 	say "    kernel version: $KERNEL_VER"
+
+	# The reassembled stock kernel was only needed to choose and inspect the
+	# kernel above. With a custom kernel in place it is dead weight in the ISO:
+	# ota_update.in points at the custom xImage chunks, not at this file.
+	if [ "$KERNEL_IMG" != "$STOCK_KERNEL" ]; then
+		rm -f "$STOCK_KERNEL"
+	fi
 	say ""
 
 	# ==========================================================================
