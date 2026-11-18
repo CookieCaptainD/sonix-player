@@ -5,6 +5,7 @@
 #include "src/system/core/config.h"
 #include "src/system/audio/swvolume.h"
 #include "src/system/audio/usbaudio.h"
+#include "src/system/audio/usbtransport.h"
 #include "src/system/core/utils.h"
 #include "src/system/device/sysinfo.h"
 
@@ -1034,6 +1035,12 @@ void volume_profile_set_output(volume_output_t out) {
 	int wanted = level[out];
 	if (wanted < 0) {
 		wanted = current_percent; // no level for this output yet: keep the one in hand
+	}
+	// An external DAC is a line out: the next device in the chain sets the
+	// loudness. Start it at unity unless the listener turned that off.
+	int forced = usbtransport_forced_percent(out == VOLUME_OUTPUT_USB, false, usbtransport_automatic_enabled(), wanted);
+	if (forced >= 0) {
+		wanted = forced;
 	}
 	printf("volume: %s -> %s, %d%%\n", PROFILE_NAMES[leaving], PROFILE_NAMES[out], wanted);
 	set_volume_percent(wanted);

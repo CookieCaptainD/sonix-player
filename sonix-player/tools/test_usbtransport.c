@@ -53,6 +53,7 @@ int main(void) {
 		{"USB DAC, automatic, Bluetooth active", true, true, true, 42, -1},
 		{"USB DAC, automatic off", true, false, false, 42, -1},
 		{"not USB output", false, false, true, 42, -1},
+		{"Bluetooth output with automatic on", false, false, true, 42, -1},
 		{"second call stays at 100", true, false, true, 42, 100},
 		{"USB DAC, automatic, remembered 99", true, false, true, 99, 100},
 	};
