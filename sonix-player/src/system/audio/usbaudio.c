@@ -485,7 +485,17 @@ static void find_volume_control(int card) {
 //     nearest step at or above the target and the samples the difference, so
 //     a coarse or shallow control still moves smoothly all the way down.
 //
-void usbaudio_set_dsd(bool active) { dsd_active = active; }
+void usbaudio_set_dsd(bool active) {
+	bool rising = active && !dsd_active;
+	dsd_active = active;
+	// The level was written when the card attached, before the audio thread
+	// knew the track was DSD. That write left the dongle at 0 dB and the level
+	// in software gain, which a DoP stream cannot take. Write it again now,
+	// before the PCM opens and the first frames reach the device.
+	if (dsdroute_reapply_on_dsd(rising, active_card >= 0)) {
+		usbaudio_apply_volume(get_volume_percent());
+	}
+}
 
 // The value written is read back. A driver is allowed to round it; sitting at
 // the top of its range after being asked for well below is a control that does
@@ -584,7 +594,12 @@ void usbaudio_apply_volume(int percent) {
 				"usbaudio: '%s' did not take %d%% (asked %ld, reads %ld); the level goes to the samples "
 				"instead\n",
 				volume_control, percent, value, back);
-		volume_control[0] = '\0';
+		// Dropping the control leaves only software gain, which a DoP stream
+		// skips. Keep it for DSD so the next key press can still reach the
+		// device; the control is rediscovered only when the card changes.
+		if (!dsdroute_keep_hw_control(dsd_active)) {
+			volume_control[0] = '\0';
+		}
 		swvolume_set_usb_gain(target, mute);
 	}
 }

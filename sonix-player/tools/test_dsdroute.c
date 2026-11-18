@@ -47,6 +47,13 @@ int main(void) {
 	CHECK(dsdroute_force_hw_volume(false, true));
 	CHECK(!dsdroute_force_hw_volume(false, false));
 
+	CHECK(dsdroute_reapply_on_dsd(true, true));
+	CHECK(!dsdroute_reapply_on_dsd(false, true));
+	CHECK(!dsdroute_reapply_on_dsd(true, false));
+
+	CHECK(dsdroute_keep_hw_control(true));
+	CHECK(!dsdroute_keep_hw_control(false));
+
 	if (failures) {
 		fprintf(stderr, "%d check(s) failed\n", failures);
 		return 1;

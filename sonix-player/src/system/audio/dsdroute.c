@@ -72,3 +72,11 @@ int dsdroute_label_multiple(int decoder_multiple, bool converted) {
 bool dsdroute_force_hw_volume(bool dsd_active, bool configured) {
 	return dsd_active || configured;
 }
+
+bool dsdroute_reapply_on_dsd(bool rising_edge, bool usb_active) {
+	return rising_edge && usb_active;
+}
+
+bool dsdroute_keep_hw_control(bool dsd_active) {
+	return dsd_active;
+}

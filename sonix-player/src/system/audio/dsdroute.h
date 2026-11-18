@@ -25,4 +25,13 @@ int dsdroute_label_multiple(int decoder_multiple, bool converted);
 // the device control even when the user has not opted into hardware volume.
 bool dsdroute_force_hw_volume(bool dsd_active, bool configured);
 
+// The level is written when the dongle attaches, before the audio thread
+// knows the track is DSD. The switch to DoP must write the saved level again.
+bool dsdroute_reapply_on_dsd(bool rising_edge, bool usb_active);
+
+// A control that reads back at its top step is handed to software volume for
+// PCM. A DoP stream has no software volume, so keep the control for later
+// key presses instead of dropping it for the rest of the attachment.
+bool dsdroute_keep_hw_control(bool dsd_active);
+
 #endif /* DSDROUTE_H */
