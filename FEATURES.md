@@ -8,8 +8,9 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 
 ## Supported audio formats
 
-`.wav` `.flac` `.mp3` `.ogg` `.opus` `.m4a` `.m4b` `.mp4` `.aac` `.wv` `.wvc` `.ape` `.dsf` `.dff` `.aif` `.aiff` `.aifc` `.caf`
+`.wav` `.flac` `.mp3` `.ogg` `.opus` `.m4a` `.m4b` `.mp4` `.aac` `.wv` `.wvc` `.ape` `.dsf` `.dff` `.iso` `.aif` `.aiff` `.aifc` `.caf`
 
+- **SACD ISO** - the stereo area of an SACD image is imported as an album, one track per SACD track, with the image's own titles, artist, year and genre. DSD and DST images both play; multichannel-only images are skipped.
 - **CUE sheets** - a whole disc ripped into one file with a `.cue` next to it shows up as separate tracks.
 - **Tags in WAV and AIFF** are read too, cover included.
 
@@ -179,7 +180,6 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Double click** - two quick presses of a button do the action you choose.
 - **In-line remote** - on wired headphones: one click play/pause, two clicks next, three clicks previous. USB-C headphones with buttons work too.
 - **Lock the buttons** with the screen off: volume down + power. The power button and the remote always work.
-<<<<<<< HEAD
 - **Keyboard** - twelve layouts (English, Italian, German, Spanish, French, Dutch, Polish, Portuguese, Czech, Russian, Ukrainian, Japanese), as a full keyboard or as a phone keypad (T9). Portuguese serves both Brazilian and European Portuguese. Japanese types romaji as hiragana or katakana, has a ten-key kana pad (tap a key again, or flick it, for the next kana of its row) and offers kanji candidates for the hiragana before the caret.
 
 - **Screenshots** - turn them on in Settings > More, then press volume up + power to save the screen to the card.
