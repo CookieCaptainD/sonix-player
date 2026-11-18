@@ -26,6 +26,8 @@
 #include "src/system/decode/decode.h"
 #include "src/system/library/metadata.h"
 #include "src/system/playback/device_state.h"
+#include "src/system/playback/audiobook.h"
+#include "src/system/core/config.h"
 #include "src/system/core/lang.h"
 #include "src/gui/streaming/podcastcard.h"
 #include "src/gui/streaming/podcastpage.h"
@@ -1819,8 +1821,16 @@ void trackmenu_details_open(const char *path) {
 	switcher_set_player_return(NULL);
 }
 
+// The hidden A/B button's other way in: the menu entry does exactly what a tap
+// on the button does. The player re-checks the source before acting, so the
+// entry can never set points on a stream or a book.
+static void player_ab_cycle_cb(void *user) {
+	(void)user;
+	player_ab_cycle();
+}
+
 void trackmenu_open(lv_obj_t *anchor) {
-	// Two tables rather than one with the label patched at runtime, because of
+	// Three tables rather than one with the label patched at runtime, because of
 	// the string-extraction tool: it reads popover_item_t initialisers (see
 	// LABEL_STRUCTS in tools/extract_strings.py), not assignments. A
 	// "trackmenu_show_podcast" written with an equals sign would never reach the
@@ -1844,12 +1854,30 @@ void trackmenu_open(lv_obj_t *anchor) {
 		{"details", open_details_cb, NULL},
 		{"settings", open_settings_cb, NULL},
 	};
+	// The whole music menu with A/B added while the button is hidden. Six
+	// entries fit the popover's limit of seven.
+	static const popover_item_t ITEMS_AB[] = {
+		{"trackmenu_queue", open_queue_cb, NULL},
+		{"add_to_playlist", add_to_playlist_cb, NULL},
+		{"show_album", open_album_cb, NULL},
+		{"details", open_details_cb, NULL},
+		{"settings", open_settings_cb, NULL},
+		{"ab_playback", player_ab_cycle_cb, NULL},
+	};
 
 	device_state_t state;
 	device_state_get(&state);
 	bool podcast = state.current_file[0] && podcastcache_is_episode(state.current_file);
+	// The same source checks playing_local_file() makes in player.c, using the
+	// helpers already at hand here. AirPlay and DLNA are refused again by
+	// player_ab_cycle() itself.
+	bool music = !state.live && state.current_file[0] && !audiobook_is_playing() && !podcast &&
+				 !qobuzcache_owns(state.current_file) && !tidalcache_owns(state.current_file);
+	bool ab = music && config_get_bool("player", "ab_enabled", false) &&
+			  !config_get_bool("player", "ab_show_button", true);
 
-	popover_show(anchor, podcast ? ITEMS_PODCAST : ITEMS, 5);
+	const popover_item_t *items = ab ? ITEMS_AB : (podcast ? ITEMS_PODCAST : ITEMS);
+	popover_show(anchor, items, ab ? 6 : 5);
 }
 
 void trackmenu_init(gui_config_t *cfg) {

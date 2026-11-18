@@ -1427,6 +1427,31 @@ static void cover_accent_cb(lv_event_t *e) {
 	player_cover_accent_set(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
 }
 
+// A/B playback belongs to the track, so the page only stores the two settings
+// and hands the change to the player: it owns the points and the visibility of
+// the button. Turning the feature off drops the points as well.
+static lv_obj_t *ab_enabled_switch;
+static lv_obj_t *ab_show_button_switch;
+
+static void ab_enabled_cb(lv_event_t *e) {
+	(void)e;
+	bool on = lv_obj_has_state(ab_enabled_switch, LV_STATE_CHECKED);
+	config_set_bool("player", "ab_enabled", on);
+	config_save();
+	player_ab_set_enabled(on);
+	if (!on) {
+		player_ab_clear();
+	}
+}
+
+static void ab_show_button_cb(lv_event_t *e) {
+	(void)e;
+	bool on = lv_obj_has_state(ab_show_button_switch, LV_STATE_CHECKED);
+	config_set_bool("player", "ab_show_button", on);
+	config_save();
+	player_ab_set_show_button(on);
+}
+
 // ---------------------------------------------------------------------------
 // Which of the two arrangements the now-playing page uses
 //
@@ -1579,6 +1604,21 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 	// stream from a phone and an audiobook all get the standard one whatever
 	// this says. Studio asks for less and takes all of them.
 	option_note(container, "musicsettings_local_only_note");
+
+	// Repeat a stretch of a local track. With the button hidden the same cycle
+	// lives in the track menu, so the loop stays usable either way. Both
+	// settings are read at boot by the player as well as shown here.
+	settingsrow_toggle(container, "ab_playback", &ab_enabled_switch, ab_enabled_cb);
+	option_note(container, "ab_playback_note");
+	if (config_get_bool("player", "ab_enabled", false)) {
+		lv_obj_add_state(ab_enabled_switch, LV_STATE_CHECKED);
+	}
+
+	settingsrow_toggle(container, "ab_show_button", &ab_show_button_switch, ab_show_button_cb);
+	option_note(container, "ab_show_button_note");
+	if (config_get_bool("player", "ab_show_button", true)) {
+		lv_obj_add_state(ab_show_button_switch, LV_STATE_CHECKED);
+	}
 
 	// The sleeve's colour as the accent of the other two arrangements too.
 	settingsrow_toggle(container, "musicsettings_cover_accent", &cover_accent_switch, cover_accent_cb);

@@ -65,6 +65,8 @@ ICONS = [
     ("repeat.svg", "repeat_all", 30),
     ("repeat-1.svg", "repeat_one", 30),
     ("repeat-off.svg", "repeat_off", 30),
+    # A/B playback: the loop with its two marks, for Now Playing's button.
+    ("ab_repeat.svg", "ab_repeat", 30),
     ("play.svg", "play", 40),
     ("pause.svg", "pause", 40),
     # A live stream has no position to come back to, so on a radio the same
