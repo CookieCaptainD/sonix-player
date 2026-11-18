@@ -229,9 +229,13 @@ HOST_OBJS = $(APP_SRCS:src/%.c=build_host/%.o) $(APP_CXX_SRCS:src/%.cpp=build_ho
 TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=build_target/%.opp) \
 			  $(LVGL_SRCS:$(LVGL_DIR)/%.c=build_target/lvgl/%.o)
 
-.PHONY: all host target clean compile_commands.json
+.PHONY: all host target clean compile_commands.json test-listsort
 
 all: host compile_commands.json
+
+test-listsort: tools/test_listsort.c src/gui/shell/listsort.c src/gui/shell/listsort.h
+	gcc -std=c11 -Wall -Wextra -Werror -I. tools/test_listsort.c src/gui/shell/listsort.c -o /tmp/opencode/listsort_test
+	/tmp/opencode/listsort_test
 
 host: $(HOST_BIN) compile_commands.json
 
