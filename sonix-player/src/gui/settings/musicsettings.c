@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "lvgl/lvgl.h"
 
@@ -20,7 +21,9 @@
 #include "src/gui/settings/lastfmsettings.h"
 #include "src/gui/library/medialist.h"
 #include "src/gui/shell/settingsrow.h"
+#include "src/gui/shell/keyboard.h"
 #include "src/gui/shell/switcher.h"
+#include "src/gui/shell/toast.h"
 #include "src/gui/shell/theme.h"
 #include "src/system/audio/alsa-controls.h"
 #include "src/gui/shell/topbar.h"
@@ -1113,6 +1116,103 @@ static lv_obj_t *option_note(lv_obj_t *parent, const char *text) {
 }
 
 // ---------------------------------------------------------------------------
+// Soundfont for MIDI playback
+//
+// A text field with the on-screen keyboard keeps the choice on the device and
+// accepts any path the card has, including one inside a folder of soundfonts.
+// The path is checked when it is saved so a typo does not sit silently in the
+// settings.
+// ---------------------------------------------------------------------------
+
+static lv_obj_t *soundfont_layer;
+static lv_obj_t *soundfont_field;
+
+static void soundfont_hide(void) { lv_obj_set_hidden(soundfont_layer, true); }
+
+static void soundfont_cancel_cb(lv_event_t *e) {
+	(void)e;
+	soundfont_hide();
+}
+
+static void soundfont_accept_cb(lv_event_t *e) {
+	(void)e;
+	const char *path = lv_textarea_get_text(soundfont_field);
+	if (!path) {
+		path = "";
+	}
+	config_set("player", "soundfont_path", path);
+	config_save();
+	soundfont_hide();
+	if (!*path) {
+		toast_plain("musicsettings_soundfont_cleared");
+	} else if (access(path, R_OK) != 0) {
+		toast_error("musicsettings_soundfont_missing");
+	} else {
+		toast_success("musicsettings_soundfont_saved");
+	}
+}
+
+static void soundfont_show(void) {
+	lv_textarea_set_text(soundfont_field, config_get("player", "soundfont_path", ""));
+	lv_obj_set_hidden(soundfont_layer, false);
+	lv_obj_move_foreground(soundfont_layer);
+}
+
+static void soundfont_row_cb(lv_event_t *e) {
+	(void)e;
+	soundfont_show();
+}
+
+static void build_soundfont_layer(gui_config_t *cfg) {
+	soundfont_layer = lv_obj_create(playback_screen);
+	lv_obj_set_size(soundfont_layer, cfg->screen_width, cfg->screen_height);
+	lv_obj_align(soundfont_layer, LV_ALIGN_TOP_LEFT, 0, 0);
+	lv_obj_add_style(soundfont_layer, &theme_style_screen, 0);
+	lv_obj_set_style_bg_opa(soundfont_layer, LV_OPA_COVER, 0);
+	lv_obj_set_style_border_width(soundfont_layer, 0, 0);
+	lv_obj_set_style_radius(soundfont_layer, 0, 0);
+	lv_obj_set_style_pad_all(soundfont_layer, 0, 0);
+	lv_obj_set_scrollable(soundfont_layer, false);
+	lv_obj_set_hidden(soundfont_layer, true);
+
+	lv_obj_t *heading = lv_label_create(soundfont_layer);
+	lv_label_set_text(heading, tr("musicsettings_soundfont"));
+	lv_obj_add_style(heading, &theme_style_text, 0);
+	lv_obj_set_style_text_font(heading, &font_ui_24, 0);
+	lv_obj_align(heading, LV_ALIGN_TOP_LEFT, cfg->padding + 56 + 14, cfg->padding + cfg->top_bar_height + 10);
+
+	lv_obj_t *cancel = lv_btn_create(soundfont_layer);
+	lv_obj_set_size(cancel, 56, 56);
+	lv_obj_align(cancel, LV_ALIGN_TOP_RIGHT, -cfg->padding, cfg->padding + cfg->top_bar_height);
+	lv_obj_set_style_bg_opa(cancel, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_width(cancel, 0, 0);
+	lv_obj_set_style_shadow_width(cancel, 0, 0);
+	lv_obj_set_style_pad_all(cancel, 0, 0);
+	lv_obj_add_event_cb(cancel, soundfont_cancel_cb, LV_EVENT_CLICKED, NULL);
+	lv_obj_t *cancel_icon = lv_image_create(cancel);
+	lv_image_set_src(cancel_icon, &icon_close);
+	lv_obj_add_style(cancel_icon, &theme_style_icon, 0);
+	lv_obj_center(cancel_icon);
+
+	soundfont_field = lv_textarea_create(soundfont_layer);
+	lv_textarea_set_one_line(soundfont_field, true);
+	lv_textarea_set_max_length(soundfont_field, 600);
+	lv_textarea_set_placeholder_text(soundfont_field, tr("musicsettings_soundfont"));
+	lv_obj_set_size(soundfont_field, cfg->screen_width - 2 * cfg->padding, 62);
+	lv_obj_set_scrollbar_mode(soundfont_field, LV_SCROLLBAR_MODE_OFF);
+	lv_obj_align(soundfont_field, LV_ALIGN_TOP_LEFT, cfg->padding, cfg->padding + cfg->top_bar_height + 60);
+	lv_obj_add_style(soundfont_field, &theme_style_card, 0);
+	lv_obj_set_style_radius(soundfont_field, 12, 0);
+	lv_obj_set_style_border_width(soundfont_field, 0, 0);
+	lv_obj_set_style_shadow_width(soundfont_field, 0, 0);
+	lv_obj_set_style_pad_all(soundfont_field, 14, 0);
+	lv_obj_set_style_text_font(soundfont_field, &font_ui_24, 0);
+	keyboard_style_caret(soundfont_field);
+
+	keyboard_create(soundfont_layer, cfg->screen_width, 316, soundfont_field, NULL, "ok", soundfont_accept_cb, NULL);
+}
+
+// ---------------------------------------------------------------------------
 // Scan options
 //
 // The scan itself, and the one setting that only means anything to a scan: how
@@ -1731,6 +1831,12 @@ static void build_playback_page(gui_config_t *cfg) {
 	if (config_get_int("player", "remember_volume", 0)) {
 		lv_obj_add_state(remember_volume_switch, LV_STATE_CHECKED);
 	}
+
+	// MIDI needs a soundfont. The path lives on the card and is chosen here,
+	// not in Developer options: without it a .mid is a file that fails to play.
+	settingsrow_action(container, "musicsettings_soundfont", soundfont_row_cb, NULL);
+	option_note(container, "musicsettings_soundfont_note");
+	build_soundfont_layer(cfg);
 
 	switcher_attach_back_gesture(playback_screen);
 }

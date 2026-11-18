@@ -2487,6 +2487,21 @@ static void clean_fields(song_metadata_t *out) {
 	out->has_tags = out->title[0] != '\0' || out->artist[0] != '\0' || out->album[0] != '\0' || out->genre[0] != '\0';
 }
 
+// A tracker module or a MIDI keeps its title inside the file, not in a tag
+// block. The decoder has already read it on open; ask for it there rather than
+// parse a second format here.
+static void read_module_metadata(const char *filepath, decode_format_t format, song_metadata_t *out) {
+	decoder_t *dec = decoder_open_info(filepath, format);
+	if (!dec) {
+		return;
+	}
+	const char *title = decoder_title(dec);
+	if (title && *title) {
+		snprintf(out->title, sizeof(out->title), "%s", title);
+	}
+	decoder_close(dec);
+}
+
 void metadata_read(const char *filepath, song_metadata_t *out) {
 	memset(out, 0, sizeof(*out));
 
@@ -2522,6 +2537,10 @@ void metadata_read(const char *filepath, song_metadata_t *out) {
 	case DECODE_FORMAT_WAVPACK:
 	case DECODE_FORMAT_APE:
 		read_ape_metadata(filepath, out);
+		break;
+	case DECODE_FORMAT_TRACKER:
+	case DECODE_FORMAT_MIDI:
+		read_module_metadata(filepath, format, out);
 		break;
 	default: {
 		// WAV, which audio.c plays itself, and what libsndfile reads.

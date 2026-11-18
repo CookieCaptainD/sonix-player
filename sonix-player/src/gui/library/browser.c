@@ -539,7 +539,8 @@ static bool is_playable_file(const char *name) {
 	// which opens the container anyway (see is_video_file in library.c).
 	static const char *const playable_exts[] = {".wav",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
 												 ".alac", ".aac",  ".dsf",  ".dff", ".aif", ".aiff",
-												 ".aifc", ".caf",  ".opus", ".wv",   ".ape"};
+												 ".aifc", ".caf",  ".opus", ".wv",   ".ape", ".mod",
+												 ".s3m",  ".xm",   ".it",   ".mid", ".midi"};
 
 	if (playlist_is_junk_name(name)) {
 		return false; // a macOS resource fork with a .flac on the end is not a track

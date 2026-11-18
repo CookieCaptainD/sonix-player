@@ -204,7 +204,8 @@ static bool match_in_dir(const char *dir, const char *name, char *out, size_t si
 // of the extensions below, the earlier ones first.
 static bool match_other_extension(const char *dir, const char *name, char *out, size_t size) {
 	static const char *const EXTS[] = {".flac", ".wav", ".wv", ".ape", ".m4a", ".alac", ".aif", ".aiff",
-									   ".mp3", ".ogg", ".opus", ".dsf", ".dff"};
+									   ".mp3", ".ogg", ".opus", ".dsf", ".dff", ".mod", ".s3m", ".xm",
+									   ".it",  ".mid", ".midi"};
 	const char *dot = strrchr(name, '.');
 	size_t stem = dot ? (size_t)(dot - name) : strlen(name);
 	if (stem == 0) {

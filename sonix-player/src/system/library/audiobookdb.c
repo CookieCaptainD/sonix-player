@@ -1168,7 +1168,8 @@ static bool read_folder(const char *path, namelist_t *files, namelist_t *dirs) {
 
 // The audio a folder book can be made of.
 static bool is_audio(const char *name) {
-	static const char *const EXTENSIONS[] = {".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav", ".wv", ".ape", ".mp4"};
+	static const char *const EXTENSIONS[] = {".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav", ".wv",
+											 ".ape", ".mp4", ".mod", ".s3m", ".xm",  ".it",   ".mid", ".midi"};
 	for (size_t i = 0; i < sizeof(EXTENSIONS) / sizeof(EXTENSIONS[0]); i++) {
 		if (has_extension(name, EXTENSIONS[i])) {
 			return true;

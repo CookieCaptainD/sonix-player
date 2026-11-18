@@ -8,8 +8,10 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 
 ## Supported audio formats
 
-`.wav` `.flac` `.mp3` `.ogg` `.opus` `.m4a` `.m4b` `.mp4` `.aac` `.wv` `.wvc` `.ape` `.dsf` `.dff` `.aif` `.aiff` `.aifc` `.caf`
+`.wav` `.flac` `.mp3` `.ogg` `.opus` `.m4a` `.m4b` `.mp4` `.aac` `.wv` `.wvc` `.ape` `.dsf` `.dff` `.aif` `.aiff` `.aifc` `.caf` `.mod` `.s3m` `.xm` `.it` `.mid` `.midi`
 
+- **Tracker modules** - MOD, S3M, XM and IT play with the title and length from the module. Embedded loops are off: a module plays once and the queue moves on. Seeking works.
+- **MIDI** - standard MIDI files play through a soundfont. Put an SF2 file on the card and set its path in Settings > Music > Queue and playback > Soundfont. Without a soundfont a MIDI file shows an error when opened.
 - **CUE sheets** - a whole disc ripped into one file with a `.cue` next to it shows up as separate tracks.
 - **Tags in WAV and AIFF** are read too, cover included.
 

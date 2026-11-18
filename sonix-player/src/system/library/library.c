@@ -3385,7 +3385,8 @@ static void namelist_free(namelist_t *l) {
 static bool is_playable(const char *name) {
 	static const char *const EXTENSIONS[] = {".wav",  ".mp3", ".flac", ".ogg",  ".dsf",  ".dff",
 											 ".aif",  ".aiff", ".aifc", ".caf", ".opus", ".wv",
-											 ".m4a",  ".alac", ".aac",  ".ape",  ".cue"};
+											 ".m4a",  ".alac", ".aac",  ".ape",  ".cue", ".mod",
+											 ".s3m",  ".xm",   ".it",   ".mid", ".midi"};
 
 	for (size_t i = 0; i < sizeof(EXTENSIONS) / sizeof(EXTENSIONS[0]); i++) {
 		if (has_extension(name, EXTENSIONS[i])) {
