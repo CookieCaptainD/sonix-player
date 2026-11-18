@@ -1558,7 +1558,7 @@ static void selection_show(page_t *p) {
 	}
 	// Room under the last row while the round button is up, so that row can be
 	// scrolled clear of it.
-	lv_obj_set_style_pad_bottom(p->page, p->selecting ? g_cfg->padding + SEL_FAB_SIZE + 12 : g_cfg->padding, 0);
+	lv_obj_set_style_pad_bottom(p->page, p->selecting ? g_cfg->padding + SEL_FAB_SIZE + 30 : g_cfg->padding, 0);
 	rows_invalidate(p);
 	window_update(p);
 }
@@ -2249,6 +2249,42 @@ void podcastcard_open(const podcastcard_show_t *show) {
 	switch_screen(podcastcard_screen);
 }
 
+// Both shortcuts share one shape: an accent icon over a short label. The label
+// uses the 20 px step the filter tabs use, so the buttons read like the rest of
+// the page instead of two unlabelled ticks.
+static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon, const char *label_key,
+								  lv_event_cb_t cb, lv_coord_t x, gui_config_t *cfg) {
+	lv_obj_t *btn = lv_btn_create(screen);
+	lv_obj_set_size(btn, 160, 92);
+	lv_obj_set_style_radius(btn, 12, 0);
+	lv_obj_add_style(btn, &theme_style_card, 0);
+	lv_obj_set_style_border_width(btn, 0, 0);
+	lv_obj_set_style_shadow_width(btn, 0, 0);
+	lv_obj_set_style_pad_all(btn, 0, 0);
+	lv_obj_set_style_pad_top(btn, 8, 0);
+	lv_obj_set_style_pad_bottom(btn, 8, 0);
+	lv_obj_set_style_pad_row(btn, 4, 0);
+	lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, x, -cfg->padding - 6);
+	lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, p);
+
+	lv_obj_t *img = lv_image_create(btn);
+	lv_image_set_src(img, icon);
+	lv_obj_add_style(img, &theme_style_icon, 0);
+	lv_obj_set_style_image_recolor(img, theme()->accent, 0);
+	lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+
+	lv_obj_t *label = lv_label_create(btn);
+	lv_label_set_text(label, tr(label_key));
+	lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+	lv_obj_set_width(label, lv_pct(100));
+	lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+	lv_obj_set_style_text_font(label, &font_ui_20, 0);
+	lv_obj_add_style(label, &theme_style_text, 0);
+	return btn;
+}
+
 static void build_page(page_t *p, gui_config_t *cfg) {
 	p->screen = lv_obj_create(NULL);
 	lv_obj_add_style(p->screen, &theme_style_screen, 0);
@@ -2452,38 +2488,12 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 	// The two shortcuts sit at the bottom left, opposite the action button.
 	// They share the extra bottom padding the selection mode reserves, so the
 	// rows below them can still be scrolled clear.
-	p->sel_all_btn = lv_btn_create(p->screen);
-	lv_obj_set_size(p->sel_all_btn, 56, 56);
-	lv_obj_set_style_radius(p->sel_all_btn, LV_RADIUS_CIRCLE, 0);
-	lv_obj_add_style(p->sel_all_btn, &theme_style_card, 0);
-	lv_obj_set_style_border_width(p->sel_all_btn, 0, 0);
-	lv_obj_set_style_shadow_width(p->sel_all_btn, 0, 0);
-	lv_obj_set_style_pad_all(p->sel_all_btn, 0, 0);
-	lv_obj_align(p->sel_all_btn, LV_ALIGN_BOTTOM_LEFT, cfg->padding + 6, -cfg->padding - 6);
-	lv_obj_add_event_cb(p->sel_all_btn, select_all_cb, LV_EVENT_CLICKED, p);
-	lv_obj_t *all_icon = lv_image_create(p->sel_all_btn);
-	lv_image_set_src(all_icon, &icon_library_checked);
-	lv_obj_add_style(all_icon, &theme_style_icon, 0);
-	lv_obj_set_style_image_recolor(all_icon, theme()->accent, 0);
-	lv_obj_set_style_image_recolor_opa(all_icon, LV_OPA_COVER, 0);
-	lv_obj_center(all_icon);
+	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb,
+									 cfg->padding + 6, cfg);
 	lv_obj_set_hidden(p->sel_all_btn, true);
 
-	p->sel_heard_btn = lv_btn_create(p->screen);
-	lv_obj_set_size(p->sel_heard_btn, 56, 56);
-	lv_obj_set_style_radius(p->sel_heard_btn, LV_RADIUS_CIRCLE, 0);
-	lv_obj_add_style(p->sel_heard_btn, &theme_style_card, 0);
-	lv_obj_set_style_border_width(p->sel_heard_btn, 0, 0);
-	lv_obj_set_style_shadow_width(p->sel_heard_btn, 0, 0);
-	lv_obj_set_style_pad_all(p->sel_heard_btn, 0, 0);
-	lv_obj_align(p->sel_heard_btn, LV_ALIGN_BOTTOM_LEFT, cfg->padding + 74, -cfg->padding - 6);
-	lv_obj_add_event_cb(p->sel_heard_btn, mark_many_heard_cb, LV_EVENT_CLICKED, p);
-	lv_obj_t *heard_icon = lv_image_create(p->sel_heard_btn);
-	lv_image_set_src(heard_icon, &icon_check);
-	lv_obj_add_style(heard_icon, &theme_style_icon, 0);
-	lv_obj_set_style_image_recolor(heard_icon, theme()->accent, 0);
-	lv_obj_set_style_image_recolor_opa(heard_icon, LV_OPA_COVER, 0);
-	lv_obj_center(heard_icon);
+	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb,
+										cfg->padding + 172, cfg);
 	lv_obj_set_hidden(p->sel_heard_btn, true);
 
 	switcher_attach_back_gesture(p->screen);
