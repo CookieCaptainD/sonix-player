@@ -229,9 +229,14 @@ HOST_OBJS = $(APP_SRCS:src/%.c=build_host/%.o) $(APP_CXX_SRCS:src/%.cpp=build_ho
 TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=build_target/%.opp) \
 			  $(LVGL_SRCS:$(LVGL_DIR)/%.c=build_target/lvgl/%.o)
 
-.PHONY: all host target clean compile_commands.json
+.PHONY: all host target clean compile_commands.json test-usbtransport
 
 all: host compile_commands.json
+
+test-usbtransport: tools/test_usbtransport.c src/system/audio/usbtransport.c src/system/audio/usbtransport.h
+	gcc -std=c11 -Wall -Wextra -Werror -I. tools/test_usbtransport.c src/system/audio/usbtransport.c \
+		-o /tmp/test_usbtransport
+	/tmp/test_usbtransport
 
 host: $(HOST_BIN) compile_commands.json
 
