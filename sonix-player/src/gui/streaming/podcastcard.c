@@ -466,7 +466,7 @@ typedef struct {
 	int chosen_count;
 	lv_obj_t *sel_close_btn;
 	lv_obj_t *sel_action_btn;
-	lv_obj_t *sel_all_btn;	// choose every episode the filter shows
+	lv_obj_t *sel_all_btn;	 // choose every episode the filter shows
 	lv_obj_t *sel_heard_btn; // mark the chosen episodes heard
 	cover_image_t hero_image;
 	bool hero_waiting;

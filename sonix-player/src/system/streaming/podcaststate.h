@@ -98,8 +98,7 @@ void podcaststate_set_played_episode(const podcast_episode_t *episode, const cha
 // entries of a catalogue feed and `paths` are files of the Podcast folder;
 // either list may be NULL when its count is zero. Returns false when the card
 // cannot be written, in which case no row is changed.
-bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image,
-								  const char *const *paths, int path_count, bool played);
+bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image, const char *const *paths, int path_count, bool played);
 
 // A number that changes whenever a state is written: a page showing states
 // draws them again when it moves.

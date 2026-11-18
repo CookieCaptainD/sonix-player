@@ -858,8 +858,7 @@ typedef struct {
 	podcaststate_t state;
 } batch_row_t;
 
-bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image,
-								  const char *const *paths, int path_count, bool played) {
+bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image, const char *const *paths, int path_count, bool played) {
 	if (!db_path[0]) {
 		return false;
 	}

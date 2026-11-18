@@ -15,18 +15,15 @@ bool display_rotation_supported(void) { return false; }
 void display_wake_begin(lv_display_t *d) { (void)d; }
 void display_wake_end(lv_display_t *d) { (void)d; }
 uint16_t *display_capture_frame(int *w, int *h) {
-	if (w) *w = 0;
-	if (h) *h = 0;
+	if (w)
+		*w = 0;
+	if (h)
+		*h = 0;
 	return NULL;
 }
 
 // Declared here so this test compiles before the implementation exists.
-bool podcaststate_set_played_many(const podcast_episode_t *const *episodes,
-								  int episode_count,
-								  const char *image,
-								  const char *const *paths,
-								  int path_count,
-								  bool played);
+bool podcaststate_set_played_many(const podcast_episode_t *const *episodes, int episode_count, const char *image, const char *const *paths, int path_count, bool played);
 
 static int failures;
 
