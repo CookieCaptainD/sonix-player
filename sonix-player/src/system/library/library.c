@@ -1,6 +1,7 @@
 #include "library.h"
 
 #include "src/system/library/audiobookdb.h"
+#include "src/system/library/walked_folders.h"
 #include "src/system/playback/playlist.h"
 #include "src/system/streaming/podcastdl.h"
 
@@ -5754,21 +5755,10 @@ static void update_folder(const char *path, int depth, walk_t *w) {
 // Whether a track's path lies in what the walk covered: the whole card, or the
 // chosen folders. Case-blind, as the card is.
 static bool in_walked_folders(const char *path) {
-	size_t root_len = strlen(scan_root);
-	if (strncmp(path, scan_root, root_len) != 0 || path[root_len] != '/') {
-		return false;
-	}
-	if (scan_folder_count == 0) {
-		return true;
-	}
-	const char *rest = path + root_len + 1;
-	for (int i = 0; i < scan_folder_count; i++) {
-		size_t n = strlen(scan_folder_names[i]);
-		if (strncasecmp(rest, scan_folder_names[i], n) == 0 && rest[n] == '/') {
-			return true;
-		}
-	}
-	return false;
+	// scan_folder_names is char** (the scan owns and frees it); the walk only
+	// reads the names, hence the const cast.
+	return library_path_in_walk(path, scan_root, (const char *const *)scan_folder_names, scan_folder_count,
+								playlist_is_junk_name, AUDIOBOOKDB_FOLDER, PODCASTDL_FOLDER);
 }
 
 // Keeps `present` (PLAYLIST_SHOWN) in step with the library, after a scan or a
