@@ -1616,7 +1616,7 @@ static void build_nowplaying_page(gui_config_t *cfg) {
 
 	settingsrow_toggle(container, "ab_show_button", &ab_show_button_switch, ab_show_button_cb);
 	option_note(container, "ab_show_button_note");
-	if (config_get_bool("player", "ab_show_button", true)) {
+	if (config_get_bool("player", "ab_show_button", false)) {
 		lv_obj_add_state(ab_show_button_switch, LV_STATE_CHECKED);
 	}
 

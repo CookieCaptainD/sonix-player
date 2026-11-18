@@ -1874,7 +1874,7 @@ void trackmenu_open(lv_obj_t *anchor) {
 	bool music = !state.live && state.current_file[0] && !audiobook_is_playing() && !podcast &&
 				 !qobuzcache_owns(state.current_file) && !tidalcache_owns(state.current_file);
 	bool ab = music && config_get_bool("player", "ab_enabled", false) &&
-			  !config_get_bool("player", "ab_show_button", true);
+			  !config_get_bool("player", "ab_show_button", false);
 
 	const popover_item_t *items = ab ? ITEMS_AB : (podcast ? ITEMS_PODCAST : ITEMS);
 	popover_show(anchor, items, ab ? 6 : 5);

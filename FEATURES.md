@@ -45,7 +45,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 ## Playback
 
 - **Playback modes** - normal, repeat all, repeat one, shuffle, and a continuous shuffle that deals a new order every round.
-- **A/B playback** - loop a stretch of a local track between two points. Set them with the Now Playing button or the track menu, drag the markers to fine-tune, and choose in Settings > Music whether to show the button.
+- **A/B playback** - loop a stretch of a local track between two points. Set them from the track menu; the on-screen button is off by default and can be turned on in Music settings > Now Playing. Drag the markers to fine-tune.
 - **Play albums back to back** - when an album ends, the next one starts.
 - **Play by folder** - when a folder ends, playback goes on with the next folder.
 - **Add to queue** - as the next track or at the end.

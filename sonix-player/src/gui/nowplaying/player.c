@@ -6118,7 +6118,7 @@ void player_init(gui_config_t *cfg) {
 																: PLAYER_LAYOUT_STANDARD;
 	cover_accent = config_get_bool("screen", "cover_accent", false);
 	player_ab_set_enabled(config_get_bool("player", "ab_enabled", false));
-	player_ab_set_show_button(config_get_bool("player", "ab_show_button", true));
+	player_ab_set_show_button(config_get_bool("player", "ab_show_button", false));
 	layout_alt_now = false; // apply_layout() below puts the standard one up first
 	layout_studio_now = false;
 	apply_layout();
