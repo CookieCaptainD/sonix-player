@@ -46,7 +46,7 @@ static void fill_episode(podcast_episode_t *e, long long id, const char *title) 
 }
 
 int main(void) {
-	char dir[] = "/tmp/opencode/podcast149testXXXXXX";
+	char dir[] = "/home/diogo/Downloads/Hiby/sonix-build/podcast149testXXXXXX";
 	if (!mkdtemp(dir)) {
 		perror("mkdtemp");
 		return 2;
@@ -82,7 +82,6 @@ int main(void) {
 	check(strcmp(s.title, "Episode A") == 0, "episode A title survives unheard");
 
 	podcaststate_set_root(NULL);
-	unlink("/tmp/opencode/podcast149test.db");
 	printf("%s\n", failures == 0 ? "ALL PASS" : "FAILURES");
 	return failures == 0 ? 0 : 1;
 }
