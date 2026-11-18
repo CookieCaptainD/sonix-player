@@ -2,10 +2,12 @@
 
 #include "src/system/core/config.h"
 
-int usbtransport_forced_percent(bool usb_output, bool bluetooth_active, bool automatic, int remembered) {
-	(void)remembered;
+int usbtransport_forced_percent(bool usb_output, bool bluetooth_active, bool automatic, int ceiling) {
 	if (!usb_output || bluetooth_active || !automatic) {
 		return -1;
+	}
+	if (ceiling >= 0 && ceiling < 100) {
+		return ceiling;
 	}
 	return 100;
 }

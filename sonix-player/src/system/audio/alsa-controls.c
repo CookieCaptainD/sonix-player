@@ -900,6 +900,14 @@ static int limit_ceiling(volume_output_t out) {
 	return limit_level[out];
 }
 
+int volume_limit_ceiling(volume_output_t out) { return limit_ceiling(out); }
+
+void volume_set_displayed_percent(int percent) {
+	if (percent >= 0 && percent <= 100) {
+		current_percent = percent;
+	}
+}
+
 bool volume_limit_enabled(void) {
 	limit_load();
 	return limit_on;
@@ -1038,7 +1046,8 @@ void volume_profile_set_output(volume_output_t out) {
 	}
 	// An external DAC is a line out: the next device in the chain sets the
 	// loudness. Start it at unity unless the listener turned that off.
-	int forced = usbtransport_forced_percent(out == VOLUME_OUTPUT_USB, false, usbtransport_automatic_enabled(), wanted);
+	int forced = usbtransport_forced_percent(out == VOLUME_OUTPUT_USB, false, usbtransport_automatic_enabled(),
+											  limit_ceiling(out));
 	if (forced >= 0) {
 		wanted = forced;
 	}

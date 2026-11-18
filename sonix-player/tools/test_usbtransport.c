@@ -39,16 +39,16 @@ typedef struct {
 	bool usb_output;
 	bool bluetooth_active;
 	bool automatic;
-	int remembered;
+	int ceiling;
 	int want;
 } case_t;
 
 int main(void) {
 	static const case_t cases[] = {
-		{"detect path, new DAC", true, false, true, 30, 100}, {"USB DAC, automatic, remembered 42", true, false, true, 42, 100}, {"USB DAC, automatic, remembered 0", true, false, true, 0, 100}, {"USB DAC, automatic, remembered 100", true, false, true, 100, 100}, {"USB DAC, automatic, Bluetooth active", true, true, true, 42, -1}, {"USB DAC, automatic off", true, false, false, 42, -1}, {"not USB output", false, false, true, 42, -1}, {"Bluetooth output with automatic on", false, false, true, 42, -1}, {"second call stays at 100", true, false, true, 42, 100}, {"USB DAC, automatic, remembered 99", true, false, true, 99, 100},
+		{"detect path, new DAC", true, false, true, 100, 100}, {"USB DAC, automatic, no ceiling", true, false, true, -1, 100}, {"USB DAC, automatic, ceiling 60", true, false, true, 60, 60}, {"USB DAC, automatic, ceiling 10", true, false, true, 10, 10}, {"USB DAC, automatic, ceiling 100", true, false, true, 100, 100}, {"USB DAC, automatic, Bluetooth active", true, true, true, 60, -1}, {"USB DAC, automatic off", true, false, false, 100, -1}, {"automatic off ignores the ceiling", true, false, false, 60, -1}, {"not USB output", false, false, true, 100, -1}, {"Bluetooth output with automatic on", false, false, true, 60, -1}, {"second call stays at 100", true, false, true, 100, 100}, {"ceiling is not a remembered level", true, false, true, 0, 0},
 	};
 	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-		int got = usbtransport_forced_percent(cases[i].usb_output, cases[i].bluetooth_active, cases[i].automatic, cases[i].remembered);
+		int got = usbtransport_forced_percent(cases[i].usb_output, cases[i].bluetooth_active, cases[i].automatic, cases[i].ceiling);
 		expect_int(cases[i].name, got, cases[i].want);
 	}
 

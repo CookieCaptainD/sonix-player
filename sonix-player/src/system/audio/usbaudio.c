@@ -712,8 +712,16 @@ void usbaudio_poll(void) {
 		find_volume_control(card);
 		// A DAC is a line out: hand it the level the next device expects
 		// before the stream moves, not the level of the socket we just left.
-		int forced = usbtransport_forced_percent(true, false, usbtransport_automatic_enabled(), 0);
-		usbaudio_apply_volume(forced >= 0 ? forced : get_volume_percent());
+		// Publish the same level so a key pressed before the routing watcher
+		// switches profiles starts from what is coming out, not the old jack.
+		int forced = usbtransport_forced_percent(true, bluetooth_audio_active(), usbtransport_automatic_enabled(),
+												  volume_limit_ceiling(VOLUME_OUTPUT_USB));
+		if (forced >= 0) {
+			usbaudio_apply_volume(forced);
+			volume_set_displayed_percent(forced);
+		} else {
+			usbaudio_apply_volume(get_volume_percent());
+		}
 		audio_set_output_device(pcm);
 	} else {
 		active_name[0] = '\0';

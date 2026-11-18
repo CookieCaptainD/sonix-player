@@ -194,6 +194,12 @@ void volume_profile_persist(void);
 // Writes every level down whether or not one has moved.
 void volume_profile_persist_now(void);
 void change_volume_percent(int delta);
+// The ceiling in force for an output: 100 when the limit is off or the output
+// has none. The USB transport uses it before the profile has switched.
+int volume_limit_ceiling(volume_output_t out);
+// Publishes a level already applied to a device without recording it against
+// the outgoing profile, whose remembered level must not move with it.
+void volume_set_displayed_percent(int percent);
 
 // The volume limit: a ceiling for each of the two sockets and for USB-C, which
 // the level cannot be raised past while the limit is on, by any route -- the
