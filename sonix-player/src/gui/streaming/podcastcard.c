@@ -2461,17 +2461,15 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 
 	// The action is the third card in the same row as the two shortcuts. A red
 	// trash icon keeps the destructive meaning without a second button shape.
-	p->sel_action_btn = selection_button(p->screen, p, p->feed ? &icon_download : &icon_trash, p->feed ? "podcast_download" : "delete", sel_action_cb, cfg->padding + 326, cfg, p->feed ? theme()->accent : lv_color_make(224, 27, 36));
-	lv_obj_align(p->sel_action_btn, LV_ALIGN_BOTTOM_RIGHT, -cfg->padding - 6, -cfg->padding - 6);
+	p->sel_action_btn = selection_button(p->screen, p, p->feed ? &icon_download : &icon_trash, p->feed ? "podcast_download" : "delete", sel_action_cb, cfg->padding + 306, cfg, p->feed ? theme()->accent : lv_color_make(224, 27, 36));
 	lv_obj_set_hidden(p->sel_action_btn, true);
 
-	// The two shortcuts sit at the bottom left, opposite the action button.
-	// They share the extra bottom padding the selection mode reserves, so the
-	// rows below them can still be scrolled clear.
+	// The three cards share one row and the extra bottom padding the selection
+	// mode reserves, so the rows below them can still be scrolled clear.
 	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb, cfg->padding + 6, cfg, theme()->accent);
 	lv_obj_set_hidden(p->sel_all_btn, true);
 
-	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb, cfg->padding + 166, cfg, theme()->accent);
+	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb, cfg->padding + 156, cfg, theme()->accent);
 	lv_obj_set_hidden(p->sel_heard_btn, true);
 
 	switcher_attach_back_gesture(p->screen);
