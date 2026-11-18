@@ -88,18 +88,10 @@ static void host_shot_poll_cb(lv_timer_t *timer) {
 // Opens the file browser on the simulator without a finger, for the headless
 // tests: SONIX_OPEN_BROWSER=1 switches to it once "remember track" has had its
 // moment, exactly as tapping Browse would. SONIX_BROWSER_OPEN_DIR goes on to
-// open a folder as a tap would, and SONIX_BROWSER_SCROLL scrolls the listing a
-// second later, so the debounced write can be checked too.
+// open a folder as a tap would.
 #include "src/gui/library/browser.h"
 #include "src/gui/bluetooth/btsettings.h"
 #include "src/gui/shell/switcher.h"
-static void host_browser_scroll_cb(lv_timer_t *timer) {
-	lv_timer_delete(timer);
-	const char *scroll = getenv("SONIX_BROWSER_SCROLL");
-	if (scroll) {
-		browser_test_scroll(atoi(scroll));
-	}
-}
 static void host_browser_refresh_cb(lv_timer_t *timer) {
 	lv_timer_delete(timer);
 	browser_refresh();
@@ -133,9 +125,6 @@ static void host_open_browser_cb(lv_timer_t *timer) {
 	const char *dir = getenv("SONIX_BROWSER_OPEN_DIR");
 	if (dir && dir[0]) {
 		browser_open_dir_public(dir);
-	}
-	if (getenv("SONIX_BROWSER_SCROLL")) {
-		lv_timer_create(host_browser_scroll_cb, 1500, NULL);
 	}
 	// Re-read the page without a user action: what a late-mounted card does.
 	const char *refresh = getenv("SONIX_BROWSER_REFRESH_MS");
