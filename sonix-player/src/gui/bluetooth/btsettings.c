@@ -840,7 +840,7 @@ static void found_row_clicked_cb(lv_event_t *e) {
 		}
 	}
 
-	if (config_get_bool("bluetooth", "confirm_pairing", true)) {
+	if (config_get_bool("bluetooth", "confirm_pairing", false)) {
 		consent_show(mac, name);
 		return;
 	}
