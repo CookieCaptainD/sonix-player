@@ -2252,8 +2252,7 @@ void podcastcard_open(const podcastcard_show_t *show) {
 // Both shortcuts share one shape: an accent icon over a short label. The label
 // uses the 20 px step the filter tabs use, so the buttons read like the rest of
 // the page instead of two unlabelled ticks.
-static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon, const char *label_key,
-								  lv_event_cb_t cb, lv_coord_t x, gui_config_t *cfg) {
+static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon, const char *label_key, lv_event_cb_t cb, lv_coord_t x, gui_config_t *cfg) {
 	lv_obj_t *btn = lv_btn_create(screen);
 	lv_obj_set_size(btn, 160, 92);
 	lv_obj_set_style_radius(btn, 12, 0);
@@ -2488,12 +2487,10 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 	// The two shortcuts sit at the bottom left, opposite the action button.
 	// They share the extra bottom padding the selection mode reserves, so the
 	// rows below them can still be scrolled clear.
-	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb,
-									 cfg->padding + 6, cfg);
+	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb, cfg->padding + 6, cfg);
 	lv_obj_set_hidden(p->sel_all_btn, true);
 
-	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb,
-										cfg->padding + 172, cfg);
+	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb, cfg->padding + 172, cfg);
 	lv_obj_set_hidden(p->sel_heard_btn, true);
 
 	switcher_attach_back_gesture(p->screen);
