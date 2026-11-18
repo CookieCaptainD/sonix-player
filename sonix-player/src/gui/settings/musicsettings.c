@@ -161,6 +161,17 @@ static void gain_toggle_cb(lv_event_t *e) {
 	set_high_gain(on ? 1 : 0);
 }
 
+// An external DAC is the device that sets the loudness. Stock HiBy starts it
+// at full scale on plug-in; this switch keeps that automatic step optional.
+static lv_obj_t *dac_transport_switch;
+
+static void dac_transport_toggle_cb(lv_event_t *e) {
+	(void)e;
+	bool on = lv_obj_has_state(dac_transport_switch, LV_STATE_CHECKED);
+	config_set_int("usb", "transport_auto_volume", on ? 1 : 0);
+	config_save();
+}
+
 // ---------------------------------------------------------------------------
 // MSEB: the stock player's MageSound tuning (see eq.c for the engine and the
 // mapping); nine character sliders, -10..+10 around flat.
@@ -1959,6 +1970,18 @@ void musicsettings_init(gui_config_t *cfg) {
 	if (config_get_int("audio", "high_gain", 0)) {
 		lv_obj_add_state(gain_switch, LV_STATE_CHECKED);
 	}
+
+	settingsrow_toggle(container, "musicsettings_dac_transport_volume", &dac_transport_switch,
+					   dac_transport_toggle_cb);
+	if (config_get_bool("usb", "transport_auto_volume", true)) {
+		lv_obj_add_state(dac_transport_switch, LV_STATE_CHECKED);
+	}
+	lv_obj_t *transport_note = lv_label_create(container);
+	lv_label_set_long_mode(transport_note, LV_LABEL_LONG_WRAP);
+	lv_obj_set_width(transport_note, lv_pct(100));
+	lv_obj_add_style(transport_note, &theme_style_text_dim, 0);
+	lv_obj_set_style_text_font(transport_note, &font_ui_22, 0);
+	lv_label_set_text(transport_note, tr("musicsettings_dac_transport_note"));
 
 	build_filter_page(cfg);
 	settingsrow_add(container, "musicsettings_filters", NULL, switch_screen_cb, dacfilter_screen);
