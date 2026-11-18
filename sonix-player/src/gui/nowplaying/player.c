@@ -2321,7 +2321,8 @@ static void lyrics_drag_cb(lv_event_t *e) {
 		engaged = false;
 		bool far = LV_ABS(dx) > cover_box_w / LYRICS_COMMIT_FRACTION;
 		if (asking) {
-			if (far) {
+			// The fallback keeps the prompt on for readers who never touched settings.
+			if (far && config_get_bool("music", "lyrics_download_prompt", true)) {
 				lyrics_offer_download();
 			}
 		} else {
