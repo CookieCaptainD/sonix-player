@@ -46,6 +46,13 @@ typedef enum {
 	// Monkey's Audio: .ape files, 8 to 24 bit, every compression level. The
 	// codec is FFmpeg's, compiled in; see apedec.h.
 	DECODE_FORMAT_APE,
+	// Tracker modules: .mod, .s3m, .xm, .it and the other formats libxmp reads.
+	// Decoded to PCM at 44100 Hz stereo, with embedded loops off so the track
+	// ends and the queue advances. See trackerdec.h.
+	DECODE_FORMAT_TRACKER,
+	// Standard MIDI files: .mid and .midi, rendered through TinySoundFont with
+	// the SF2 the user picks in Settings. See mididec.h.
+	DECODE_FORMAT_MIDI,
 } decode_format_t;
 
 typedef struct decoder decoder_t;
@@ -101,6 +108,11 @@ int decoder_bitrate_kbps(const decoder_t *dec);
 // Not the extension: an .m4a can be AAC or ALAC, and those read as two
 // different things under a cover.
 const char *decoder_codec_name(const decoder_t *dec);
+
+// A title carried inside the file itself, for formats that have one instead of
+// ID3/Vorbis/MP4 tags: a tracker module's name and a MIDI's first track name.
+// Empty string when the format has no such field or the decoder is not open.
+const char *decoder_title(const decoder_t *dec);
 
 // Total PCM frames in the stream, or 0 if unknown.
 uint64_t decoder_total_pcm_frames(const decoder_t *dec);

@@ -14,6 +14,10 @@
 #include "sndfile.h"
 #include "wavpackdec.h"
 #include "apedec.h"
+#include "mididec.h"
+#include "trackerdec.h"
+
+#include "src/system/core/config.h"
 
 #include <fcntl.h>
 #include <math.h>
@@ -560,6 +564,8 @@ struct decoder {
 		wavpackdec_t *wv;
 		apedec_t *ape;
 		adts_state_t *adts;
+		trackerdec_t *tracker;
+		mididec_t *midi;
 	} impl;
 
 	// Non-NULL when the file was still being written at open. Closed after the
@@ -619,6 +625,40 @@ static off_t past_id3(FILE *f) {
 	return at;
 }
 
+// Tracker signatures sit at fixed offsets. A MOD keeps its sample names first,
+// so its magic is at 1080 rather than at the start of the file.
+static bool is_tracker_file(const char *filepath) {
+	FILE *f = fopen(filepath, "rb");
+	if (!f) {
+		return false;
+	}
+	unsigned char head[1084];
+	size_t got = fread(head, 1, sizeof(head), f);
+	fclose(f);
+	if (got < 4) {
+		return false;
+	}
+	if (got >= 16 && memcmp(head, "Extended Module:", 16) == 0) {
+		return true;
+	}
+	if (memcmp(head, "IMPM", 4) == 0) {
+		return true;
+	}
+	if (got >= 48 && memcmp(head + 44, "SCRM", 4) == 0) {
+		return true;
+	}
+	if (got >= 1084) {
+		static const char *mods[] = {"M.K.", "M!K!", "4CHN", "6CHN", "8CHN", "FLT4", "FLT8", "CD81", "OKTA", "16CN",
+									 "32CN"};
+		for (size_t i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
+			if (memcmp(head + 1080, mods[i], 4) == 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 // What the first bytes of a file say it holds, for a file whose name says
 // something else: an .m4a saved as .mp3 by a download site, Opus in a file
 // named .ogg, a FLAC renamed by hand. Only a positive match counts -- a
@@ -676,6 +716,12 @@ static decode_format_t sniff_format(const char *filepath, bool *by_sync) {
 			return DECODE_FORMAT_AAC_ADTS;
 		}
 	}
+	if (got >= 4 && memcmp(head, "MThd", 4) == 0) {
+		return DECODE_FORMAT_MIDI;
+	}
+	if (is_tracker_file(filepath)) {
+		return DECODE_FORMAT_TRACKER;
+	}
 	return DECODE_FORMAT_UNKNOWN;
 }
 
@@ -701,6 +747,13 @@ static decode_format_t format_by_name(const char *filepath) {
 		return DECODE_FORMAT_APE;
 	if (has_extension(filepath, ".aac"))
 		return DECODE_FORMAT_AAC_ADTS;
+	if (has_extension(filepath, ".mod") || has_extension(filepath, ".s3m") || has_extension(filepath, ".xm") ||
+		has_extension(filepath, ".it") || has_extension(filepath, ".mptm")) {
+		return DECODE_FORMAT_TRACKER;
+	}
+	if (has_extension(filepath, ".mid") || has_extension(filepath, ".midi")) {
+		return DECODE_FORMAT_MIDI;
+	}
 	// Last, and only if the library is really there: an unplayable extension
 	// should stay unknown rather than become a file that fails to open.
 	if (sndfile_handles(filepath) && sndfile_available())
@@ -1926,7 +1979,7 @@ static uint64_t mp3_cbr_estimate(decoder_t *dec) {
 	return (uint64_t)(seconds * (double)dec->sample_rate);
 }
 
-static decoder_t *decoder_open_file(const char *filepath, decode_format_t format);
+static decoder_t *decoder_open_file(const char *filepath, decode_format_t format, bool playback);
 
 // A track of a CUE sheet: open the file the sheet points at, then narrow the
 // decoder to that track's stretch of it. With `position`, it is also moved to
@@ -1950,7 +2003,7 @@ static decoder_t *decoder_open_cue(const char *sheet_path, int track, decode_for
 	snprintf(audio_path, sizeof(audio_path), "%s", cue->audio_path);
 	free(cue);
 
-	decoder_t *dec = decoder_open_file(audio_path, format);
+	decoder_t *dec = decoder_open_file(audio_path, format, position);
 	if (!dec) {
 		return NULL;
 	}
@@ -2002,7 +2055,7 @@ decoder_t *decoder_open(const char *filepath, decode_format_t format) {
 	if (track > 0) {
 		return decoder_open_cue(sheet, track, format, true);
 	}
-	return decoder_open_file(filepath, format);
+	return decoder_open_file(filepath, format, true);
 }
 
 decoder_t *decoder_open_info(const char *filepath, decode_format_t format) {
@@ -2011,10 +2064,10 @@ decoder_t *decoder_open_info(const char *filepath, decode_format_t format) {
 	if (track > 0) {
 		return decoder_open_cue(sheet, track, format, false);
 	}
-	return decoder_open_file(filepath, format);
+	return decoder_open_file(filepath, format, false);
 }
 
-static decoder_t *decoder_open_file(const char *filepath, decode_format_t format) {
+static decoder_t *decoder_open_file(const char *filepath, decode_format_t format, bool playback) {
 	decoder_t *dec = calloc(1, sizeof(decoder_t));
 	if (!dec)
 		return NULL;
@@ -2228,6 +2281,31 @@ static decoder_t *decoder_open_file(const char *filepath, decode_format_t format
 		dec->total_pcm_frames = apedec_total_frames(dec->impl.ape);
 		break;
 
+	case DECODE_FORMAT_TRACKER:
+		dec->impl.tracker = trackerdec_open(filepath);
+		if (!dec->impl.tracker) {
+			free(dec);
+			return NULL;
+		}
+		dec->channels = trackerdec_channels(dec->impl.tracker);
+		dec->sample_rate = trackerdec_sample_rate(dec->impl.tracker);
+		dec->total_pcm_frames = trackerdec_total_frames(dec->impl.tracker);
+		break;
+
+	case DECODE_FORMAT_MIDI:
+		// The library scanner opens a decoder without a soundfont picked yet.
+		// It needs the duration and title, not samples; playback needs both.
+		dec->impl.midi = playback ? mididec_open(filepath, config_get("player", "soundfont_path", ""))
+								  : mididec_open_info(filepath);
+		if (!dec->impl.midi) {
+			free(dec);
+			return NULL;
+		}
+		dec->channels = mididec_channels(dec->impl.midi);
+		dec->sample_rate = mididec_sample_rate(dec->impl.midi);
+		dec->total_pcm_frames = mididec_total_frames(dec->impl.midi);
+		break;
+
 	case DECODE_FORMAT_AAC_MP4: {
 		// The container is opened before deciding which decoder to build: .m4a
 		// and .m4b can hold either AAC or ALAC, and the sample entry is the
@@ -2436,10 +2514,28 @@ const char *decoder_codec_name(const decoder_t *dec) {
 		return "WavPack";
 	case DECODE_FORMAT_APE:
 		return "APE";
+	case DECODE_FORMAT_TRACKER:
+		return "Tracker";
+	case DECODE_FORMAT_MIDI:
+		return "MIDI";
 	default:
 		// DSD has a line of its own (DSD64/DoP), and for the libsndfile
 		// formats the right name is the container's, i.e. the extension: say
 		// nothing here and let the caller fall back on it.
+		return "";
+	}
+}
+
+const char *decoder_title(const decoder_t *dec) {
+	if (!dec) {
+		return "";
+	}
+	switch (dec->format) {
+	case DECODE_FORMAT_TRACKER:
+		return trackerdec_title(dec->impl.tracker);
+	case DECODE_FORMAT_MIDI:
+		return mididec_title(dec->impl.midi);
+	default:
 		return "";
 	}
 }
@@ -2538,6 +2634,12 @@ static uint64_t decoder_read_s16_inner(decoder_t *dec, uint64_t frame_count, sho
 
 	case DECODE_FORMAT_APE:
 		return apedec_read_s16(dec->impl.ape, frame_count, pBuffer);
+
+	case DECODE_FORMAT_TRACKER:
+		return trackerdec_read_s16(dec->impl.tracker, frame_count, pBuffer);
+
+	case DECODE_FORMAT_MIDI:
+		return mididec_read_s16(dec->impl.midi, frame_count, pBuffer);
 
 	case DECODE_FORMAT_ALAC_MP4: {
 		// The samples are already left-justified in 32 bits: they are narrowed
@@ -2811,6 +2913,13 @@ int decoder_seek_to_frame(decoder_t *dec, uint64_t frame_index) {
 	case DECODE_FORMAT_APE:
 		return apedec_seek(dec->impl.ape, frame_index) ? 1 : 0;
 
+	case DECODE_FORMAT_TRACKER:
+		return trackerdec_seek(dec->impl.tracker, frame_index) ? 1 : 0;
+
+	case DECODE_FORMAT_MIDI:
+		// mididec_seek() returns 0 on success, unlike the other decoders.
+		return mididec_seek(dec->impl.midi, frame_index) == 0 ? 1 : 0;
+
 	case DECODE_FORMAT_ALAC_MP4: {
 		alac_state_t *s = dec->impl.alac;
 		if (dec->sample_rate <= 0)
@@ -2949,6 +3058,12 @@ void decoder_close(decoder_t *dec) {
 		break;
 	case DECODE_FORMAT_APE:
 		apedec_close(dec->impl.ape);
+		break;
+	case DECODE_FORMAT_TRACKER:
+		trackerdec_close(dec->impl.tracker);
+		break;
+	case DECODE_FORMAT_MIDI:
+		mididec_close(dec->impl.midi);
 		break;
 	case DECODE_FORMAT_DSD:
 		dsd_close(dec->impl.dsd);
