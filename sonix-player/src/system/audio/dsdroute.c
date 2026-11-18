@@ -43,7 +43,9 @@ bool dsdroute_carries_dop(const char *output, int carrier_rate, int bits, int ch
 	return dsdroute_test_supported_rate;
 #else
 	snd_pcm_t *pcm = NULL;
-	if (snd_pcm_open(&pcm, hw, SND_PCM_STREAM_PLAYBACK, 0) < 0) {
+	// The previous track may still hold the device. A blocking open would wait
+	// behind it and stall the playback thread; a probe needs no stream.
+	if (snd_pcm_open(&pcm, hw, SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK) < 0) {
 		return false;
 	}
 

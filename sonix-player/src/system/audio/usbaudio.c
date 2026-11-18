@@ -485,11 +485,11 @@ static void find_volume_control(int card) {
 //     nearest step at or above the target and the samples the difference, so
 //     a coarse or shallow control still moves smoothly all the way down.
 //
+void usbaudio_set_dsd(bool active) { dsd_active = active; }
+
 // The value written is read back. A driver is allowed to round it; sitting at
 // the top of its range after being asked for well below is a control that does
 // nothing, and then it is given up and the samples take the whole level.
-void usbaudio_set_dsd(bool active) { dsd_active = active; }
-
 void usbaudio_apply_volume(int percent) {
 	if (active_card < 0) {
 		dsd_active = false;
