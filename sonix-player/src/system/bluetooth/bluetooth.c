@@ -231,7 +231,7 @@ static int g_pending_volume = -1; // coalesces a held volume key into one write
 static bt_stream_t g_rx_stream;
 static unsigned g_rx_serial; // moves every time the worker reads the line above
 
-static void post_job(const job_t *job);
+static bool post_job(const job_t *job);
 
 // ---------------------------------------------------------------------------
 // small helpers
@@ -485,6 +485,7 @@ void bluetooth_daemon_debug_on(void) {
 // rootfs ships obexd with its dummy backends, so an empty vcard tree is enough
 // for the head unit to finish its phone connection flow.
 static bool s_phone_profiles_started;
+static volatile bool s_ciev_run;
 
 static void ensure_phone_profiles(void) {
 	if (s_phone_profiles_started || !config_get_bool("bluetooth", "car_mode", true) ||
@@ -557,7 +558,8 @@ static void *hfp_ciev_thread(void *arg) {
 		} else {
 			fprintf(stderr, "bluetooth: CIEV call-state sent for %s\n", mac);
 		}
-		for (int n = 0; n < 10 && bluetooth_audio_active(); n++) {
+		for (int n = 0; n < 10 && bluetooth_audio_active() && s_ciev_run &&
+			 config_get_bool("bluetooth", "car_mode", true); n++) {
 			sleep_ms(2000);
 			write(fds[1], on, strlen(on));
 		}
@@ -567,6 +569,7 @@ static void *hfp_ciev_thread(void *arg) {
 		waitpid(pid, NULL, 0);
 	}
 	close(fds[1]);
+	s_ciev_run = false;
 	return NULL;
 }
 
@@ -577,9 +580,12 @@ static void start_hfp_ciev(const char *mac) {
 	}
 	pthread_t tid;
 	char *arg = strdup(mac);
+	s_ciev_run = true;
 	if (arg && pthread_create(&tid, NULL, hfp_ciev_thread, arg) == 0) {
+		pthread_detach(tid);
 		return;
 	}
+	s_ciev_run = false;
 	free(arg);
 }
 
@@ -2514,6 +2520,8 @@ static void bring_stack_down(bool deliberate) {
 
 	long freed = process_rss_kb("bluealsa") + process_rss_kb("bluetoothd") + process_rss_kb("bt-agent");
 
+	s_ciev_run = false;
+	stop_process("bluealsa-rfcomm");
 	stop_process("bluealsa");
 	stop_process("obexd");
 	s_phone_profiles_started = false;
@@ -3082,7 +3090,7 @@ static bool queue_has(job_type_t type) {
 	return false;
 }
 
-static void post_job(const job_t *job) {
+static bool post_job(const job_t *job) {
 	pthread_mutex_lock(&lock);
 	bool duplicate = ((job->type == JOB_REFRESH || job->type == JOB_CAR_MODE) && queue_has(job->type));
 	bool queued = duplicate || queue_count < JOB_QUEUE_LEN;
@@ -3096,6 +3104,7 @@ static void post_job(const job_t *job) {
 	if (!queued) {
 		fprintf(stderr, "bluetooth: job queue full (%d); dropping a job of type %d\n", JOB_QUEUE_LEN, (int)job->type);
 	}
+	return queued;
 }
 
 // Stops bluealsa and starts it again with the current options, then asks the
@@ -3922,12 +3931,27 @@ void bluetooth_car_mode_set(bool on) {
 
 	pthread_mutex_lock(&lock);
 	g_car_mode = on;
+	bool enabled = g_enabled;
+	pthread_mutex_unlock(&lock);
+
+	// With the radio off there is no stack to swap. The new class is read at
+	// the next power-on; do not bring the radio up behind the UI's back.
+	if (!enabled) {
+		return;
+	}
+
+	pthread_mutex_lock(&lock);
 	g_car_mode_restarting = true;
 	g_busy = true;
 	pthread_mutex_unlock(&lock);
 
 	job_t job = {.type = JOB_CAR_MODE};
-	post_job(&job);
+	if (!post_job(&job)) {
+		pthread_mutex_lock(&lock);
+		g_car_mode_restarting = false;
+		g_busy = false;
+		pthread_mutex_unlock(&lock);
+	}
 }
 
 void bluetooth_set_receiver_profile(bool on) {

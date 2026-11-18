@@ -189,6 +189,10 @@ static void refresh_status_label(void) {
 		return;
 	}
 
+	if (bluetooth_car_mode_restarting()) {
+		lv_label_set_text(status_label, tr("bt_car_mode_switching"));
+		return;
+	}
 	if (bluetooth_busy()) {
 		lv_label_set_text(status_label, bluetooth_get_enabled() ? tr("turning_on") : tr("bt_turning_off"));
 		return;
@@ -576,8 +580,8 @@ static void update_pin_ui(void) {
 		lv_label_set_text(pin_code, val ? val : "");
 		if (pin_keyboard) keyboard_set_visible(pin_keyboard, false);
 	} else if (authorize) {
-		lv_label_set_text(pin_title, tr("bt_pairing_consent"));
-		lv_label_set_text_fmt(pin_hint, tr("bt_pairing_consent_note"), name);
+		lv_label_set_text(pin_title, tr("bt_pairing_authorize"));
+		lv_label_set_text(pin_hint, name[0] ? name : (dev ? dev : ""));
 		if (pin_keyboard) keyboard_set_visible(pin_keyboard, false);
 	} else {
 		pin_hide_layer();
