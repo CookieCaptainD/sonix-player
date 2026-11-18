@@ -45,13 +45,22 @@ typedef struct {
 } script_face_t;
 
 // Script fallback fonts chained behind the primary ebook face so glyphs the
-// primary lacks (Hangul, CJK, Thai, Arabic, etc.) still render. Korean comes
-// first to satisfy #190 regardless of metadata hints.
+// primary lacks (Hangul, CJK, Thai, Arabic, Indic, Ethiopic, Hebrew) still
+// render. Korean comes first to satisfy #190 regardless of metadata hints;
+// Chinese (MiSans, the interface face) comes before Japanese so Han in a
+// Chinese book uses Chinese forms rather than Rodin's Japanese ones.
 static const script_face_t SCRIPT_FACES[] = {
 	{"korean", "korean.otf", "korean-bold.otf"},
+	{"chinese", "default.otf", "bold.otf"},
 	{"japanese", "japanese.otf", "japanese-bold.otf"},
 	{"thai", "thai.otf", "thai-bold.otf"},
 	{"arabic", "arabic.otf", "arabic-bold.otf"},
+	{"devanagari", "devanagari.ttf", "devanagari.ttf"},
+	{"tamil", "tamil.ttf", "tamil.ttf"},
+	{"malayalam", "malayalam.ttf", "malayalam.ttf"},
+	{"gurmukhi", "gurmukhi.ttf", "gurmukhi.ttf"},
+	{"ethiopic", "ethiopic.ttf", "ethiopic.ttf"},
+	{"hebrew", "hebrew.ttf", "hebrew.ttf"},
 };
 
 #define SCRIPT_FACE_COUNT (sizeof(SCRIPT_FACES) / sizeof(SCRIPT_FACES[0]))
