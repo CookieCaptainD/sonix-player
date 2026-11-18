@@ -2252,9 +2252,9 @@ void podcastcard_open(const podcastcard_show_t *show) {
 // Both shortcuts share one shape: an accent icon over a short label. The label
 // uses the 20 px step the filter tabs use, so the buttons read like the rest of
 // the page instead of two unlabelled ticks.
-static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon, const char *label_key, lv_event_cb_t cb, lv_coord_t x, gui_config_t *cfg) {
+static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon, const char *label_key, lv_event_cb_t cb, lv_coord_t x, gui_config_t *cfg, lv_color_t icon_color) {
 	lv_obj_t *btn = lv_btn_create(screen);
-	lv_obj_set_size(btn, 160, 92);
+	lv_obj_set_size(btn, 140, 92);
 	lv_obj_set_style_radius(btn, 12, 0);
 	lv_obj_add_style(btn, &theme_style_card, 0);
 	lv_obj_set_style_border_width(btn, 0, 0);
@@ -2271,7 +2271,7 @@ static lv_obj_t *selection_button(lv_obj_t *screen, page_t *p, const void *icon,
 	lv_obj_t *img = lv_image_create(btn);
 	lv_image_set_src(img, icon);
 	lv_obj_add_style(img, &theme_style_icon, 0);
-	lv_obj_set_style_image_recolor(img, theme()->accent, 0);
+	lv_obj_set_style_image_recolor(img, icon_color, 0);
 	lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
 
 	lv_obj_t *label = lv_label_create(btn);
@@ -2459,38 +2459,22 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 	lv_obj_set_style_text_font(p->empty_label, &font_ui_22, 0);
 	lv_obj_set_hidden(p->empty_label, true);
 
-	// What acts on the chosen episodes, a disc in the bottom right corner as on
-	// the library lists: red for deleting them from the card, the accent for
-	// downloading them.
-	p->sel_action_btn = lv_btn_create(p->screen);
-	lv_obj_set_size(p->sel_action_btn, SEL_FAB_SIZE, SEL_FAB_SIZE);
-	lv_obj_set_style_radius(p->sel_action_btn, LV_RADIUS_CIRCLE, 0);
-	if (p->feed) {
-		lv_obj_add_style(p->sel_action_btn, &theme_style_accent_bg, 0);
-	} else {
-		lv_obj_set_style_bg_color(p->sel_action_btn, lv_color_make(224, 27, 36), 0);
-		lv_obj_set_style_bg_color(p->sel_action_btn, lv_color_make(192, 28, 40), LV_STATE_PRESSED);
-	}
-	lv_obj_set_style_bg_opa(p->sel_action_btn, LV_OPA_COVER, 0);
-	lv_obj_set_style_border_width(p->sel_action_btn, 0, 0);
-	lv_obj_set_style_shadow_width(p->sel_action_btn, 0, 0);
-	lv_obj_set_style_pad_all(p->sel_action_btn, 0, 0);
+	// The action is the third card in the same row as the two shortcuts. A red
+	// trash icon keeps the destructive meaning without a second button shape.
+	p->sel_action_btn = selection_button(p->screen, p, p->feed ? &icon_download : &icon_trash,
+										 p->feed ? "podcast_download" : "delete", sel_action_cb,
+										 cfg->padding + 326, cfg,
+										 p->feed ? theme()->accent : lv_color_make(224, 27, 36));
 	lv_obj_align(p->sel_action_btn, LV_ALIGN_BOTTOM_RIGHT, -cfg->padding - 6, -cfg->padding - 6);
-	lv_obj_add_event_cb(p->sel_action_btn, sel_action_cb, LV_EVENT_CLICKED, p);
-	lv_obj_t *action_icon = lv_image_create(p->sel_action_btn);
-	lv_image_set_src(action_icon, p->feed ? &icon_download : &icon_trash);
-	lv_obj_set_style_image_recolor(action_icon, lv_color_white(), 0);
-	lv_obj_set_style_image_recolor_opa(action_icon, LV_OPA_COVER, 0);
-	lv_obj_center(action_icon);
 	lv_obj_set_hidden(p->sel_action_btn, true);
 
 	// The two shortcuts sit at the bottom left, opposite the action button.
 	// They share the extra bottom padding the selection mode reserves, so the
 	// rows below them can still be scrolled clear.
-	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb, cfg->padding + 6, cfg);
+	p->sel_all_btn = selection_button(p->screen, p, &icon_library_checked, "podcast_select_all", select_all_cb, cfg->padding + 6, cfg, theme()->accent);
 	lv_obj_set_hidden(p->sel_all_btn, true);
 
-	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb, cfg->padding + 172, cfg);
+	p->sel_heard_btn = selection_button(p->screen, p, &icon_check, "podcast_mark_heard", mark_many_heard_cb, cfg->padding + 166, cfg, theme()->accent);
 	lv_obj_set_hidden(p->sel_heard_btn, true);
 
 	switcher_attach_back_gesture(p->screen);
