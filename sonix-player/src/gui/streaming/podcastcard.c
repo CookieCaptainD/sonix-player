@@ -2461,10 +2461,7 @@ static void build_page(page_t *p, gui_config_t *cfg) {
 
 	// The action is the third card in the same row as the two shortcuts. A red
 	// trash icon keeps the destructive meaning without a second button shape.
-	p->sel_action_btn = selection_button(p->screen, p, p->feed ? &icon_download : &icon_trash,
-										 p->feed ? "podcast_download" : "delete", sel_action_cb,
-										 cfg->padding + 326, cfg,
-										 p->feed ? theme()->accent : lv_color_make(224, 27, 36));
+	p->sel_action_btn = selection_button(p->screen, p, p->feed ? &icon_download : &icon_trash, p->feed ? "podcast_download" : "delete", sel_action_cb, cfg->padding + 326, cfg, p->feed ? theme()->accent : lv_color_make(224, 27, 36));
 	lv_obj_align(p->sel_action_btn, LV_ALIGN_BOTTOM_RIGHT, -cfg->padding - 6, -cfg->padding - 6);
 	lv_obj_set_hidden(p->sel_action_btn, true);
 
