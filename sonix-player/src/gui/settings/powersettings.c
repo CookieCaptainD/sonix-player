@@ -11,6 +11,7 @@
 #include "src/system/device/led.h"
 #include "src/system/device/power.h"
 #include "src/system/device/system.h"
+#include "src/system/device/usb.h"
 
 lv_obj_t *powersettings_screen;
 
@@ -50,6 +51,7 @@ static lv_obj_t *key_lock_switch;
 static lv_obj_t *standby_switch, *standby_value, *standby_slider, *standby_card;
 static lv_obj_t *charge_note;
 static lv_obj_t *axp_limit_switch, *axp_current_switch; // the R1's two, instead of the slider
+static lv_obj_t *charge_only_switch;
 
 // --- reading the saved values ---
 
@@ -127,6 +129,8 @@ void powersettings_apply(void) {
 	led_set_idle_off(config_get_bool("power", "led_off_standby", true));
 
 	input_set_key_lock(config_get_bool("power", "lock_keys_screen_off", false));
+
+	usb_set_charge_only(config_get_bool("usb", "charge_only", false));
 }
 
 static void refresh_labels(void) {
@@ -136,6 +140,9 @@ static void refresh_labels(void) {
 	if (axp_limit_switch) {
 		set_checked(axp_limit_switch, config_get_bool("power", "charge_limit_80", false));
 		set_checked(axp_current_switch, config_get_bool("power", "charge_500ma", false));
+	}
+	if (charge_only_switch) {
+		set_checked(charge_only_switch, config_get_bool("usb", "charge_only", false));
 	}
 	lv_label_set_text(auto_off_value, tr(AUTO_OFF[auto_off_index()].label));
 
@@ -249,6 +256,12 @@ static void key_lock_toggled_cb(lv_event_t *e) {
 	refresh_labels();
 }
 
+static void charge_only_toggled_cb(lv_event_t *e) {
+	(void)e;
+	usb_set_charge_only(lv_obj_has_state(charge_only_switch, LV_STATE_CHECKED));
+	refresh_labels();
+}
+
 static void auto_off_toggled_cb(lv_event_t *e) {
 	(void)e;
 	config_set_bool("power", "auto_off", lv_obj_has_state(auto_off_switch, LV_STATE_CHECKED));
@@ -311,6 +324,16 @@ void powersettings_init(gui_config_t *cfg) {
 						   charge_changed_cb);
 		lv_slider_set_value(charge_slider, charge_index(), LV_ANIM_OFF);
 	}
+
+	// Charge only: a computer on the cable can supply power without being
+	// offered the card, so playback carries on while the player charges.
+	settingsrow_toggle(container, "power_charge_only", &charge_only_switch, charge_only_toggled_cb);
+	lv_obj_t *charge_only_note = lv_label_create(container);
+	lv_label_set_long_mode(charge_only_note, LV_LABEL_LONG_WRAP);
+	lv_obj_set_width(charge_only_note, lv_pct(100));
+	lv_obj_add_style(charge_only_note, &theme_style_text_dim, 0);
+	lv_obj_set_style_text_font(charge_only_note, &font_ui_22, 0);
+	lv_label_set_text(charge_only_note, tr("power_charge_only_note"));
 
 	// The LED master switch, and the standby option that depends on it.
 	settingsrow_toggle(container, "power_led_on", &led_on_switch, led_on_toggled_cb);

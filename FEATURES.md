@@ -194,6 +194,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Standby** after the time you choose, and **auto power-off** when nothing is playing.
 - **Battery screen when off** - plug in the charger with the player off and you see the battery level. Press the power button to see it again, hold it to start the player.
 - **Charge limit** - stop charging before 100% to make the battery last longer: at 80% on the R1, or anywhere from 80% to 100% on the R3 Pro II. On the R1 you can also limit the charging current to 500 mA.
+- **Charge only** - with a computer on the cable, use it only for power. The microSD stays with the player, so music keeps playing and the computer does not get a removable drive. Set it in Settings > Power.
 - **Low battery** - a warning at 5%, and at 1% the player turns itself off with a 10 second countdown, also in standby.
 - **LED** - on or off, and off in standby.
 - **Power menu** - slide to power off or restart.
