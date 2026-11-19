@@ -136,10 +136,8 @@ void browserremote_restore_pin_hash(browserremote_ctx_t *ctx, const char *hash);
 // points into the context and stays valid until the next challenge; callers
 // that need to keep it must copy it.
 const char *browserremote_challenge(browserremote_ctx_t *ctx, const char *browser_id, time_t now);
-bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const char *nonce, const char *pin,
-						 char *token_out, size_t token_size, time_t now);
-bool browserremote_session_valid(const browserremote_ctx_t *ctx, const char *browser_id, const char *token,
-								 time_t now);
+bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const char *nonce, const char *pin, char *token_out, size_t token_size, time_t now);
+bool browserremote_session_valid(const browserremote_ctx_t *ctx, const char *browser_id, const char *token, time_t now);
 void browserremote_logout(browserremote_ctx_t *ctx, const char *token);
 void browserremote_expire(browserremote_ctx_t *ctx, time_t now);
 

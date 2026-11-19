@@ -20,8 +20,7 @@
 static uint64_t id_seed;
 static uint64_t id_seq;
 
-static void seed_ids(void)
-{
+static void seed_ids(void) {
 	if (id_seed != 0) {
 		return;
 	}
@@ -37,8 +36,7 @@ static void seed_ids(void)
 	}
 }
 
-static uint64_t fnv1a(const char *s)
-{
+static uint64_t fnv1a(const char *s) {
 	uint64_t h = 1469598103934665603ULL;
 	for (; s != NULL && *s != '\0'; s++) {
 		h ^= (unsigned char)*s;
@@ -47,8 +45,7 @@ static uint64_t fnv1a(const char *s)
 	return h;
 }
 
-static void make_id(char *out, size_t out_size, const char *scope, time_t now)
-{
+static void make_id(char *out, size_t out_size, const char *scope, time_t now) {
 	seed_ids();
 	uint64_t v = id_seed ^ (++id_seq * 0x9e3779b97f4a7c15ULL) ^ (uint64_t)now ^ fnv1a(scope);
 	snprintf(out, out_size, "%016llx", (unsigned long long)v);
@@ -64,8 +61,7 @@ typedef struct {
 	size_t len;
 } json_t;
 
-static void jf(json_t *j, const char *fmt, ...)
-{
+static void jf(json_t *j, const char *fmt, ...) {
 	if (j->len >= j->size) {
 		return;
 	}
@@ -80,8 +76,7 @@ static void jf(json_t *j, const char *fmt, ...)
 	j->len += ((size_t)n < room) ? (size_t)n : room - 1;
 }
 
-static void jstring(json_t *j, const char *s)
-{
+static void jstring(json_t *j, const char *s) {
 	jf(j, "\"");
 	if (s == NULL) {
 		s = "";
@@ -115,8 +110,7 @@ static void jstring(json_t *j, const char *s)
 	jf(j, "\"");
 }
 
-static void jitem(json_t *j, const browserremote_item_t *it)
-{
+static void jitem(json_t *j, const browserremote_item_t *it) {
 	jf(j, "{\"path\":");
 	jstring(j, it->path);
 	jf(j, ",\"title\":");
@@ -130,19 +124,14 @@ static void jitem(json_t *j, const browserremote_item_t *it)
 // Lifecycle and PIN
 // ---------------------------------------------------------------------------
 
-void browserremote_init(browserremote_ctx_t *ctx, const browserremote_ops_t *ops)
-{
+void browserremote_init(browserremote_ctx_t *ctx, const browserremote_ops_t *ops) {
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->ops = ops;
 }
 
-bool browserremote_has_pin(const browserremote_ctx_t *ctx)
-{
-	return ctx->pin_hash[0] != '\0';
-}
+bool browserremote_has_pin(const browserremote_ctx_t *ctx) { return ctx->pin_hash[0] != '\0'; }
 
-void browserremote_set_pin(browserremote_ctx_t *ctx, const char *pin)
-{
+void browserremote_set_pin(browserremote_ctx_t *ctx, const char *pin) {
 	if (pin == NULL || pin[0] == '\0') {
 		ctx->pin_hash[0] = '\0';
 		return;
@@ -150,8 +139,7 @@ void browserremote_set_pin(browserremote_ctx_t *ctx, const char *pin)
 	snprintf(ctx->pin_hash, sizeof(ctx->pin_hash), "%016llx", (unsigned long long)fnv1a(pin));
 }
 
-bool browserremote_verify_pin(const browserremote_ctx_t *ctx, const char *pin)
-{
+bool browserremote_verify_pin(const browserremote_ctx_t *ctx, const char *pin) {
 	if (!browserremote_has_pin(ctx) || pin == NULL || pin[0] == '\0') {
 		return false;
 	}
@@ -160,13 +148,9 @@ bool browserremote_verify_pin(const browserremote_ctx_t *ctx, const char *pin)
 	return strcmp(candidate, ctx->pin_hash) == 0;
 }
 
-const char *browserremote_pin_hash(const browserremote_ctx_t *ctx)
-{
-	return ctx->pin_hash;
-}
+const char *browserremote_pin_hash(const browserremote_ctx_t *ctx) { return ctx->pin_hash; }
 
-void browserremote_restore_pin_hash(browserremote_ctx_t *ctx, const char *hash)
-{
+void browserremote_restore_pin_hash(browserremote_ctx_t *ctx, const char *hash) {
 	ctx->pin_hash[0] = '\0';
 	if (hash != NULL) {
 		snprintf(ctx->pin_hash, sizeof(ctx->pin_hash), "%s", hash);
@@ -177,8 +161,7 @@ void browserremote_restore_pin_hash(browserremote_ctx_t *ctx, const char *hash)
 // Challenge and sessions
 // ---------------------------------------------------------------------------
 
-static br_challenge_t *challenge_slot(browserremote_ctx_t *ctx, time_t now)
-{
+static br_challenge_t *challenge_slot(browserremote_ctx_t *ctx, time_t now) {
 	// Reuse an expired or consumed slot before taking a live one, so a burst of
 	// failed logins cannot lock out the browser that is actually trying.
 	for (int i = 0; i < BR_MAX_CHALLENGES; i++) {
@@ -189,8 +172,7 @@ static br_challenge_t *challenge_slot(browserremote_ctx_t *ctx, time_t now)
 	return &ctx->challenges[0];
 }
 
-const char *browserremote_challenge(browserremote_ctx_t *ctx, const char *browser_id, time_t now)
-{
+const char *browserremote_challenge(browserremote_ctx_t *ctx, const char *browser_id, time_t now) {
 	if (browser_id == NULL || browser_id[0] == '\0') {
 		return "";
 	}
@@ -210,8 +192,7 @@ const char *browserremote_challenge(browserremote_ctx_t *ctx, const char *browse
 	return c->nonce;
 }
 
-static br_session_t *session_slot(browserremote_ctx_t *ctx, time_t now)
-{
+static br_session_t *session_slot(browserremote_ctx_t *ctx, time_t now) {
 	for (int i = 0; i < BR_MAX_SESSIONS; i++) {
 		if (!ctx->sessions[i].used || ctx->sessions[i].expires <= now) {
 			return &ctx->sessions[i];
@@ -220,9 +201,7 @@ static br_session_t *session_slot(browserremote_ctx_t *ctx, time_t now)
 	return &ctx->sessions[0];
 }
 
-bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const char *nonce, const char *pin,
-						 char *token_out, size_t token_size, time_t now)
-{
+bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const char *nonce, const char *pin, char *token_out, size_t token_size, time_t now) {
 	if (token_out != NULL && token_size > 0) {
 		token_out[0] = '\0';
 	}
@@ -233,8 +212,7 @@ bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const
 	br_challenge_t *c = NULL;
 	for (int i = 0; i < BR_MAX_CHALLENGES; i++) {
 		br_challenge_t *candidate = &ctx->challenges[i];
-		if (candidate->used && candidate->expires > now && strcmp(candidate->browser_id, browser_id) == 0 &&
-			strcmp(candidate->nonce, nonce) == 0) {
+		if (candidate->used && candidate->expires > now && strcmp(candidate->browser_id, browser_id) == 0 && strcmp(candidate->nonce, nonce) == 0) {
 			c = candidate;
 			break;
 		}
@@ -259,24 +237,20 @@ bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const
 	return true;
 }
 
-bool browserremote_session_valid(const browserremote_ctx_t *ctx, const char *browser_id, const char *token,
-								 time_t now)
-{
+bool browserremote_session_valid(const browserremote_ctx_t *ctx, const char *browser_id, const char *token, time_t now) {
 	if (browser_id == NULL || token == NULL || token[0] == '\0') {
 		return false;
 	}
 	for (int i = 0; i < BR_MAX_SESSIONS; i++) {
 		const br_session_t *s = &ctx->sessions[i];
-		if (s->used && s->expires > now && strcmp(s->browser_id, browser_id) == 0 &&
-			strcmp(s->token, token) == 0) {
+		if (s->used && s->expires > now && strcmp(s->browser_id, browser_id) == 0 && strcmp(s->token, token) == 0) {
 			return true;
 		}
 	}
 	return false;
 }
 
-void browserremote_logout(browserremote_ctx_t *ctx, const char *token)
-{
+void browserremote_logout(browserremote_ctx_t *ctx, const char *token) {
 	if (token == NULL) {
 		return;
 	}
@@ -287,8 +261,7 @@ void browserremote_logout(browserremote_ctx_t *ctx, const char *token)
 	}
 }
 
-void browserremote_expire(browserremote_ctx_t *ctx, time_t now)
-{
+void browserremote_expire(browserremote_ctx_t *ctx, time_t now) {
 	for (int i = 0; i < BR_MAX_CHALLENGES; i++) {
 		if (ctx->challenges[i].used && ctx->challenges[i].expires <= now) {
 			ctx->challenges[i].used = false;
@@ -301,13 +274,9 @@ void browserremote_expire(browserremote_ctx_t *ctx, time_t now)
 	}
 }
 
-void browserremote_touch(browserremote_ctx_t *ctx, time_t now)
-{
-	ctx->last_activity = now;
-}
+void browserremote_touch(browserremote_ctx_t *ctx, time_t now) { ctx->last_activity = now; }
 
-time_t browserremote_idle(const browserremote_ctx_t *ctx, time_t now)
-{
+time_t browserremote_idle(const browserremote_ctx_t *ctx, time_t now) {
 	if (ctx->last_activity == 0) {
 		return 0;
 	}
@@ -318,8 +287,7 @@ time_t browserremote_idle(const browserremote_ctx_t *ctx, time_t now)
 // Command dispatch
 // ---------------------------------------------------------------------------
 
-static void do_status(browserremote_ctx_t *ctx, json_t *j)
-{
+static void do_status(browserremote_ctx_t *ctx, json_t *j) {
 	browserremote_state_t st;
 	memset(&st, 0, sizeof(st));
 	if (ctx->ops->state != NULL) {
@@ -333,13 +301,13 @@ static void do_status(browserremote_ctx_t *ctx, json_t *j)
 	jstring(j, st.title);
 	jf(j, ",\"artist\":");
 	jstring(j, st.artist);
-	jf(j, ",\"position\":%g,\"duration\":%g,\"volume\":%d,\"mode\":%d,\"favourite\":%s,"
+	jf(j,
+	   ",\"position\":%g,\"duration\":%g,\"volume\":%d,\"mode\":%d,\"favourite\":%s,"
 	   "\"queue_count\":%d,\"queue_index\":%d}",
 	   st.position, st.duration, st.volume, st.mode, fav ? "true" : "false", st.queue_count, st.queue_index);
 }
 
-static void do_queue(browserremote_ctx_t *ctx, json_t *j)
-{
+static void do_queue(browserremote_ctx_t *ctx, json_t *j) {
 	int count = (ctx->ops->queue_count != NULL) ? ctx->ops->queue_count(ctx->ops->user) : 0;
 	int index = -1;
 	browserremote_state_t st;
@@ -364,8 +332,7 @@ static void do_queue(browserremote_ctx_t *ctx, json_t *j)
 	jf(j, "]}");
 }
 
-static void do_library(browserremote_ctx_t *ctx, const browserremote_cmd_t *cmd, json_t *j, bool favourites)
-{
+static void do_library(browserremote_ctx_t *ctx, const browserremote_cmd_t *cmd, json_t *j, bool favourites) {
 	browserremote_item_t items[LIBRARY_PAGE];
 	int count = 0;
 	if (ctx->ops->library != NULL) {
@@ -389,8 +356,7 @@ static void do_library(browserremote_ctx_t *ctx, const browserremote_cmd_t *cmd,
 	jf(j, "]}");
 }
 
-bool browserremote_execute(browserremote_ctx_t *ctx, const browserremote_cmd_t *cmd, char *out, size_t out_size)
-{
+bool browserremote_execute(browserremote_ctx_t *ctx, const browserremote_cmd_t *cmd, char *out, size_t out_size) {
 	if (ctx == NULL || ctx->ops == NULL || cmd == NULL || out == NULL || out_size == 0) {
 		return false;
 	}

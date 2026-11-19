@@ -24,12 +24,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "src/system/audio/audio.h"
 #include "src/system/core/config.h"
 #include "src/system/library/library.h"
 #include "src/system/net/browserremote.h"
 #include "src/system/net/remote_page.h"
 #include "src/system/net/wifi.h"
-#include "src/system/audio/audio.h"
 #include "src/system/playback/device_state.h"
 #include "src/system/playback/playlist.h"
 
@@ -48,16 +48,13 @@ static bool g_thread_created;
 // Player operations, wired once in browserremote_http_init()
 // ---------------------------------------------------------------------------
 
-static void host_state(browserremote_state_t *out, void *user)
-{
+static void host_state(browserremote_state_t *out, void *user) {
 	(void)user;
 	device_state_t st;
 	memset(&st, 0, sizeof(st));
 	device_state_get(&st);
 
-	out->status = (st.status == AUDIO_STATUS_PLAYING)   ? BR_STATUS_PLAYING
-				  : (st.status == AUDIO_STATUS_PAUSED) ? BR_STATUS_PAUSED
-													  : BR_STATUS_STOPPED;
+	out->status = (st.status == AUDIO_STATUS_PLAYING) ? BR_STATUS_PLAYING : (st.status == AUDIO_STATUS_PAUSED) ? BR_STATUS_PAUSED : BR_STATUS_STOPPED;
 	snprintf(out->path, sizeof(out->path), "%s", st.current_file);
 	snprintf(out->title, sizeof(out->title), "%s", st.metadata.title ? st.metadata.title : "");
 	snprintf(out->artist, sizeof(out->artist), "%s", st.metadata.artist ? st.metadata.artist : "");
@@ -70,21 +67,18 @@ static void host_state(browserremote_state_t *out, void *user)
 	out->favourite = st.current_file[0] ? library_fav_contains(st.current_file) : false;
 }
 
-static int host_queue_count(void *user)
-{
+static int host_queue_count(void *user) {
 	(void)user;
 	return playlist_count();
 }
 
-static void item_from_path(const char *path, const char *name, const char *artist, browserremote_item_t *out)
-{
+static void item_from_path(const char *path, const char *name, const char *artist, browserremote_item_t *out) {
 	snprintf(out->path, sizeof(out->path), "%s", path ? path : "");
 	snprintf(out->title, sizeof(out->title), "%s", name ? name : "");
 	snprintf(out->artist, sizeof(out->artist), "%s", artist ? artist : "");
 }
 
-static bool host_queue_item(int index, browserremote_item_t *out, void *user)
-{
+static bool host_queue_item(int index, browserremote_item_t *out, void *user) {
 	(void)user;
 	char path[BR_PATH_LEN];
 	if (!playlist_path_at(index, path, sizeof(path))) {
@@ -102,8 +96,7 @@ typedef struct {
 	browserremote_item_t *out;
 } walk_t;
 
-static bool take_row(const char *name, const char *path, const char *artist, void *user)
-{
+static bool take_row(const char *name, const char *path, const char *artist, void *user) {
 	walk_t *w = user;
 	if (w->delivered >= w->count) {
 		return false;
@@ -117,8 +110,7 @@ static bool take_row(const char *name, const char *path, const char *artist, voi
 	return true;
 }
 
-static void search_row(library_search_type_t type, const char *name, const char *path, void *user)
-{
+static void search_row(library_search_type_t type, const char *name, const char *path, void *user) {
 	(void)type;
 	walk_t *w = user;
 	if (w->delivered >= w->count) {
@@ -132,8 +124,7 @@ static void search_row(library_search_type_t type, const char *name, const char 
 	w->delivered++;
 }
 
-static int host_library(const char *query, int offset, int count, browserremote_item_t *out, int max, void *user)
-{
+static int host_library(const char *query, int offset, int count, browserremote_item_t *out, int max, void *user) {
 	(void)user;
 	if (count > max) {
 		count = max;
@@ -153,40 +144,46 @@ static int host_library(const char *query, int offset, int count, browserremote_
 	return w.delivered;
 }
 
-static bool host_fav_contains(const char *path, void *user)
-{
+static bool host_fav_contains(const char *path, void *user) {
 	(void)user;
 	return path[0] ? library_fav_contains(path) : false;
 }
 
-static bool host_fav_toggle(const char *path, const char *title, const char *artist, void *user)
-{
+static bool host_fav_toggle(const char *path, const char *title, const char *artist, void *user) {
 	(void)user;
 	return library_fav_toggle(path, title, artist);
 }
 
-static void host_play_pause(void *user) { (void)user; device_state_toggle_play_pause(); }
-static void host_next(void *user) { (void)user; device_state_next(NULL, 0); }
-static void host_prev(void *user) { (void)user; device_state_prev(NULL, 0); }
-static void host_seek(double seconds, void *user)
-{
+static void host_play_pause(void *user) {
+	(void)user;
+	device_state_toggle_play_pause();
+}
+static void host_next(void *user) {
+	(void)user;
+	device_state_next(NULL, 0);
+}
+static void host_prev(void *user) {
+	(void)user;
+	device_state_prev(NULL, 0);
+}
+static void host_seek(double seconds, void *user) {
 	(void)user;
 	device_state_seek(seconds);
 }
-static void host_volume(int percent, void *user)
-{
+static void host_volume(int percent, void *user) {
 	(void)user;
 	int want = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
 	device_state_change_volume_percent(want - device_state_get_volume_percent());
 }
-static void host_mode(void *user) { (void)user; playlist_cycle_mode(); }
-static void host_play_path(const char *path, void *user)
-{
+static void host_mode(void *user) {
+	(void)user;
+	playlist_cycle_mode();
+}
+static void host_play_path(const char *path, void *user) {
 	(void)user;
 	device_state_play_file(path);
 }
-static void host_play_index(int index, void *user)
-{
+static void host_play_index(int index, void *user) {
 	(void)user;
 	device_state_play_queue_index(index);
 }
@@ -212,8 +209,7 @@ static const browserremote_ops_t g_ops = {
 // Small parsing helpers
 // ---------------------------------------------------------------------------
 
-static bool cookie_value(const char *cookies, const char *name, char *out, size_t out_size)
-{
+static bool cookie_value(const char *cookies, const char *name, char *out, size_t out_size) {
 	out[0] = '\0';
 	if (cookies == NULL) {
 		return false;
@@ -243,8 +239,7 @@ static bool cookie_value(const char *cookies, const char *name, char *out, size_
 	return false;
 }
 
-static int hex_val(char c)
-{
+static int hex_val(char c) {
 	if (c >= '0' && c <= '9') {
 		return c - '0';
 	}
@@ -257,8 +252,7 @@ static int hex_val(char c)
 	return -1;
 }
 
-static void url_decode(const char *in, char *out, size_t out_size)
-{
+static void url_decode(const char *in, char *out, size_t out_size) {
 	size_t i = 0;
 	while (*in != '\0' && i + 1 < out_size) {
 		if (*in == '%' && hex_val(in[1]) >= 0 && hex_val(in[2]) >= 0) {
@@ -274,16 +268,14 @@ static void url_decode(const char *in, char *out, size_t out_size)
 	out[i] = '\0';
 }
 
-static const char *skip_ws(const char *p)
-{
+static const char *skip_ws(const char *p) {
 	while (*p == ' ' || *p == '\t') {
 		p++;
 	}
 	return p;
 }
 
-static bool json_string(const char *json, const char *key, char *out, size_t out_size)
-{
+static bool json_string(const char *json, const char *key, char *out, size_t out_size) {
 	out[0] = '\0';
 	char needle[64];
 	snprintf(needle, sizeof(needle), "\"%s\"", key);
@@ -327,8 +319,7 @@ static bool json_string(const char *json, const char *key, char *out, size_t out
 	return *p == '"';
 }
 
-static bool json_number(const char *json, const char *key, double *out)
-{
+static bool json_number(const char *json, const char *key, double *out) {
 	char needle[64];
 	snprintf(needle, sizeof(needle), "\"%s\"", key);
 	const char *p = strstr(json, needle);
@@ -353,8 +344,7 @@ static bool json_number(const char *json, const char *key, double *out)
 // HTTP responses
 // ---------------------------------------------------------------------------
 
-static void send_all(int fd, const char *data, size_t len)
-{
+static void send_all(int fd, const char *data, size_t len) {
 	while (len > 0) {
 		ssize_t n = send(fd, data, len, 0);
 		if (n <= 0) {
@@ -365,9 +355,7 @@ static void send_all(int fd, const char *data, size_t len)
 	}
 }
 
-static void reply(int fd, int code, const char *status, const char *type, const char *body,
-				  const char *extra_headers)
-{
+static void reply(int fd, int code, const char *status, const char *type, const char *body, const char *extra_headers) {
 	char headers[1024];
 	int n = snprintf(headers, sizeof(headers),
 					 "HTTP/1.1 %d %s\r\n"
@@ -384,28 +372,17 @@ static void reply(int fd, int code, const char *status, const char *type, const 
 	send_all(fd, body, strlen(body));
 }
 
-static void reply_json(int fd, int code, const char *status, const char *body, const char *extra_headers)
-{
-	reply(fd, code, status, "application/json", body, extra_headers);
-}
+static void reply_json(int fd, int code, const char *status, const char *body, const char *extra_headers) { reply(fd, code, status, "application/json", body, extra_headers); }
 
-static void browser_cookie(const char *browser_id, char *out, size_t out_size)
-{
-	snprintf(out, out_size, "Set-Cookie: br_browser=%s; Path=/; SameSite=Strict\r\n", browser_id);
-}
+static void browser_cookie(const char *browser_id, char *out, size_t out_size) { snprintf(out, out_size, "Set-Cookie: br_browser=%s; Path=/; SameSite=Strict\r\n", browser_id); }
 
-static void new_browser_id(char *out, size_t out_size)
-{
-	snprintf(out, out_size, "%08llx%08llx", (unsigned long long)time(NULL),
-			 (unsigned long long)(uintptr_t)out ^ (unsigned long long)pthread_self());
-}
+static void new_browser_id(char *out, size_t out_size) { snprintf(out, out_size, "%08llx%08llx", (unsigned long long)time(NULL), (unsigned long long)(uintptr_t)out ^ (unsigned long long)pthread_self()); }
 
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
 
-static void do_challenge(int fd, const char *browser_id, char *cookie_header, size_t cookie_size)
-{
+static void do_challenge(int fd, const char *browser_id, char *cookie_header, size_t cookie_size) {
 	pthread_mutex_lock(&g_lock);
 	if (!browserremote_has_pin(&g_ctx)) {
 		pthread_mutex_unlock(&g_lock);
@@ -421,8 +398,7 @@ static void do_challenge(int fd, const char *browser_id, char *cookie_header, si
 	reply_json(fd, 200, "OK", body, cookie_header);
 }
 
-static void do_login(int fd, const char *browser_id, const char *body, char *cookie_header, size_t cookie_size)
-{
+static void do_login(int fd, const char *browser_id, const char *body, char *cookie_header, size_t cookie_size) {
 	char nonce[BR_NONCE_LEN];
 	char pin[BR_PIN_MAX + 8];
 	if (!json_string(body, "nonce", nonce, sizeof(nonce)) || !json_string(body, "pin", pin, sizeof(pin))) {
@@ -440,15 +416,13 @@ static void do_login(int fd, const char *browser_id, const char *body, char *coo
 	}
 
 	char set_session[256];
-	snprintf(set_session, sizeof(set_session),
-			 "Set-Cookie: br_session=%s; Path=/; SameSite=Strict; HttpOnly\r\n", token);
+	snprintf(set_session, sizeof(set_session), "Set-Cookie: br_session=%s; Path=/; SameSite=Strict; HttpOnly\r\n", token);
 	char headers[512];
 	snprintf(headers, sizeof(headers), "%s%s", cookie_header, set_session);
 	reply_json(fd, 200, "OK", "{\"ok\":true}", headers);
 }
 
-static bool command_from_control(const char *body, browserremote_cmd_t *cmd)
-{
+static bool command_from_control(const char *body, browserremote_cmd_t *cmd) {
 	char name[32];
 	if (!json_string(body, "command", name, sizeof(name))) {
 		return false;
@@ -496,8 +470,7 @@ static bool command_from_control(const char *body, browserremote_cmd_t *cmd)
 	return true;
 }
 
-static void query_param(const char *query, const char *key, char *out, size_t out_size)
-{
+static void query_param(const char *query, const char *key, char *out, size_t out_size) {
 	out[0] = '\0';
 	if (query == NULL) {
 		return;
@@ -529,8 +502,7 @@ static void query_param(const char *query, const char *key, char *out, size_t ou
 	}
 }
 
-static void do_command(int fd, browserremote_cmd_t *cmd)
-{
+static void do_command(int fd, browserremote_cmd_t *cmd) {
 	char body[RESP_MAX];
 	bool ok;
 	pthread_mutex_lock(&g_lock);
@@ -543,8 +515,7 @@ static void do_command(int fd, browserremote_cmd_t *cmd)
 	reply_json(fd, 200, "OK", body, NULL);
 }
 
-static void handle_request(int fd, char *request, size_t length)
-{
+static void handle_request(int fd, char *request, size_t length) {
 	request[length] = '\0';
 
 	char *line_end = strstr(request, "\r\n");
@@ -623,8 +594,7 @@ static void handle_request(int fd, char *request, size_t length)
 		pthread_mutex_lock(&g_lock);
 		browserremote_logout(&g_ctx, session);
 		pthread_mutex_unlock(&g_lock);
-		reply_json(fd, 200, "OK", "{\"ok\":true}",
-				   "Set-Cookie: br_session=; Path=/; Max-Age=0; HttpOnly\r\n");
+		reply_json(fd, 200, "OK", "{\"ok\":true}", "Set-Cookie: br_session=; Path=/; Max-Age=0; HttpOnly\r\n");
 		return;
 	}
 
@@ -658,8 +628,7 @@ static void handle_request(int fd, char *request, size_t length)
 // Server thread and lifecycle
 // ---------------------------------------------------------------------------
 
-static void *server_thread(void *arg)
-{
+static void *server_thread(void *arg) {
 	(void)arg;
 	int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (listen_fd < 0) {
@@ -729,8 +698,7 @@ static void *server_thread(void *arg)
 	return NULL;
 }
 
-void browserremote_http_init(void)
-{
+void browserremote_http_init(void) {
 	memset(&g_ctx, 0, sizeof(g_ctx));
 	browserremote_init(&g_ctx, &g_ops);
 
@@ -740,8 +708,7 @@ void browserremote_http_init(void)
 	browserremote_touch(&g_ctx, time(NULL));
 }
 
-bool browserremote_http_has_pin(void)
-{
+bool browserremote_http_has_pin(void) {
 	bool has;
 	pthread_mutex_lock(&g_lock);
 	has = browserremote_has_pin(&g_ctx);
@@ -749,8 +716,7 @@ bool browserremote_http_has_pin(void)
 	return has;
 }
 
-void browserremote_http_set_pin(const char *pin)
-{
+void browserremote_http_set_pin(const char *pin) {
 	pthread_mutex_lock(&g_lock);
 	browserremote_set_pin(&g_ctx, pin);
 	config_set("remote", "pin_hash", browserremote_pin_hash(&g_ctx));
@@ -760,8 +726,7 @@ void browserremote_http_set_pin(const char *pin)
 
 bool browserremote_http_get_enabled(void) { return g_enabled; }
 
-void browserremote_http_set_enabled(bool on)
-{
+void browserremote_http_set_enabled(bool on) {
 	g_enabled = on;
 	config_set_bool("remote", "enabled", on);
 	config_save();
@@ -774,8 +739,7 @@ void browserremote_http_set_enabled(bool on)
 
 bool browserremote_http_running(void) { return g_running; }
 
-bool browserremote_http_start(void)
-{
+bool browserremote_http_start(void) {
 	if (g_running) {
 		browserremote_touch(&g_ctx, time(NULL));
 		return true;
@@ -790,8 +754,7 @@ bool browserremote_http_start(void)
 	return true;
 }
 
-void browserremote_http_stop(void)
-{
+void browserremote_http_stop(void) {
 	if (!g_running) {
 		return;
 	}
@@ -803,8 +766,7 @@ void browserremote_http_stop(void)
 	g_running = false;
 }
 
-void browserremote_http_watchdog(void)
-{
+void browserremote_http_watchdog(void) {
 	bool idle = false;
 	time_t now = time(NULL);
 	pthread_mutex_lock(&g_lock);
@@ -818,8 +780,7 @@ void browserremote_http_watchdog(void)
 	}
 }
 
-void browserremote_http_url(char *out, int size)
-{
+void browserremote_http_url(char *out, int size) {
 	char address[128];
 	if (!wifi_interface_address(address, sizeof(address)) || address[0] == '\0') {
 		out[0] = '\0';

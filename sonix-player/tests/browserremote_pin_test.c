@@ -16,16 +16,14 @@
 
 static int failures;
 
-static void check(int condition, const char *what)
-{
+static void check(int condition, const char *what) {
 	if (!condition) {
 		printf("FAIL: %s\n", what);
 		failures++;
 	}
 }
 
-static void check_str(const char *got, const char *want, const char *what)
-{
+static void check_str(const char *got, const char *want, const char *what) {
 	if (!got || strcmp(got, want) != 0) {
 		printf("FAIL: %s: got \"%s\", wanted \"%s\"\n", what, got ? got : "(null)", want ? want : "(null)");
 		failures++;
@@ -35,8 +33,7 @@ static void check_str(const char *got, const char *want, const char *what)
 /* No player access is needed to log in, so the ops table stays empty. */
 static const browserremote_ops_t no_ops = {0};
 
-static void test_pin_storage(void)
-{
+static void test_pin_storage(void) {
 	browserremote_ctx_t ctx;
 	browserremote_init(&ctx, &no_ops);
 
@@ -61,8 +58,7 @@ static void test_pin_storage(void)
 	check(!browserremote_verify_pin(&restored, "0000"), "a restored hash still refuses a wrong PIN");
 }
 
-static void test_challenge_and_login(void)
-{
+static void test_challenge_and_login(void) {
 	browserremote_ctx_t ctx;
 	browserremote_init(&ctx, &no_ops);
 	browserremote_set_pin(&ctx, "2468");
@@ -73,26 +69,21 @@ static void test_challenge_and_login(void)
 	check_str(nonce, nonce, "nonce is stable for the caller");
 
 	char token[BR_TOKEN_LEN];
-	check(!browserremote_login(&ctx, "browser-A", "wrong-nonce", "2468", token, sizeof(token), now),
-		  "login with an unknown nonce is refused");
-	check(!browserremote_login(&ctx, "browser-A", nonce, "0000", token, sizeof(token), now),
-		  "login with a wrong PIN is refused");
+	check(!browserremote_login(&ctx, "browser-A", "wrong-nonce", "2468", token, sizeof(token), now), "login with an unknown nonce is refused");
+	check(!browserremote_login(&ctx, "browser-A", nonce, "0000", token, sizeof(token), now), "login with a wrong PIN is refused");
 
 	/* The failed attempt above must not consume the nonce: typing a PIN wrong
 	 * once has to be recoverable from the same browser page. */
-	check(browserremote_login(&ctx, "browser-A", nonce, "2468", token, sizeof(token), now),
-		  "login with the right nonce and PIN succeeds");
+	check(browserremote_login(&ctx, "browser-A", nonce, "2468", token, sizeof(token), now), "login with the right nonce and PIN succeeds");
 	check(token[0], "a successful login returns a token");
 	check(browserremote_session_valid(&ctx, "browser-A", token, now), "the token is valid for its browser");
 	check(!browserremote_session_valid(&ctx, "browser-B", token, now), "the token is refused from another browser");
 	check(!browserremote_session_valid(&ctx, "browser-A", "not-a-token", now), "an unknown token is refused");
 
-	check(!browserremote_login(&ctx, "browser-A", nonce, "2468", token, sizeof(token), now),
-		  "a nonce cannot be reused");
+	check(!browserremote_login(&ctx, "browser-A", nonce, "2468", token, sizeof(token), now), "a nonce cannot be reused");
 }
 
-static void test_rechallenge_and_logout(void)
-{
+static void test_rechallenge_and_logout(void) {
 	browserremote_ctx_t ctx;
 	browserremote_init(&ctx, &no_ops);
 	browserremote_set_pin(&ctx, "1111");
@@ -105,17 +96,14 @@ static void test_rechallenge_and_logout(void)
 	check(second[0] && strcmp(first, second) != 0, "a new challenge issues a new nonce");
 
 	char token[BR_TOKEN_LEN];
-	check(!browserremote_login(&ctx, "browser-A", first, "1111", token, sizeof(token), now + 1),
-		  "an outdated nonce is refused");
-	check(browserremote_login(&ctx, "browser-A", second, "1111", token, sizeof(token), now + 1),
-		  "the newest nonce still works");
+	check(!browserremote_login(&ctx, "browser-A", first, "1111", token, sizeof(token), now + 1), "an outdated nonce is refused");
+	check(browserremote_login(&ctx, "browser-A", second, "1111", token, sizeof(token), now + 1), "the newest nonce still works");
 
 	browserremote_logout(&ctx, token);
 	check(!browserremote_session_valid(&ctx, "browser-A", token, now + 1), "logout invalidates the token");
 }
 
-static void test_expiry(void)
-{
+static void test_expiry(void) {
 	browserremote_ctx_t ctx;
 	browserremote_init(&ctx, &no_ops);
 	browserremote_set_pin(&ctx, "1234");
@@ -123,20 +111,15 @@ static void test_expiry(void)
 	time_t now = 3000;
 	const char *nonce = browserremote_challenge(&ctx, "browser-A", now);
 	char token[BR_TOKEN_LEN];
-	check(browserremote_login(&ctx, "browser-A", nonce, "1234", token, sizeof(token), now),
-		  "login succeeds before the challenge expires");
-	check(browserremote_session_valid(&ctx, "browser-A", token, now + BR_SESSION_TTL - 1),
-		  "the session is valid just before its TTL");
-	check(!browserremote_session_valid(&ctx, "browser-A", token, now + BR_SESSION_TTL),
-		  "the session is refused at its TTL");
+	check(browserremote_login(&ctx, "browser-A", nonce, "1234", token, sizeof(token), now), "login succeeds before the challenge expires");
+	check(browserremote_session_valid(&ctx, "browser-A", token, now + BR_SESSION_TTL - 1), "the session is valid just before its TTL");
+	check(!browserremote_session_valid(&ctx, "browser-A", token, now + BR_SESSION_TTL), "the session is refused at its TTL");
 
 	const char *old = browserremote_challenge(&ctx, "browser-A", now);
-	check(!browserremote_login(&ctx, "browser-A", old, "1234", token, sizeof(token), now + BR_CHALLENGE_TTL),
-		  "an expired challenge is refused");
+	check(!browserremote_login(&ctx, "browser-A", old, "1234", token, sizeof(token), now + BR_CHALLENGE_TTL), "an expired challenge is refused");
 }
 
-int main(void)
-{
+int main(void) {
 	test_pin_storage();
 	test_challenge_and_login();
 	test_rechallenge_and_logout();

@@ -14,8 +14,7 @@
 
 static int failures;
 
-static void check(int condition, const char *what)
-{
+static void check(int condition, const char *what) {
 	if (!condition) {
 		printf("FAIL: %s\n", what);
 		failures++;
@@ -44,22 +43,19 @@ typedef struct {
 	int last_index;
 } fake_t;
 
-static void f_state(browserremote_state_t *out, void *user)
-{
+static void f_state(browserremote_state_t *out, void *user) {
 	fake_t *f = user;
 	f->state_calls++;
 	*out = f->state;
 }
 
-static int f_queue_count(void *user)
-{
+static int f_queue_count(void *user) {
 	fake_t *f = user;
 	f->queue_count_calls++;
 	return f->state.queue_count;
 }
 
-static bool f_queue_item(int index, browserremote_item_t *out, void *user)
-{
+static bool f_queue_item(int index, browserremote_item_t *out, void *user) {
 	fake_t *f = user;
 	f->queue_item_calls++;
 	if (index < 0 || index >= f->state.queue_count)
@@ -70,8 +66,7 @@ static bool f_queue_item(int index, browserremote_item_t *out, void *user)
 	return true;
 }
 
-static int f_library(const char *query, int offset, int count, browserremote_item_t *out, int max, void *user)
-{
+static int f_library(const char *query, int offset, int count, browserremote_item_t *out, int max, void *user) {
 	fake_t *f = user;
 	f->library_calls++;
 	(void)query;
@@ -85,16 +80,14 @@ static int f_library(const char *query, int offset, int count, browserremote_ite
 	return n;
 }
 
-static bool f_fav_contains(const char *path, void *user)
-{
+static bool f_fav_contains(const char *path, void *user) {
 	fake_t *f = user;
 	f->fav_contains_calls++;
 	(void)path;
 	return f->state.favourite;
 }
 
-static bool f_fav_toggle(const char *path, const char *title, const char *artist, void *user)
-{
+static bool f_fav_toggle(const char *path, const char *title, const char *artist, void *user) {
 	fake_t *f = user;
 	f->fav_toggle_calls++;
 	snprintf(f->last_path, sizeof(f->last_path), "%s", path);
@@ -106,27 +99,23 @@ static bool f_fav_toggle(const char *path, const char *title, const char *artist
 static void f_play_pause(void *user) { ((fake_t *)user)->play_pause_calls++; }
 static void f_next(void *user) { ((fake_t *)user)->next_calls++; }
 static void f_prev(void *user) { ((fake_t *)user)->prev_calls++; }
-static void f_seek(double seconds, void *user)
-{
+static void f_seek(double seconds, void *user) {
 	fake_t *f = user;
 	f->seek_calls++;
 	f->last_seek = seconds;
 }
-static void f_volume(int percent, void *user)
-{
+static void f_volume(int percent, void *user) {
 	fake_t *f = user;
 	f->volume_calls++;
 	f->last_volume = percent;
 }
 static void f_mode(void *user) { ((fake_t *)user)->mode_calls++; }
-static void f_play_path(const char *path, void *user)
-{
+static void f_play_path(const char *path, void *user) {
 	fake_t *f = user;
 	f->play_path_calls++;
 	snprintf(f->last_path, sizeof(f->last_path), "%s", path);
 }
-static void f_play_index(int index, void *user)
-{
+static void f_play_index(int index, void *user) {
 	fake_t *f = user;
 	f->play_index_calls++;
 	f->last_index = index;
@@ -149,14 +138,9 @@ static browserremote_ops_t ops = {
 	.play_index = f_play_index,
 };
 
-static int control_calls(const fake_t *f)
-{
-	return f->fav_toggle_calls + f->play_pause_calls + f->next_calls + f->prev_calls + f->seek_calls +
-		   f->volume_calls + f->mode_calls + f->play_path_calls + f->play_index_calls;
-}
+static int control_calls(const fake_t *f) { return f->fav_toggle_calls + f->play_pause_calls + f->next_calls + f->prev_calls + f->seek_calls + f->volume_calls + f->mode_calls + f->play_path_calls + f->play_index_calls; }
 
-static void setup(browserremote_ctx_t *ctx, fake_t *f)
-{
+static void setup(browserremote_ctx_t *ctx, fake_t *f) {
 	memset(f, 0, sizeof(*f));
 	f->state.status = BR_STATUS_PLAYING;
 	f->state.volume = 42;
@@ -174,16 +158,14 @@ static void setup(browserremote_ctx_t *ctx, fake_t *f)
 	browserremote_init(ctx, &ops);
 }
 
-static void expect_read_only(browserremote_ctx_t *ctx, fake_t *f, browserremote_command_t cmd, const char *what)
-{
+static void expect_read_only(browserremote_ctx_t *ctx, fake_t *f, browserremote_command_t cmd, const char *what) {
 	char out[4096];
 	check(browserremote_execute(ctx, &(browserremote_cmd_t){.command = cmd}, out, sizeof(out)), what);
 	check(out[0] == '{', "a read command answers with a JSON object");
 	check(control_calls(f) == 0, "a read command never calls a playback function");
 }
 
-static void test_reads_leave_playback_alone(void)
-{
+static void test_reads_leave_playback_alone(void) {
 	browserremote_ctx_t ctx;
 	fake_t f;
 	setup(&ctx, &f);
@@ -206,12 +188,10 @@ static void test_reads_leave_playback_alone(void)
 
 	/* The snapshot the remote reports is still the one the fake owns: no read
 	 * request changed a single playback field. */
-	check(f.state.status == BR_STATUS_PLAYING && f.state.volume == 42 && f.state.position == 12.5,
-		  "reading state leaves playback fields untouched");
+	check(f.state.status == BR_STATUS_PLAYING && f.state.volume == 42 && f.state.position == 12.5, "reading state leaves playback fields untouched");
 }
 
-static void test_control_calls_exactly_one_op(void)
-{
+static void test_control_calls_exactly_one_op(void) {
 	browserremote_ctx_t ctx;
 	fake_t f;
 	char out[256];
@@ -259,8 +239,7 @@ static void test_control_calls_exactly_one_op(void)
 	cmd.command = BR_CMD_PLAY_PATH;
 	strcpy(cmd.path, "/music/track-2.flac");
 	browserremote_execute(&ctx, &cmd, out, sizeof(out));
-	check(f.play_path_calls == 1 && control_calls(&f) == 1 && strcmp(f.last_path, "/music/track-2.flac") == 0,
-		  "play by path calls exactly one op");
+	check(f.play_path_calls == 1 && control_calls(&f) == 1 && strcmp(f.last_path, "/music/track-2.flac") == 0, "play by path calls exactly one op");
 
 	setup(&ctx, &f);
 	cmd.command = BR_CMD_PLAY_INDEX;
@@ -269,17 +248,14 @@ static void test_control_calls_exactly_one_op(void)
 	check(f.play_index_calls == 1 && control_calls(&f) == 1 && f.last_index == 2, "play by index calls exactly one op");
 }
 
-static void test_no_ops_table(void)
-{
+static void test_no_ops_table(void) {
 	browserremote_ctx_t ctx;
 	char out[128];
 	browserremote_init(&ctx, NULL);
-	check(!browserremote_execute(&ctx, &(browserremote_cmd_t){.command = BR_CMD_STATUS}, out, sizeof(out)),
-		  "a command with no ops table fails");
+	check(!browserremote_execute(&ctx, &(browserremote_cmd_t){.command = BR_CMD_STATUS}, out, sizeof(out)), "a command with no ops table fails");
 }
 
-int main(void)
-{
+int main(void) {
 	test_reads_leave_playback_alone();
 	test_control_calls_exactly_one_op();
 	test_no_ops_table();
