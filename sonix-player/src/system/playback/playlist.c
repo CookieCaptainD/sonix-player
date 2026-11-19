@@ -225,7 +225,7 @@ bool playlist_is_junk_name(const char *name) {
 bool playlist_is_playable_file(const char *name) {
 	// .m4b and .m4a joined the list when AAC did: an audiobook is a file like
 	// any other in the browser, and a folder of them has to queue.
-	static const char *const playable_exts[] = {".wav",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
+	static const char *const playable_exts[] = {".wav",  ".rf64", ".w64",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
 												 ".alac", ".aac",  ".dsf",  ".dff", ".aif", ".aiff",
 												 ".aifc", ".caf",  ".opus", ".wv",   ".ape", ".iso"};
 

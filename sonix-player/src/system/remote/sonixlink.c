@@ -2130,7 +2130,8 @@ typedef struct {
 } browse_list_t;
 
 static bool browse_playable(const char *name) {
-	static const char *const exts[] = {".wav", ".mp3", ".flac", ".ogg", ".m4b", ".m4a", ".alac", ".aac", ".dsf",
+	static const char *const exts[] = {".wav", ".rf64", ".w64", ".mp3", ".flac", ".ogg", ".m4b", ".m4a", ".alac",
+									   ".aac", ".dsf",
 									   ".dff", ".aif", ".aiff", ".aifc", ".caf", ".opus", ".wv",	".ape", ".iso"};
 	if (playlist_is_junk_name(name)) {
 		return false;
