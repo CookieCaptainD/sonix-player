@@ -538,7 +538,7 @@ static bool is_playable_file(const char *name) {
 	// -- opening every container to find out would be one extra read per row
 	// of every folder. An audio-only .mp4 is still found by the library scan,
 	// which opens the container anyway (see is_video_file in library.c).
-	static const char *const playable_exts[] = {".wav",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
+	static const char *const playable_exts[] = {".wav",  ".rf64", ".w64",  ".mp3",  ".flac", ".ogg", ".m4b", ".m4a",
 												 ".alac", ".aac",  ".dsf",  ".dff", ".aif", ".aiff",
 												 ".aifc", ".caf",  ".opus", ".wv",   ".ape", ".iso"};
 

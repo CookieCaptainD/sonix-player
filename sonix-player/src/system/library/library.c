@@ -21,6 +21,7 @@
 #include "src/system/core/config.h"
 #include "src/system/db/sqlite3.h"
 #include "src/system/library/cue.h"
+#include "src/system/audio/wavparse.h"
 #include "src/system/decode/sacd_iso.h"
 #include "src/system/decode/mp4.h"
 #include "src/system/decode/apedec.h"
@@ -3384,7 +3385,7 @@ static void namelist_free(namelist_t *l) {
 // named .m4a: that is indexed, and still inspected (see is_video_file) because
 // the extension alone proves nothing.
 static bool is_playable(const char *name) {
-	static const char *const EXTENSIONS[] = {".wav",  ".mp3", ".flac", ".ogg",  ".dsf",  ".dff",
+	static const char *const EXTENSIONS[] = {".wav",  ".rf64", ".w64", ".mp3", ".flac", ".ogg", ".dsf",  ".dff",
 											 ".aif",  ".aiff", ".aifc", ".caf", ".opus", ".wv",
 											 ".m4a",  ".alac", ".aac",  ".ape",  ".cue", ".iso"};
 
@@ -3513,6 +3514,7 @@ static void probe_stream_format(const char *path, const char *filename, int *rat
 
 	bool flac = has_extension(filename, ".flac");
 	bool wav = has_extension(filename, ".wav");
+	bool wav_big = has_extension(filename, ".rf64") || has_extension(filename, ".w64");
 	bool dsf = has_extension(filename, ".dsf");
 
 	if (has_extension(filename, ".ape")) {
@@ -3542,6 +3544,18 @@ static void probe_stream_format(const char *path, const char *filename, int *rat
 				}
 			}
 			mp4_close(m);
+		}
+		return;
+	}
+	if (wav_big) {
+		// The header shapes differ from a RIFF WAV, so the same parser the
+		// playback path uses reads the rate and depth here too.
+		wav_info_t info;
+		FILE *wf = NULL;
+		if (wav_parse(path, &info, &wf) == WAV_OK) {
+			*rate = info.sample_rate;
+			*bits = info.bits_per_sample;
+			fclose(wf);
 		}
 		return;
 	}
