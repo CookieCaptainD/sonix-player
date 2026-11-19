@@ -69,6 +69,7 @@
 #include "src/system/core/utils.h"
 #include "src/system/net/webcgi.h"
 #include "src/system/net/wifi.h"
+#include "src/system/net/browserremote_http.h"
 
 
 static volatile sig_atomic_t running = 1;
@@ -1894,6 +1895,7 @@ int main(int argc, char **argv) {
 	bool first_start = stat(config_file, &config_st) != 0;
 #endif
 	config_init(config_file);
+	browserremote_http_init();
 
 	// A start by the cable is the charging screen alone, until the power key is
 	// held: before anything else opens the display, the keys or the audio.
