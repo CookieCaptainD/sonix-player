@@ -98,9 +98,11 @@ static void test_rechallenge_and_logout(void)
 	browserremote_set_pin(&ctx, "1111");
 
 	time_t now = 2000;
-	const char *first = browserremote_challenge(&ctx, "browser-A", now);
-	const char *second = browserremote_challenge(&ctx, "browser-A", now + 1);
-	check(second && second[0] && strcmp(first, second) != 0, "a new challenge issues a new nonce");
+	char first[BR_NONCE_LEN];
+	char second[BR_NONCE_LEN];
+	snprintf(first, sizeof(first), "%s", browserremote_challenge(&ctx, "browser-A", now));
+	snprintf(second, sizeof(second), "%s", browserremote_challenge(&ctx, "browser-A", now + 1));
+	check(second[0] && strcmp(first, second) != 0, "a new challenge issues a new nonce");
 
 	char token[BR_TOKEN_LEN];
 	check(!browserremote_login(&ctx, "browser-A", first, "1111", token, sizeof(token), now + 1),

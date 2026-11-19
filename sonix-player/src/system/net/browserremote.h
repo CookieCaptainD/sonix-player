@@ -132,7 +132,9 @@ void browserremote_restore_pin_hash(browserremote_ctx_t *ctx, const char *hash);
 
 // A browser asks for a nonce once, then sends it back with the PIN. The nonce
 // is single use and the session it creates carries the browser id: the token
-// is useless from a different browser.
+// is useless from a different browser. The pointer returned by challenge()
+// points into the context and stays valid until the next challenge; callers
+// that need to keep it must copy it.
 const char *browserremote_challenge(browserremote_ctx_t *ctx, const char *browser_id, time_t now);
 bool browserremote_login(browserremote_ctx_t *ctx, const char *browser_id, const char *nonce, const char *pin,
 						 char *token_out, size_t token_size, time_t now);
