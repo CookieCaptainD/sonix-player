@@ -25,6 +25,7 @@
 #include "src/system/core/config.h"
 #include "src/system/audio/headset.h"
 #include "src/system/core/lang.h"
+#include "src/system/device/dimlogic.h"
 #include "src/system/device/power.h"
 #include "src/system/device/screenshot.h"
 #include "src/system/device/system.h"
@@ -60,6 +61,10 @@ static lv_obj_t *brightness_slider;
 static lv_obj_t *brightness_value;
 static lv_obj_t *screen_off_value;
 static lv_obj_t *screen_off_slider;
+static lv_obj_t *dim_card;
+static lv_obj_t *dim_switch;
+static lv_obj_t *dim_value;
+static lv_obj_t *dim_slider;
 static lv_obj_t *doubletap_switch;
 static lv_obj_t *screensaver_switch;
 static lv_obj_t *screensaver_pills;
@@ -167,10 +172,43 @@ static int screen_off_index(void) {
 	return 2; // the 30 second default
 }
 
+// The delay before the screen dims, counted from the same inactivity clock
+// that blanks it. The largest choice that still leaves a visible lead under
+// the current screen-off time is the top of the slider; the rest are hidden
+// rather than offered and then refused.
+static const struct {
+	int seconds;
+	const char *label;
+} DIM_DELAY[] = {
+	{5, "settings_dim_delay_5s"},	{10, "settings_dim_delay_10s"}, {15, "power_15_seconds"},
+	{20, "settings_dim_delay_20s"}, {30, "power_30_seconds"},		{45, "settings_dim_delay_45s"},
+	{60, "power_1_minute"},
+};
+#define DIM_DELAY_COUNT ((int)(sizeof(DIM_DELAY) / sizeof(DIM_DELAY[0])))
+#define DIM_DELAY_DEFAULT 10
+
+static int dim_delay_index(void);
+static int dim_max_index(uint32_t timeout_ms);
+static void dim_refresh(void);
+
 void settings_apply_screen_off(void) {
 	int seconds = SCREEN_OFF[screen_off_index()].seconds;
-	power_set_screen_off_timeout((uint32_t)seconds * 1000);
+	uint32_t timeout_ms = (uint32_t)seconds * 1000;
+	power_set_screen_off_timeout(timeout_ms);
 	power_set_screen_off_enabled(seconds > 0);
+
+	// The dim delay is only useful before a blank, so it is clamped to the
+	// largest offered delay that fits under this timeout. With "never" no
+	// delay fits and the switch is inert, whatever was saved.
+	int index = dim_delay_index();
+	int max = dim_max_index(timeout_ms);
+	if (max >= 0 && index > max) {
+		index = max;
+		config_set_int("power", "dim_delay_seconds", DIM_DELAY[index].seconds);
+		config_save();
+	}
+	bool enabled = config_get_bool("power", "dim_before_timeout", false) && max >= 0;
+	power_set_dim(enabled, (uint32_t)DIM_DELAY[index].seconds * 1000);
 }
 
 static void screen_off_changed_cb(lv_event_t *e) {
@@ -180,6 +218,74 @@ static void screen_off_changed_cb(lv_event_t *e) {
 	config_save();
 	settings_apply_screen_off();
 	lv_label_set_text(screen_off_value, tr(SCREEN_OFF[index].label));
+	// A shorter timeout can push the saved dim delay out of range.
+	dim_refresh();
+}
+
+static int dim_delay_index(void) {
+	int seconds = (int)config_get_int("power", "dim_delay_seconds", DIM_DELAY_DEFAULT);
+	for (int i = 0; i < DIM_DELAY_COUNT; i++) {
+		if (DIM_DELAY[i].seconds == seconds) {
+			return i;
+		}
+	}
+	return 1; // ten seconds, the default
+}
+
+static int dim_max_index(uint32_t timeout_ms) {
+	uint32_t options[DIM_DELAY_COUNT];
+	for (int i = 0; i < DIM_DELAY_COUNT; i++) {
+		options[i] = (uint32_t)DIM_DELAY[i].seconds * 1000;
+	}
+	return dim_option_for_timeout(options, DIM_DELAY_COUNT, timeout_ms);
+}
+
+static void dim_refresh(void) {
+	uint32_t timeout_ms = (uint32_t)SCREEN_OFF[screen_off_index()].seconds * 1000;
+	int max = dim_max_index(timeout_ms);
+	bool enabled = config_get_bool("power", "dim_before_timeout", false);
+
+	if (max < 0) {
+		// No screen-off time, nothing to precede. Say so by greying the card
+		// out rather than leaving a switch that does nothing when tapped.
+		lv_obj_add_state(dim_switch, LV_STATE_DISABLED);
+		lv_obj_remove_state(dim_switch, LV_STATE_CHECKED);
+		lv_obj_set_style_opa(dim_card, LV_OPA_40, 0);
+	} else {
+		lv_obj_remove_state(dim_switch, LV_STATE_DISABLED);
+		lv_obj_set_style_opa(dim_card, LV_OPA_COVER, 0);
+		if (enabled) {
+			lv_obj_add_state(dim_switch, LV_STATE_CHECKED);
+		} else {
+			lv_obj_remove_state(dim_switch, LV_STATE_CHECKED);
+		}
+	}
+
+	int index = dim_delay_index();
+	if (max >= 0 && index > max) {
+		index = max;
+	}
+	lv_slider_set_range(dim_slider, 0, max >= 0 ? max : 0);
+	lv_slider_set_value(dim_slider, index, LV_ANIM_OFF);
+	lv_label_set_text(dim_value, tr(DIM_DELAY[index].label));
+	settingsrow_toggle_slider_expanded(dim_card, enabled && max >= 0);
+}
+
+static void dim_toggled_cb(lv_event_t *e) {
+	(void)e;
+	config_set_bool("power", "dim_before_timeout", lv_obj_has_state(dim_switch, LV_STATE_CHECKED));
+	config_save();
+	settings_apply_screen_off();
+	dim_refresh();
+}
+
+static void dim_delay_changed_cb(lv_event_t *e) {
+	(void)e;
+	int index = (int)lv_slider_get_value(dim_slider);
+	config_set_int("power", "dim_delay_seconds", DIM_DELAY[index].seconds);
+	config_save();
+	settings_apply_screen_off();
+	dim_refresh();
 }
 
 // The dimmest backlight level on the slider: 0 would put the backlight out.
@@ -298,6 +404,19 @@ static void build_screen_page(gui_config_t *cfg) {
 					   screen_off_changed_cb);
 	lv_slider_set_value(screen_off_slider, screen_off_index(), LV_ANIM_OFF);
 	lv_label_set_text(screen_off_value, tr(SCREEN_OFF[screen_off_index()].label));
+
+	// Dim before the blank, on the same card as the standby wait: the switch
+	// says whether, the slider says how long to wait. Its range stops at the
+	// largest delay that still fits under the screen-off time above.
+	dim_card = settingsrow_toggle_slider(container, "settings_dim_before_timeout", DIM_DELAY_COUNT, &dim_switch,
+										 &dim_value, &dim_slider, dim_toggled_cb, dim_delay_changed_cb);
+	lv_obj_t *dim_note = lv_label_create(container);
+	lv_label_set_long_mode(dim_note, LV_LABEL_LONG_WRAP);
+	lv_obj_set_width(dim_note, lv_pct(100));
+	lv_obj_add_style(dim_note, &theme_style_text_dim, 0);
+	lv_obj_set_style_text_font(dim_note, &font_ui_22, 0);
+	lv_label_set_text(dim_note, tr("settings_dim_note"));
+	dim_refresh();
 
 	// Double-tap to wake: the touch controller's gesture mode. With the
 	// screen off, two taps light it back up -- the way the stock player's

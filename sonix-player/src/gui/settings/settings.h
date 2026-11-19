@@ -9,9 +9,10 @@ extern lv_obj_t *settings_screen;
 
 void settings_init(gui_config_t *cfg);
 
-// Hands power.c the screen timeout as it was last left ([power]
-// screen_off_seconds). Call once at startup, after power_init(); the Screen
-// page calls it again whenever the slider moves.
+// Hands power.c the screen timeout and the dim-before-off choice as they were
+// last left ([power] screen_off_seconds, dim_before_timeout, dim_delay_seconds).
+// The delay is clamped under the timeout here. Call once at startup, after
+// power_init(); the Screen page calls it again whenever either slider moves.
 void settings_apply_screen_off(void);
 
 // Shows or hides the developer options entry according to whether it has been
