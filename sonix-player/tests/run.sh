@@ -22,17 +22,19 @@ for mode in dsd14 dsd16 dst dst_shared bad; do
 done
 
 # Task 3: SACD ISO tracks through the DSD output stage (DoP and PCM).
-cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_sacd_test \
+cc -O2 -Wall -Wextra -pthread -Isrc $(pkg-config --cflags wavpack) -o /tmp/dsd_sacd_test \
    tests/dsd_sacd_test.c src/system/decode/dsd.c \
-   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
+   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c \
+   src/system/decode/wavpackdec.c $(pkg-config --libs wavpack)
 /tmp/dsd_sacd_test "$ISO_DIR/dsd14.iso"
 
 # Task 3b: the plain .dsf/.dff containers of the same stage, not an image.
 # This is the regression smoke for the DSD formats the SACD work sits beside.
 python3 tests/make_dsd_fixtures.py "$ISO_DIR"
-cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_regression_test \
+cc -O2 -Wall -Wextra -pthread -Isrc $(pkg-config --cflags wavpack) -o /tmp/dsd_regression_test \
    tests/dsd_regression_test.c src/system/decode/dsd.c \
-   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
+   src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c \
+   src/system/decode/wavpackdec.c $(pkg-config --libs wavpack)
 /tmp/dsd_regression_test "$ISO_DIR/stereo.dsf" "$ISO_DIR/stereo.dff"
 
 # Task 3c: DSD inside a .wv goes to the DoP stage; a PCM .wv stays on the PCM
