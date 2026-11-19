@@ -2224,16 +2224,34 @@ static decoder_t *decoder_open_file(const char *filepath, decode_format_t format
 		dec->total_pcm_frames = opusdec_total_frames(dec->impl.opus);
 		break;
 
-	case DECODE_FORMAT_WAVPACK:
-		dec->impl.wv = wavpackdec_open(filepath);
-		if (!dec->impl.wv) {
+	case DECODE_FORMAT_WAVPACK: {
+		// A .wv can hold PCM or DSD. The name says neither, so the file
+		// decides: DSD goes to the same DoP stage as .dsf and SACD, PCM
+		// stays on this decoder's 32-bit path.
+		wavpackdec_t *wv = wavpackdec_open(filepath);
+		if (!wv) {
 			free(dec);
 			return NULL;
 		}
-		dec->channels = wavpackdec_channels(dec->impl.wv);
-		dec->sample_rate = wavpackdec_sample_rate(dec->impl.wv);
-		dec->total_pcm_frames = wavpackdec_total_frames(dec->impl.wv);
+		if (wavpackdec_is_dsd(wv)) {
+			wavpackdec_close(wv);
+			dec->format = DECODE_FORMAT_DSD;
+			dec->impl.dsd = dsd_open_wavpack(filepath);
+			if (!dec->impl.dsd) {
+				free(dec);
+				return NULL;
+			}
+			dec->channels = dsd_channels(dec->impl.dsd);
+			dec->sample_rate = dsd_output_rate(dec->impl.dsd);
+			dec->total_pcm_frames = dsd_total_frames(dec->impl.dsd);
+		} else {
+			dec->impl.wv = wv;
+			dec->channels = wavpackdec_channels(wv);
+			dec->sample_rate = wavpackdec_sample_rate(wv);
+			dec->total_pcm_frames = wavpackdec_total_frames(wv);
+		}
 		break;
+	}
 
 	case DECODE_FORMAT_APE:
 		dec->impl.ape = apedec_open(filepath);
