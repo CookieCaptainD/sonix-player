@@ -211,6 +211,12 @@ void power_set_auto_off(bool enabled, uint32_t minutes);
 void power_set_screen_off_enabled(bool enabled);
 void power_set_screen_off_timeout(uint32_t ms);
 
+// Dim the panel before the automatic screen-off. delay_ms is the idle time at
+// which the dim starts; it is ignored unless it is shorter than the screen-off
+// timeout. The dim level is the bottom rung of the existing brightness scale.
+// Off, the default, leaves the screen behaviour exactly as it was.
+void power_set_dim(bool enabled, uint32_t delay_ms);
+
 // Suspend-to-RAM after a wait with the screen dark (60 s unless set below),
 // driven by the switch in the Power settings. No effect on the simulator:
 // /sys/power/state does not exist there.
