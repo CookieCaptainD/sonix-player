@@ -42,4 +42,53 @@ static inline int dim_option_for_timeout(const uint32_t *options, int count, uin
 	return best;
 }
 
+// Whether this tick should start a dim. Idle is the panel's own inactivity
+// clock (touch and buttons), so the same measure that blanks the screen drives
+// the dim. A screen that is held on for a job, or already off, is left alone.
+static inline bool dim_should_apply(bool enabled, bool screen_on, bool screen_held, uint32_t effective_delay_ms,
+									uint32_t idle_ms) {
+	return enabled && screen_on && !screen_held && effective_delay_ms > 0 && idle_ms >= effective_delay_ms;
+}
+
+// Whether interaction has ended a dim. Activity drops the same idle clock
+// back below the delay, which is how a touch or a key restores the panel
+// without a separate notification path.
+static inline bool dim_should_cancel(bool active, uint32_t effective_delay_ms, uint32_t idle_ms) {
+	return active && effective_delay_ms > 0 && idle_ms < effective_delay_ms;
+}
+
+// One dim cycle: the level that was on the panel before the dim, so it can be
+// put back when the user returns.
+typedef struct {
+	bool active;
+	long restore_brightness;
+} dim_state_t;
+
+static inline void dim_state_reset(dim_state_t *s) {
+	s->active = false;
+	s->restore_brightness = 0;
+}
+
+// Returns the level to write, or -1 when already dimmed. The on-level is kept
+// as-is: only the backlight output changes, never the configured brightness.
+static inline long dim_state_begin(dim_state_t *s, long on_brightness, long dim_level) {
+	if (s->active) {
+		return -1;
+	}
+	s->active = true;
+	s->restore_brightness = on_brightness;
+	return dim_level;
+}
+
+// Returns the level to restore, or -1 when nothing was dimmed. The state is
+// cleared either way, so a stale level cannot be written on a later wake.
+static inline long dim_state_cancel(dim_state_t *s) {
+	if (!s->active) {
+		return -1;
+	}
+	long restore = s->restore_brightness;
+	dim_state_reset(s);
+	return restore;
+}
+
 #endif // DIMLOGIC_H

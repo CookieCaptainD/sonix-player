@@ -44,8 +44,47 @@ static int timing_tests(void) {
 	return 0;
 }
 
+static int interaction_tests(void) {
+	// The dim starts on the tick the idle clock passes the delay, and only
+	// while the panel is up and nothing is holding it on.
+	EXPECT(dim_should_apply(true, true, false, 5000, 5000));
+	EXPECT(dim_should_apply(true, true, false, 5000, 9000));
+	EXPECT(!dim_should_apply(true, true, false, 5000, 4999));
+	EXPECT(!dim_should_apply(false, true, false, 5000, 5000));
+	EXPECT(!dim_should_apply(true, false, false, 5000, 5000));
+	EXPECT(!dim_should_apply(true, true, true, 5000, 5000));
+	EXPECT(!dim_should_apply(true, true, false, 0, 5000));
+
+	// Any interaction drops the idle clock below the delay and cancels the
+	// dim. A screen that is already off has nothing to restore.
+	EXPECT(dim_should_cancel(true, 5000, 0));
+	EXPECT(dim_should_cancel(true, 5000, 4999));
+	EXPECT(!dim_should_cancel(true, 5000, 5000));
+	EXPECT(!dim_should_cancel(false, 5000, 0));
+	EXPECT(!dim_should_cancel(true, 0, 0));
+
+	// One dim cycle remembers the level it replaced and restores exactly it.
+	dim_state_t s;
+	dim_state_reset(&s);
+	EXPECT(!s.active);
+	EXPECT(dim_state_cancel(&s) == -1);
+
+	EXPECT(dim_state_begin(&s, 70, 1) == 1);
+	EXPECT(s.active);
+	// A second begin while dimmed must not overwrite the saved level.
+	EXPECT(dim_state_begin(&s, 90, 1) == -1);
+	EXPECT(dim_state_cancel(&s) == 70);
+	EXPECT(!s.active);
+	EXPECT(dim_state_cancel(&s) == -1);
+
+	// Starting a new cycle after a restore saves the new on-level.
+	EXPECT(dim_state_begin(&s, 40, 1) == 1);
+	EXPECT(dim_state_cancel(&s) == 40);
+	return 0;
+}
+
 int main(void) {
-	if (timing_tests() != 0) {
+	if (timing_tests() != 0 || interaction_tests() != 0) {
 		return 1;
 	}
 	puts("test_dim: ok");
