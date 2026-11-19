@@ -184,6 +184,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **Dark and light theme**, accent colours, and a **dynamic tint** that colours the whole interface with the accent.
 - **Text size** normal or large, **rounded corners**, battery percentage, and clock on the left, in the centre, on the right or hidden.
 - **Brightness** down to 1%, **screen-off time**, **double tap to wake**, and **rotate the screen** by 180°.
+- **Dim before screen off** - dims the panel to the lowest brightness after a delay, then blanks it. The delay must be shorter than the screen-off time, so the slider offers only delays that fit. A touch or key press restores the brightness.
 - **Screensaver** - shows the cover of what is playing, or pictures from the `Screensaver` folder.
   > Pictures must be JPEG (not progressive), portrait, and no larger than 480x720 on the R3 Pro II or 480x800 on the R1.
 - **Boot logo** - the default one follows your theme and accent colour, or pick your own picture.
