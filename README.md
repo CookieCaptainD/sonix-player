@@ -10,7 +10,7 @@ Everything it can do is in **[FEATURES.md](FEATURES.md)**.
 ## Install
 
 1. Download the firmware for your player from the
-   **[latest release](https://github.com/Jepl4r/sonix-player/releases/latest)**:
+   ~~**[latest release](https://github.com/Jepl4r/sonix-player/releases/latest)**~~:
    `r3proii.upt` for the R3 Pro II, `r1.upt` for the R1. **Never the other
    one**: the update does not check which player it is given.
 2. Charge the player **above 30%**.
