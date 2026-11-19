@@ -2072,7 +2072,8 @@ static void read_wav_metadata(const char *filepath, song_metadata_t *out) {
 		return;
 
 	uint8_t riff_header[12];
-	if (fread(riff_header, 1, 12, f) != 12 || memcmp(riff_header, "RIFF", 4) != 0 ||
+	if (fread(riff_header, 1, 12, f) != 12 ||
+		(memcmp(riff_header, "RIFF", 4) != 0 && memcmp(riff_header, "RF64", 4) != 0) ||
 		memcmp(riff_header + 8, "WAVE", 4) != 0) {
 		fclose(f);
 		return;
@@ -2614,7 +2615,7 @@ void metadata_read(const char *filepath, song_metadata_t *out) {
 			}
 			fclose(f);
 		}
-		if (memcmp(magic, "RIFF", 4) == 0) {
+		if (memcmp(magic, "RIFF", 4) == 0 || memcmp(magic, "RF64", 4) == 0) {
 			read_wav_metadata(filepath, out);
 		} else if (memcmp(magic, "FORM", 4) == 0) {
 			read_aiff_metadata(filepath, out);
