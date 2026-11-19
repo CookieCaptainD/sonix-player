@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "sacd_iso.h"
+#include "wavpackdec.h"
 
 // The container, the bit order, and the two ways out: DoP packing, and the
 // lookup-table filter to PCM (see dsd.h).
@@ -26,7 +27,8 @@
 
 struct dsd_file {
 	int fd;
-	sacd_iso_t *sacd; // when the bytes come from an SACD image, not a file
+	sacd_iso_t *sacd;  // when the bytes come from an SACD image, not a file
+	wavpackdec_t *wv; // when they come from DSD inside a .wv
 
 	int channels;
 	uint32_t rate;	 // the DSD rate
@@ -214,6 +216,27 @@ static bool parse_dff(dsd_file_t *d) {
 static bool fill_channels(dsd_file_t *d) {
 	d->chan_read = 0;
 	d->chan_len = 0;
+
+	// WavPack hands back interleaved bytes, MSB first, one per channel per
+	// sample. De-interleave them the same way as the .dff round robin.
+	if (d->wv) {
+		uint64_t left = d->pos_bytes < d->bytes_per_ch
+					? d->bytes_per_ch - d->pos_bytes
+					: 0;
+		int want = (int)(left < READ_BYTES ? left : READ_BYTES);
+		uint64_t got = wavpackdec_read_dsd(d->wv, (uint64_t)want, d->raw);
+		if (got == 0) {
+			return false;
+		}
+		for (uint64_t i = 0; i < got; i++) {
+			for (int c = 0; c < d->channels; c++) {
+				d->chan[c][i] = d->raw[i * (uint64_t)d->channels + (uint64_t)c];
+			}
+		}
+		d->pos_bytes += got;
+		d->chan_len = (int)got;
+		return true;
+	}
 
 	// The image reader de-interleaves into the per-channel buffers itself,
 	// so this branch has no slab of its own to split.
@@ -591,6 +614,64 @@ dsd_file_t *dsd_open_sacd(const char *path) {
 	return d;
 }
 
+dsd_file_t *dsd_open_wavpack(const char *path) {
+	wavpackdec_t *wv = wavpackdec_open(path);
+	if (!wv || !wavpackdec_is_dsd(wv)) {
+		wavpackdec_close(wv);
+		return NULL;
+	}
+
+	int channels = wavpackdec_channels(wv);
+	uint32_t rate = wavpackdec_dsd_rate(wv);
+	int multiple = (int)(rate / (DSD64_RATE / 64));
+	uint64_t bytes = wavpackdec_total_frames(wv); // one sample is one byte at DSD64 and up
+	if (channels < 1 || channels > MAX_CHANNELS || bytes == 0 ||
+		(multiple != 64 && multiple != 128 && multiple != 256)) {
+		fprintf(stderr, "dsd: %s is DSD at %u Hz with %d ch, not DSD64/128/256\n", path, rate, channels);
+		wavpackdec_close(wv);
+		return NULL;
+	}
+
+	dsd_file_t *d = calloc(1, sizeof(*d));
+	if (!d) {
+		wavpackdec_close(wv);
+		return NULL;
+	}
+	d->fd = -1;
+	d->wv = wv;
+	d->channels = channels;
+	d->rate = rate;
+	d->multiple = multiple;
+	// libwavpack returns DSD bytes MSB first whatever the source container.
+	d->lsb_first = false;
+	// WavPack samples are interleaved, like a .dff, so fill_channels splits
+	// the slab it reads into the per-channel buffers itself.
+	d->planar = false;
+	d->bytes_per_ch = bytes;
+	d->out_rate = (int)(rate / 16);
+	d->total_out = (bytes * 8ull) / (uint64_t)(rate / (uint32_t)d->out_rate);
+
+	d->pcm_capacity = 4096;
+	d->pcm = calloc((size_t)d->pcm_capacity * (size_t)d->channels, sizeof(int32_t));
+	d->raw = malloc((size_t)READ_BYTES * (size_t)d->channels);
+	for (int c = 0; c < d->channels; c++) {
+		d->chan[c] = malloc(READ_BYTES);
+	}
+	if (!d->pcm || !d->raw) {
+		dsd_close(d);
+		return NULL;
+	}
+	for (int c = 0; c < d->channels; c++) {
+		if (!d->chan[c]) {
+			dsd_close(d);
+			return NULL;
+		}
+	}
+
+	printf("dsd: wv DSD%d %u Hz %d ch -> DoP %d Hz\n", d->multiple, d->rate, d->channels, d->out_rate);
+	return d;
+}
+
 dsd_file_t *dsd_open(const char *path) {
 	if (sacd_split_path(path, NULL, 0) > 0 || sacd_is_iso(path)) {
 		return dsd_open_sacd(path);
@@ -663,6 +744,7 @@ void dsd_close(dsd_file_t *d) {
 	}
 	free(d->raw);
 	free(d->pcm);
+	wavpackdec_close(d->wv);
 	sacd_iso_close(d->sacd);
 	if (d->fd >= 0) {
 		close(d->fd);
@@ -715,6 +797,9 @@ bool dsd_seek(dsd_file_t *d, uint64_t frame) {
 		target = d->bytes_per_ch;
 	}
 	target -= target % step;
+	if (d->wv && !wavpackdec_seek_dsd(d->wv, target)) {
+		return false;
+	}
 	if (d->sacd && !sacd_iso_seek(d->sacd, target)) {
 		return false;
 	}
