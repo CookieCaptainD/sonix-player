@@ -35,6 +35,17 @@ cc -O2 -Wall -Wextra -pthread -Isrc -o /tmp/dsd_regression_test \
    src/system/decode/sacd_iso.c src/system/decode/dst_decoder.c
 /tmp/dsd_regression_test "$ISO_DIR/stereo.dsf" "$ISO_DIR/stereo.dff"
 
+# Task 3c: DSD inside a .wv goes to the DoP stage; a PCM .wv stays on the PCM
+# path. The fixtures are transcoded with the wavpack CLI, which the host libs
+# also provide. PKG_CONFIG_PATH must point at their pkgconfig directory.
+python3 tests/make_wavpack_fixtures.py "$ISO_DIR"
+cc -O2 -Wall -Wextra -pthread -Isrc $(pkg-config --cflags wavpack) \
+    -o /tmp/wavpack_dsd_test tests/wavpack_dsd_test.c \
+    src/system/decode/dsd.c src/system/decode/sacd_iso.c \
+    src/system/decode/dst_decoder.c src/system/decode/wavpackdec.c \
+    $(pkg-config --libs wavpack)
+/tmp/wavpack_dsd_test "$ISO_DIR/pcm.wv" "$ISO_DIR/dsd.wv"
+
 # Task 4: the tags of a SACD ISO track, read from the image's text sectors.
 # --gc-sections drops the tag readers and decode_detect_format from
 # metadata.c, which are not linked here.
