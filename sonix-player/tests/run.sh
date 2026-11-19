@@ -69,3 +69,11 @@ cc -fsyntax-only -I. -D_FILE_OFFSET_BITS=64 -DHOST_BUILD=1 \
    src/system/library/library.c
 cc -fsyntax-only -I. -D_FILE_OFFSET_BITS=64 -DHOST_BUILD=1 \
    src/system/playback/playlist.c
+
+# Task 6: RF64 and Wave64 headers in the WAV path. The parser is a small module
+# of its own so it can be tested without linking the whole player.
+python3 tests/make_wavparse_fixtures.py "$ISO_DIR"
+cc -O2 -Wall -Wextra -Isrc -o /tmp/wavparse_test \
+    tests/wavparse_test.c src/system/audio/wavparse.c
+/tmp/wavparse_test "$ISO_DIR/plain.wav" "$ISO_DIR/rf64.wav" "$ISO_DIR/wave64.wav" \
+    "$ISO_DIR/truncated.wav" "$ISO_DIR/unsupported.wav"
