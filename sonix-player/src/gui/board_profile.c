@@ -7,6 +7,7 @@
 
 #include "src/gui/board_profile.h"
 
+#include "src/gui/fonts/fonts.h"
 #include "src/system/device/sysinfo.h"
 
 bool bp_model_is_compact(void) {
@@ -39,3 +40,14 @@ int bp_header_button_size(void) { return bp_is_compact() ? 36 : 48; }
 int bp_header_button_gap(void) { return bp_is_compact() ? 4 : 8; }
 
 int bp_pick(int compact, int regular) { return bp_is_compact() ? compact : regular; }
+
+// Regular-panel defaults: the named font objects the HiBy layouts have always
+// used. On the V1, fonts_init() gives these same objects compact rasters, so a
+// title is 17 px there and 24 px on a HiBy panel without two sets of call
+// sites. Apps that only need a font size can ask for the font's line height.
+const lv_font_t *bp_title_font(void) { return &font_ui_24; }
+const lv_font_t *bp_artist_font(void) { return &font_ui_20; }
+const lv_font_t *bp_time_font(void) { return &font_ui_20; }
+const lv_font_t *bp_tile_label_font(void) { return &font_ui_20; }
+const lv_font_t *bp_queue_label_font(void) { return &font_ui_18; }
+const lv_font_t *bp_format_label_font(void) { return &font_ui_18; }

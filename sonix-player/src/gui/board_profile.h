@@ -12,6 +12,8 @@
 
 #include <stdbool.h>
 
+#include "lvgl/lvgl.h"
+
 // True for the TempoTec V1's 240x320 panel. False for both HiBy models and
 // when no model is known (the simulator default).
 bool bp_is_compact(void);
@@ -34,5 +36,18 @@ int bp_pick(int compact, int regular);
 // The compact flag from the model table; kept as a helper for callers that
 // already include sysinfo.h but want a single question to ask.
 bool bp_model_is_compact(void);
+
+// Named UI fonts for the crowded labels of the ported V1 apps. The same font
+// objects are returned on every panel: fonts.c already renders the named sizes
+// smaller on the V1, so the regular (HiBy) hierarchy is exactly what it was
+// before these helpers existed, and the compact panel keeps its compact
+// rasters. Returning an object rather than a size keeps call sites independent
+// of the active text-size setting.
+const lv_font_t *bp_title_font(void);
+const lv_font_t *bp_artist_font(void);
+const lv_font_t *bp_time_font(void);
+const lv_font_t *bp_tile_label_font(void);
+const lv_font_t *bp_queue_label_font(void);
+const lv_font_t *bp_format_label_font(void);
 
 #endif // SRC_GUI_BOARD_PROFILE_H_

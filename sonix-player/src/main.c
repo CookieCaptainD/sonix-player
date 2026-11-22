@@ -93,6 +93,14 @@ static void host_shot_poll_cb(lv_timer_t *timer) {
 #include "src/gui/library/browser.h"
 #include "src/gui/bluetooth/btsettings.h"
 #include "src/gui/shell/switcher.h"
+// SONIX_OPEN_V1_APP opens one of the ported apps for the headless visual
+// checks: 2048, snake, dino, calculator, notes or pet.
+#include "src/gui/calculator/calculator.h"
+#include "src/gui/games/dino.h"
+#include "src/gui/games/game2048.h"
+#include "src/gui/games/snake.h"
+#include "src/gui/notes/notes.h"
+#include "src/gui/pet/petpage.h"
 static void host_browser_refresh_cb(lv_timer_t *timer) {
 	lv_timer_delete(timer);
 	browser_refresh();
@@ -117,6 +125,27 @@ static void host_open_btsettings_cb(lv_timer_t *timer) {
 	}
 	if (getenv("SONIX_MOCK_CONSENT")) {
 		lv_timer_create(host_open_consent_cb, 1200, NULL);
+	}
+}
+
+static void host_open_v1_app_cb(lv_timer_t *timer) {
+	lv_timer_delete(timer);
+	const char *which = getenv("SONIX_OPEN_V1_APP");
+	if (!which) {
+		return;
+	}
+	if (strcmp(which, "2048") == 0) {
+		game2048_open();
+	} else if (strcmp(which, "snake") == 0) {
+		snake_open();
+	} else if (strcmp(which, "dino") == 0) {
+		dino_open();
+	} else if (strcmp(which, "calculator") == 0) {
+		calculator_open();
+	} else if (strcmp(which, "notes") == 0) {
+		notes_open();
+	} else if (strcmp(which, "pet") == 0) {
+		petpage_open();
 	}
 }
 
@@ -2348,6 +2377,9 @@ int main(int argc, char **argv) {
 	}
 	if (getenv("SONIX_OPEN_BTSETTINGS")) {
 		lv_timer_create(host_open_btsettings_cb, 1500, NULL);
+	}
+	if (getenv("SONIX_OPEN_V1_APP")) {
+		lv_timer_create(host_open_v1_app_cb, 1500, NULL);
 	}
 #endif
 
