@@ -161,6 +161,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 - **DLNA** - send music to the player from an app on your phone (needs a microSD card).
 - **Wi-Fi transfer** - open `sonix-transfer.local` (or the address on screen) in a browser on the same Wi-Fi to upload files and folders, download, rename, move and delete, and see hidden files. Music stops while it is on.
 - **SonixLink** - control the player from the SonixLink app on your phone, over Wi-Fi or Bluetooth: browse the library, the queue and the favourites, with covers.
+- **Browser remote** - set a PIN in Wireless, turn the remote on, and open the address on screen in a browser on the same Wi-Fi. Play, pause, skip, seek, set the volume and the play mode, star tracks, see the queue, and browse or search the library. The browser asks for the PIN once and keeps the session for that browser. Music keeps playing: opening, using or leaving the page never pauses it. The server runs only while the remote page is open and stops when you leave it, or when no browser has used it for a while.
 - **USB storage** - with the player on, connect it to a computer or a phone with the cable and the microSD shows up as a drive. With Detect changes on, the library picks up the new music when you unplug it.
 
 ## Control centre and status bar

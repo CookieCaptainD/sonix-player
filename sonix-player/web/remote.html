@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e1e">
+<meta http-equiv="cache-control" content="no-cache">
+<title>Browser remote</title>
+<style>
+/* The palette from src/gui/theme.c, the same one the Wi-Fi transfer page
+   uses. No decoration: rows, cards and controls only. */
+:root {
+  --screen-bg: #242424;
+  --surface: #303030;
+  --panel: #1e1e1e;
+  --text: #ffffff;
+  --text-dim: #a0a0a0;
+  --accent: #3584e4;
+  --accent-pressed: #215a9c;
+  --danger: #e01b24;
+  --line: #3a3a3a;
+  --accent-fill: #2b6fc4;
+  --radius: 12px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; background: var(--screen-bg); color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px; line-height: 1.4;
+}
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 40px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.note { color: var(--text-dim); font-size: 14px; margin: 0 0 20px; }
+.card {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 20px;
+}
+.hidden { display: none; }
+label { display: block; color: var(--text-dim); font-size: 14px; margin-bottom: 6px; }
+input[type="text"], input[type="password"], input[type="search"] {
+  width: 100%; min-height: 56px; padding: 12px 14px; font-size: 18px;
+  color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; outline: none;
+}
+input[type="range"] { width: 100%; height: 56px; accent-color: var(--accent); }
+button {
+  min-height: 56px; min-width: 56px; padding: 12px 18px; font-size: 16px;
+  color: var(--text); background: var(--line); border: 0;
+  border-radius: 10px; cursor: pointer;
+}
+button:hover { background: var(--surface); }
+button:active { background: var(--line); }
+button:disabled { opacity: 0.5; }
+button.primary { background: var(--accent-fill); }
+button.primary:hover, button.primary:active { background: var(--accent-pressed); }
+button.on { background: var(--accent-fill); }
+button.danger { background: var(--danger); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > button { flex: 0 0 auto; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.track { min-width: 0; }
+.track .title { font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track .artist { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.times { display: flex; justify-content: space-between; color: var(--text-dim); font-size: 14px; }
+.controls { display: flex; gap: 8px; margin-top: 6px; }
+.controls button { flex: 1 1 0; font-size: 24px; }
+.list { margin-top: 8px; }
+.list-row {
+  display: flex; gap: 10px; align-items: center; min-height: 56px;
+  border-top: 1px solid var(--line); padding-top: 6px;
+}
+.list-row .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.error { color: var(--danger); min-height: 22px; margin-top: 6px; }
+.empty { color: var(--text-dim); padding: 16px 0; }
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.tabs button { flex: 1 1 0; }
+@media (max-width: 420px) {
+  .wrap { padding: 14px 14px 32px; }
+  .card { padding: 14px; }
+  button { padding: 10px 12px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Browser remote</h1>
+  <p class="note">Music keeps playing while this page is open. Only the buttons below change playback.</p>
+
+  <div id="login" class="card">
+    <label for="pin">PIN from the player</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+    <div class="error" id="login-error"></div>
+    <button class="primary grow" id="unlock">Unlock</button>
+  </div>
+
+  <div id="remote" class="hidden">
+    <div class="card">
+      <div class="track">
+        <div class="title" id="title">Not playing</div>
+        <div class="artist" id="artist"></div>
+      </div>
+      <div class="times"><span id="position">0:00</span><span id="duration">0:00</span></div>
+      <input id="seek" type="range" min="0" max="100" value="0" aria-label="Seek">
+      <div class="controls">
+        <button id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 5h2v14H6zM19 5v14l-11-7z"/></svg></button>
+        <button id="playpause" class="primary" aria-label="Play or pause">&#9654;</button>
+        <button id="next" aria-label="Next"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M16 5h2v14h-2zM5 5l11 7-11 7z"/></svg></button>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <label class="grow" for="volume">Volume <span id="volume-value">0</span>%</label>
+      </div>
+      <input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume">
+      <div class="tabs">
+        <button id="mode">Mode: Normal</button>
+        <button id="favourite">Favourite</button>
+        <button id="logout">Lock</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tab-queue" class="primary">Queue</button>
+      <button id="tab-library">Library</button>
+      <button id="tab-favourites">Favourites</button>
+    </div>
+
+    <div id="panel-queue" class="card">
+      <div class="row"><strong class="grow">Queue</strong><button id="queue-refresh">Refresh</button></div>
+      <div class="list" id="queue-list"></div>
+    </div>
+
+    <div id="panel-library" class="card hidden">
+      <label for="search">Search the library</label>
+      <div class="row">
+        <input id="search" class="grow" type="search" placeholder="Title, artist, album">
+        <button id="search-go">Search</button>
+      </div>
+      <div class="list" id="library-list"></div>
+      <button id="library-more" class="hidden" style="margin-top:16px">More</button>
+    </div>
+
+    <div id="panel-favourites" class="card hidden">
+      <div class="row"><strong class="grow">Favourites</strong><button id="fav-refresh">Refresh</button></div>
+      <div class="list" id="favourites-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var MODE = ["Normal", "Repeat all", "Repeat one", "Shuffle", "Shuffle repeat"];
+  var el = function (id) { return document.getElementById(id); };
+  var authorised = false;
+  var nonce = "";
+  var seeking = false;
+  var currentPath = "";
+  var currentDuration = 0;
+  var libraryOffset = 0;
+
+  function cookies() {
+    var out = {};
+    document.cookie.split(";").forEach(function (part) {
+      var i = part.indexOf("=");
+      if (i < 0) return;
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1));
+    });
+    return out;
+  }
+
+  function api(path, options, onOk, onFail) {
+    fetch(path, options).then(function (res) {
+      if (res.status === 401) { showLogin("Session expired. Enter the PIN again."); return null; }
+      if (!res.ok) { throw new Error("HTTP " + res.status); }
+      return res.json();
+    }).then(function (data) {
+      if (data && onOk) onOk(data);
+    }).catch(function () {
+      if (onFail) onFail();
+    });
+  }
+
+  function showLogin(message) {
+    authorised = false;
+    el("remote").classList.add("hidden");
+    el("login").classList.remove("hidden");
+    el("login-error").textContent = message || "";
+    el("pin").value = "";
+    el("pin").focus();
+    api("/api/challenge", {}, function (data) { nonce = data.nonce; });
+  }
+
+  function showRemote() {
+    authorised = true;
+    el("login").classList.add("hidden");
+    el("remote").classList.remove("hidden");
+    refresh();
+    loadList("queue");
+  }
+
+  function timeText(seconds) {
+    var s = Math.max(0, Math.floor(seconds || 0));
+    return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+  }
+
+  function refresh() {
+    api("/api/status", {}, function (d) {
+      currentPath = d.path || "";
+      currentDuration = d.duration || 0;
+      el("title").textContent = d.title || (d.path ? d.path.split("/").pop() : "Not playing");
+      el("artist").textContent = d.artist || "";
+      el("position").textContent = timeText(d.position);
+      el("duration").textContent = timeText(d.duration);
+      if (!seeking) el("seek").value = d.duration > 0 ? Math.round(d.position / d.duration * 100) : 0;
+      el("playpause").innerHTML = d.status === 1 ? '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>' : '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>';
+      el("volume").value = d.volume;
+      el("volume-value").textContent = d.volume;
+      el("mode").textContent = "Mode: " + (MODE[d.mode] || d.mode);
+      el("favourite").classList.toggle("on", !!d.favourite);
+    });
+  }
+
+  function control(command, extra) {
+    var body = { command: command };
+    if (extra) Object.keys(extra).forEach(function (k) { body[k] = extra[k]; });
+    api("/api/control", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    }, refresh);
+  }
+
+  function renderList(target, items, withFav, emptyText) {
+    var box = el(target);
+    box.innerHTML = "";
+    if (!items || items.length === 0) {
+      box.innerHTML = '<div class="empty">' + (emptyText || "Nothing here.") + '</div>';
+      return;
+    }
+    items.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "list-row";
+      var name = document.createElement("div");
+      name.className = "name";
+      name.textContent = item.title || item.path;
+      row.appendChild(name);
+      var play = document.createElement("button");
+      play.textContent = "Play";
+      play.setAttribute("data-play", item.path);
+      row.appendChild(play);
+      if (withFav) {
+        var fav = document.createElement("button");
+        fav.textContent = "Fav";
+        fav.setAttribute("data-fav", item.path);
+        fav.setAttribute("data-title", item.title || "");
+        row.appendChild(fav);
+      }
+      box.appendChild(row);
+    });
+  }
+
+  function loadList(kind, query, append) {
+    var path = kind === "queue" ? "/api/queue" :
+               kind === "favourites" ? "/api/favourites" :
+               "/api/library?q=" + encodeURIComponent(query || "") + "&offset=" + libraryOffset;
+    api(path, {}, function (d) {
+      if (kind === "queue") {
+        renderList("queue-list", d.items, false, "Nothing in the queue.");
+      } else if (kind === "favourites") {
+        renderList("favourites-list", d.items, true, "No favourites yet.");
+      } else {
+        var items = d.items || [];
+        if (append) {
+          var box = el("library-list");
+          items.forEach(function (item) {
+            var row = document.createElement("div");
+            row.className = "list-row";
+            var name = document.createElement("div");
+            name.className = "name";
+            name.textContent = item.title || item.path;
+            row.appendChild(name);
+            var play = document.createElement("button");
+            play.textContent = "Play";
+            play.setAttribute("data-play", item.path);
+            row.appendChild(play);
+            box.appendChild(row);
+          });
+        } else {
+          renderList("library-list", items, false, "No tracks found.");
+        }
+        libraryOffset += items.length;
+        el("library-more").classList.toggle("hidden", items.length < 50);
+      }
+    });
+  }
+
+  function selectTab(tab) {
+    ["queue", "library", "favourites"].forEach(function (name) {
+      el("panel-" + name).classList.toggle("hidden", name !== tab);
+      el("tab-" + name).classList.toggle("primary", name === tab);
+    });
+    if (tab === "queue") loadList("queue");
+    if (tab === "favourites") loadList("favourites");
+  }
+
+  document.addEventListener("click", function (e) {
+    var play = e.target.getAttribute && e.target.getAttribute("data-play");
+    if (play !== null && play !== undefined) { control("play_path", { path: play }); return; }
+    var fav = e.target.getAttribute && e.target.getAttribute("data-fav");
+    if (fav !== null && fav !== undefined) {
+      control("favourite", { path: fav, title: e.target.getAttribute("data-title") || "" });
+    }
+  });
+
+  el("unlock").addEventListener("click", function () {
+    var pin = el("pin").value;
+    api("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nonce: nonce, pin: pin })
+    }, function () { showRemote(); }, function () {
+      el("login-error").textContent = "Wrong PIN. Try again.";
+      api("/api/challenge", {}, function (d) { nonce = d.nonce; });
+    });
+  });
+  el("pin").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") el("unlock").click();
+  });
+
+  el("prev").addEventListener("click", function () { control("prev"); });
+  el("next").addEventListener("click", function () { control("next"); });
+  el("playpause").addEventListener("click", function () { control("play_pause"); });
+  el("mode").addEventListener("click", function () { control("mode"); });
+  el("favourite").addEventListener("click", function () {
+    if (currentPath) control("favourite", { path: currentPath });
+  });
+  el("logout").addEventListener("click", function () {
+    api("/api/logout", {}, showLogin);
+  });
+
+  el("seek").addEventListener("pointerdown", function () { seeking = true; });
+  el("seek").addEventListener("pointerup", function () {
+    seeking = false;
+    control("seek", { seconds: Number(el("seek").value) / 100 * currentDuration });
+  });
+  el("volume").addEventListener("input", function () {
+    el("volume-value").textContent = el("volume").value;
+  });
+  el("volume").addEventListener("change", function () {
+    control("volume", { percent: Number(el("volume").value) });
+  });
+
+  el("queue-refresh").addEventListener("click", function () { loadList("queue"); });
+  el("fav-refresh").addEventListener("click", function () { loadList("favourites"); });
+  el("tab-queue").addEventListener("click", function () { selectTab("queue"); });
+  el("tab-library").addEventListener("click", function () { selectTab("library"); });
+  el("tab-favourites").addEventListener("click", function () { selectTab("favourites"); });
+  el("search-go").addEventListener("click", function () {
+    libraryOffset = 0;
+    loadList("library", el("search").value, false);
+  });
+  el("library-more").addEventListener("click", function () {
+    loadList("library", el("search").value, true);
+  });
+
+  if (cookies().br_session) {
+    showRemote();
+  } else {
+    showLogin();
+  }
+  setInterval(function () { if (authorised) refresh(); }, 2000);
+})();
+</script>
+</body>
+</html>

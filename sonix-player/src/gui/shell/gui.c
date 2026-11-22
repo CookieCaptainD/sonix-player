@@ -14,6 +14,7 @@
 #include "src/gui/nowplaying/chapters.h"
 #include "src/gui/nowplaying/lyricsearch.h"
 #include "src/gui/wireless/airplay.h"
+#include "src/gui/wireless/browserremote_page.h"
 #include "src/gui/bluetooth/airpodspage.h"
 #include "src/gui/settings/appearance.h"
 #include "src/gui/bluetooth/btaudio.h"
@@ -670,6 +671,7 @@ void gui_init(gui_config_t *cfg) {
 	btaudio_init(cfg);			 // before btsettings: its gear points at this page
 	btreceiverpage_init(cfg);	 // likewise, for the button beside the gear
 	btsettings_init(cfg);
+	browserremote_page_init(cfg); // before wireless: its tile points at this page
 	wireless_init(cfg);
 
 	// streaming section: three services that are not implemented yet, so the
