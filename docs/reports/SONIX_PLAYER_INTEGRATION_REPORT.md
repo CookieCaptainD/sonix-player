@@ -32,6 +32,9 @@ later commit updates this record without changing implementation content).
 * Built target and host binaries; captured genuine simulator screenshots at
   480×800, 480×720 and 240×320.
 * Kept and extended the independent validator and the independent safety reviews.
+* Reviewed all nine prepared local PR features against the V1 fork and merged
+  the cleanest one: WavPack DSD / RF64 / Wave64 playback (commit `77862d1e`),
+  with its full test suite passing. See `docs/audit/PR_FEATURES_REVIEW.md`.
 
 ### Not achieved
 
@@ -230,6 +233,10 @@ After implementation, QA must be re-run; see §26.
   tape deck, extra games, some V1-specific LED work) are **not ported**; only the
   device profile, compact UI, jack quirk, assets and packer are. This is a
   deliberate scope boundary, recorded for follow-up, not a claim of completeness.
+* Medium: of the nine prepared PR features, only the audio-format PR was merged
+  in this pass. Crossfade already exists in the V1 fork; five others are
+  feasible but need staged conflict resolution and testing (see
+  `docs/audit/PR_FEATURES_REVIEW.md`). Two PRs target the separate Android app.
 * Low: dead OTA remote; V1 screenshot labels are smaller/less visible than on
   HiBy panels; exact provenance of local stock images unverified.
 
