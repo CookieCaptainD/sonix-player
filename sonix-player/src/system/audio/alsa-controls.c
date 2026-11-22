@@ -1152,6 +1152,14 @@ void lineout_set(bool on) {
 		// lets the rule below be simple: the mode belongs to one jack, and any
 		// change of jack ends it. Plug the cable, then switch it on.
 		int jack = headphone_jack_state();
+		// The V1 has a single jack switch whose state reads 1 with both sockets
+		// empty (source: TempoTec fork). Without this correction the 3.5 mm
+		// line-out route can never be selected on that device.
+		const sysinfo_model_t *model = sysinfo_model();
+		if (jack == JACK_NONE && model && model->headset_switch_idle_one) {
+			jack = JACK_HEADSET;
+			fprintf(stderr, "alsa: jack detection unavailable; using 3.5 mm line-out route\n");
+		}
 		if (jack == JACK_NONE) {
 			fprintf(stderr, "alsa: line out refused, nothing is plugged in\n");
 			return;
