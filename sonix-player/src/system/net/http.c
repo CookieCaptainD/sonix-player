@@ -867,8 +867,18 @@ static conn_t stream_conn(http_stream_t *st) {
 	return c;
 }
 
+// Closes a socket that never became a stream. http_stream_open_ex() observers
+// need to be told with -1 before it goes, so a cancellation arriving during
+// setup cannot leave their published descriptor pointing at a reused fd.
+static void close_pending_conn(conn_t conn, const http_stream_options_t *opts) {
+	if (opts && opts->socket_cb) {
+		opts->socket_cb(opts->socket_user, -1);
+	}
+	conn_close(&conn);
+}
+
 static bool stream_open_once(http_stream_t *st, const char *url, int timeout_secs, int *status_out,
-							 char *location, size_t location_size) {
+							 char *location, size_t location_size, const http_stream_options_t *opts) {
 	url_t u;
 	if (!url_parse(url, &u)) {
 		return false;
@@ -887,36 +897,49 @@ static bool stream_open_once(http_stream_t *st, const char *url, int timeout_sec
 	int one = 1;
 	setsockopt(conn.fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
+	if (opts && opts->socket_cb && !opts->socket_cb(opts->socket_user, conn.fd)) {
+		close_pending_conn(conn, opts);
+		return false;
+	}
+
 	char host_header[300];
 	host_header_value(&u, host_header, sizeof(host_header));
+
+	const char *agent = (opts && opts->user_agent) ? opts->user_agent : HTTP_USER_AGENT;
+	const char *extra = (opts && opts->extra_headers) ? opts->extra_headers : "";
+	const char *icy = (opts && opts->no_icy) ? "" : "Icy-MetaData: 1\r\n";
 
 	char request[2600];
 	int n = snprintf(request, sizeof(request),
 					 "GET %s HTTP/1.0\r\n" // 1.0: no chunking, no keep-alive to argue about
 					 "Host: %s\r\n"
-					 "User-Agent: " HTTP_USER_AGENT "\r\n"
-					 "Icy-MetaData: 1\r\n"
+					 "User-Agent: %s\r\n"
+					 "%s"
 					 "Accept: */*\r\n"
+					 "%s"
 					 "\r\n",
-					 u.path, host_header);
+					 u.path, host_header, agent, icy, extra);
 	// As above: snprintf returns what it would have written, not what it did.
 	if (n <= 0 || (size_t)n >= sizeof(request) || !conn_write_all(&conn, request, (size_t)n)) {
-		conn_close(&conn);
+		close_pending_conn(conn, opts);
 		return false;
 	}
 
 	char headers[HTTP_HEADER_BUFFER];
 	int status = read_headers(&conn, headers, sizeof(headers), st->lead, sizeof(st->lead), &st->lead_len);
 	*status_out = status;
+	if (opts && opts->status_out) {
+		*opts->status_out = status;
+	}
 
 	if (status >= 300 && status < 400) {
 		location[0] = '\0';
 		header_value(headers, "Location", location, location_size);
-		conn_close(&conn);
+		close_pending_conn(conn, opts);
 		return false;
 	}
 	if (status != 200) {
-		conn_close(&conn);
+		close_pending_conn(conn, opts);
 		return false;
 	}
 
@@ -949,7 +972,8 @@ static bool stream_open_once(http_stream_t *st, const char *url, int timeout_sec
 	return true;
 }
 
-bool http_stream_open(http_stream_t *st, const char *url, int timeout_secs) {
+bool http_stream_open_ex(http_stream_t *st, const char *url, int timeout_secs,
+						 const http_stream_options_t *opts) {
 	if (!st || !url) {
 		return false;
 	}
@@ -963,7 +987,18 @@ bool http_stream_open(http_stream_t *st, const char *url, int timeout_secs) {
 	for (int hop = 0; hop <= HTTP_MAX_REDIRECTS; hop++) {
 		int status = 0;
 		char location[2048] = "";
-		if (stream_open_once(st, current, timeout_secs, &status, location, sizeof(location))) {
+		// Credentials go on the first hop only: a redirect to another host
+		// must not receive the account's auth header.
+		http_stream_options_t hop_opts;
+		const http_stream_options_t *call_opts = opts;
+		if (opts) {
+			hop_opts = *opts;
+			if (hop > 0) {
+				hop_opts.extra_headers = NULL;
+			}
+			call_opts = &hop_opts;
+		}
+		if (stream_open_once(st, current, timeout_secs, &status, location, sizeof(location), call_opts)) {
 			return true;
 		}
 		if (status < 300 || status >= 400 || !location[0]) {
@@ -983,6 +1018,10 @@ bool http_stream_open(http_stream_t *st, const char *url, int timeout_secs) {
 		}
 	}
 	return false;
+}
+
+bool http_stream_open(http_stream_t *st, const char *url, int timeout_secs) {
+	return http_stream_open_ex(st, url, timeout_secs, NULL);
 }
 
 // Reads exactly `len` raw bytes (lead buffer first, then the socket).
