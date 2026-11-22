@@ -88,7 +88,8 @@ recovery action was taken. This is a hard limitation, not an omission.
 
 ## 6. Unresolved / not tested
 
-* R3 Pro II and V1 images: none built or validated here.
+* R3 Pro II: an image is produced by the packer but is correctly REJECTED by
+  the gate; V1 `make v1` was built and validated. See §6 of this report.
 * Upstream official v1.3.1 `r1.upt`/`r3proii.upt`: not downloaded or inspected.
 * Cryptographic signature requirements: unknown.
 * OTA update flow: not executed.
