@@ -4,6 +4,8 @@
 
 #include "power.h"
 
+#include "src/system/device/dimlogic.h"
+
 // LVGL 9.2 made lv_timer_t opaque. There is a lv_timer_set_period() but no
 // getter, and both places here have to read the period before changing it.
 #include "lvgl/src/misc/lv_timer_private.h"
@@ -136,6 +138,12 @@ static bool g_usb_present_last;    // cable state on the previous tick, to spot 
 static bool g_usb_present_known;   // false until the cable has been read at least once
 
 
+// Dim-before-off: the configured delay, and the one live cycle. The delay is
+// only used when it fits before the screen-off timeout (see dimlogic.h).
+static bool g_dim_enabled;
+static uint32_t g_dim_delay_ms;
+static dim_state_t g_dim;
+
 static long g_hw_brightness = -1;	   // last brightness value actually written to sysfs
 static uint32_t g_last_playing_ms;	   // last tick audio was PLAYING (suspend clock)
 static uint32_t g_ignore_button_until; // tick until which power presses are absorbed
@@ -188,6 +196,11 @@ static void backlight_write(long value) {
 		write_long_to_file(g_cfg.brightness_path, value);
 	}
 }
+
+// The dim level is the dimmest step of the existing brightness scale: the same
+// floor the Screen page's brightness slider offers. No new magic value that
+// could drift away from what the panel and the slider call "dim".
+static long dim_brightness_level(void) { return BRIGHTNESS_MIN; }
 
 // Smoothly ramp the backlight from its current level to target, mirroring the
 // stock/Rockbox dim-to-off feel. Blocking, but only for ~200ms during a screen
@@ -1485,6 +1498,9 @@ void power_screen_off(void) {
 		return;
 	}
 	g_screen_on = false;
+	// A dim in progress ends at the blank; the wake restores the configured
+	// brightness on its own, so there is nothing to put back here.
+	dim_state_cancel(&g_dim);
 	g_screen_off_at = lv_tick_get();
 	// The screen going dark opens a new idle window: the standby countdown
 	// starts here, unless activity keeps pushing it back.
@@ -1676,6 +1692,7 @@ void power_screen_on(void) {
 	// to sysfs after the unblank and settle, so the backlight reliably returns.
 	g_hw_brightness = BRIGHTNESS_MIN;
 	fade_up_quickly(g_cfg.brightness);
+	dim_state_reset(&g_dim);
 	lv_display_trigger_activity(g_disp);
 
 	led_set_standby(false);
@@ -1784,6 +1801,26 @@ static void power_timer_cb(lv_timer_t *timer) {
 		power_screen_off();
 	}
 
+	// 4-ter. dim before the blank. The effective delay drops to zero when the
+	// screen is set to stay on or the chosen delay no longer fits under the
+	// timeout, which leaves this block inert. The same idle clock drives the
+	// restore: any activity drops it below the delay and brings the panel
+	// straight back, without a separate notification from every input source.
+	uint32_t dim_delay = dim_effective_delay(g_dim_delay_ms, g_cfg.screen_off_timeout_ms);
+	bool screen_held = g_screen_on_hold || g_screen_view_hold;
+	if (dim_should_cancel(g_dim.active, dim_delay, input_idle)) {
+		long restore = dim_state_cancel(&g_dim);
+		if (restore >= 0) {
+			fade_up_quickly(restore);
+		}
+	} else if (dim_should_apply(g_dim_enabled, g_screen_on, screen_held, dim_delay, input_idle)) {
+		long level = dim_state_begin(&g_dim, g_cfg.brightness, dim_brightness_level());
+		if (level >= 0) {
+			printf("power: dimming to %ld before screen-off (idle %u ms)\n", level, input_idle);
+			fade_to(level);
+		}
+	}
+
 	// 4a-bis. the shutdown timer, once it has run out.
 	//
 	//     Before the suspend, not after it: on a tick where both are ready,
@@ -1841,6 +1878,11 @@ void power_set_brightness(long value) {
 	}
 	if (value < BRIGHTNESS_MIN) {
 		value = BRIGHTNESS_MIN;
+	}
+	// Adjusting the brightness is itself an interaction: drop any dim so the
+	// level just chosen is the one that reaches the panel.
+	if (g_dim.active) {
+		dim_state_cancel(&g_dim);
 	}
 	g_cfg.brightness = value;
 	if (g_screen_on) {
@@ -1917,6 +1959,20 @@ void power_set_double_tap_wake(bool enabled) {
 void power_set_screen_off_enabled(bool enabled) { g_cfg.screen_off_enabled = enabled; }
 void power_set_screen_off_timeout(uint32_t ms) { g_cfg.screen_off_timeout_ms = ms; }
 
+void power_set_dim(bool enabled, uint32_t delay_ms) {
+	g_dim_enabled = enabled;
+	g_dim_delay_ms = delay_ms;
+	// A change to the switch or the delay ends any dim in progress; the next
+	// tick either starts a fresh one from the new settings or leaves the panel
+	// at its configured brightness.
+	if (g_dim.active) {
+		long restore = dim_state_cancel(&g_dim);
+		if (restore >= 0 && g_screen_on) {
+			fade_up_quickly(restore);
+		}
+	}
+}
+
 void power_get_config(power_config_t *out) {
 	if (out) {
 		*out = g_cfg;
@@ -1928,6 +1984,9 @@ void power_init(const power_config_t *cfg, lv_display_t *disp) {
 	g_disp = disp;
 	g_refr_timer = disp ? lv_display_get_refr_timer(disp) : NULL;
 	g_screen_on = true;
+	g_dim_enabled = false;
+	g_dim_delay_ms = 0;
+	dim_state_reset(&g_dim);
 	if (disp) {
 		lv_display_add_event_cb(disp, refr_request_cb, LV_EVENT_REFR_REQUEST, NULL);
 	}
