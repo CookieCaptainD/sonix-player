@@ -36,6 +36,21 @@ later commit updates this record without changing implementation content).
   the cleanest one: WavPack DSD / RF64 / Wave64 playback (commit `77862d1e`),
   with its full test suite passing. See `docs/audit/PR_FEATURES_REVIEW.md`.
 
+### Implementation summary (all work in this branch)
+
+| Area | What was implemented | Evidence |
+|---|---|---|
+| Device support | Three runtime models: R1, R3 Pro II, TempoTec V1 | `sysinfo.c` MODELS, `board_profile.c/h` |
+| UI | Compact 240×320 geometry, font remap, 24 px status bar, 6 px padding; HiBy layouts unchanged | `main.c`, `fonts.c`, three screenshots |
+| Hardware quirks | V1 inverted headset switch with 120 ms settle/debounce; V1 jack flags | `alsa-controls.c`, `sysinfo.h` |
+| Packaging | Per-device isolated staging, stock-input SHA-256 verification, V1 packer imported | root `Makefile`, `tools/prepare_stock_inputs.sh`, `sonix-packer/v1/` |
+| Firmware images | `r1.upt` and `v1.upt` built and structurally validated; R3 Pro II image built but rejected by gate | `build/firmware/*/validation.json` |
+| Validation | Independent ISO/chunk/identity validator with negative tests | `tools/validate_upt.py`, `docs/QA/validation/` |
+| CI | Three-device matrix, least privilege, no publication | `.github/workflows/build-firmware.yml` |
+| Audio formats | WavPack DSD native, RF64, Wave64 (PR item-2) | merge `77862d1e`, `tests/run.sh` exit 0 |
+| Safety docs | Flashability matrix, flashing safety, recovery guides, OTA migration | `docs/firmware/`, `docs/MIGRATION.md` |
+| Reporting | This Markdown report, the PDF, nine-PR review | `docs/reports/`, `docs/audit/PR_FEATURES_REVIEW.md` |
+
 ### Not achieved
 
 * No physical device test; no flashing; no recovery test.
@@ -172,7 +187,11 @@ Built images: §14. Stock inputs: `docs/firmware/STOCK_SHA256.sha256` —
 `r1_original.upt` `0fec88bb…`, `r3proii_original.upt` `6ef350aa…`, V1 split
 parts `cae3f02b…` / `9129833f…`, extracted stock `v1_original.upt` `ee35ecbf…`.
 Official upstream release assets (not downloaded): `b78cb5a5…` (R1),
-`afee07d4…` (R3 Pro II).
+`afee07d4…` (R3 Pro II). The official R3 Pro II stock firmware was downloaded
+from `oss.hiby.com` during this work and is byte-identical to the local
+`r3proii_original.upt` (`6ef350aa…`); it contains no `ota_v0/ota_compatibility.in`.
+No newer stock with that marker was found, so the R3 Pro II gate cannot be
+satisfied without inventing metadata — which was not done.
 
 ## 18. Signature and identity validation
 
