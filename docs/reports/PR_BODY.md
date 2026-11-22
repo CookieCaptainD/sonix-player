@@ -1,13 +1,14 @@
 # Proposed PR body (draft — not published)
 
-**Title:** `Audit and firmware-safety package for three-device consolidation (R1, R3 Pro II, V1)`
+**Title:** `Unified three-device Sonix Player: V1 support, per-device builds and firmware safety gate`
 
 **Target:** `Tartarus6/sonix-player` — branch `main`
 **Source:** `CookieCaptainD/sonix-player` — branch `integration/three-device`
 
-> This contribution is an **audit and safety package**, not a finished three-device
-> integration. It deliberately does not claim V1 support, per-device builds, CI,
-> or flashable firmware. Please read the classification table before reviewing.
+> This contribution implements V1 device support in the shared codebase, plus
+> per-device build targets, CI and a mandatory firmware validation gate. It does
+> **not** claim physical-device validation or flashability; the R3 Pro II target
+> is blocked by a missing compatibility marker in the available stock image.
 
 ## Summary
 
@@ -27,18 +28,19 @@ This branch preserves the existing working tree and adds:
 
 | Device | Build in this branch | Flashability |
 |---|---|---|
-| HiBy R1 | no new image built | NOT VERIFIED FOR FLASHING |
-| HiBy R3 Pro II | no new image built | REJECTED (mandatory compatibility metadata absent) |
-| TempoTec V1 | no V1 code or image merged | NOT VERIFIED FOR FLASHING |
+| HiBy R1 | `make r1` PASS | NOT VERIFIED FOR FLASHING |
+| HiBy R3 Pro II | build blocked by gate | REJECTED (mandatory compatibility metadata absent) |
+| TempoTec V1 | `make v1` PASS | NOT VERIFIED FOR FLASHING |
 
 No image in this contribution is safe to flash. No signature scheme was found;
 recovery procedures are documented from source only and were not tested.
 
 ## Deliberately out of scope here
 
-V1 code integration, `make r1`/`r3proii`/`v1` targets, firmware CI, OTA fixes,
-three-device screenshots and physical-device validation are **not implemented**.
-They are documented as required work in the report. Do not merge expecting them.
+V1-fork-only features beyond device support (themes, DLNA, lyrics overlay,
+listening statistics, tape deck, extra games) are **not ported**, and neither is
+physical-device validation or an OTA repository fix. The R3 Pro II build needs a
+stock reference carrying `ota_compatibility.in`. See the report for details.
 
 ## Documentation
 

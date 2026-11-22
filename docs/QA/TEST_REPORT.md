@@ -26,17 +26,30 @@ in `docs/audit/` and `docs/DEVICE_COMPATIBILITY.md`. No agent modified a repo.
 | Command | Expected | Actual | Result |
 |---|---|---|---|
 | `make -n host` in integration worktree | dry run | cloned LVGL at parse time; reported missing `opusfile`, `wavpack` | partial |
-| `cp <original>/*.tar.* sonix-player/ && make host` | host binary | exit 2; `opusfile.h: Ficheiro ou pasta inexistente` (missing system `libopusfile-dev`/`libwavpack-dev`) | **FAIL** (environment limitation, documented in `BUILDING.md`) |
+| `cp <original>/*.tar.* sonix-player/ && make host` | host binary | initial attempt exit 2 (`opusfile.h` missing) |
+| build `libogg`, `opus`, `opusfile`, `wavpack` into `/tmp/sonix-host-libs`, then `PKG_CONFIG_PATH=... make host` | host binary | exit 0, aarch64 `sonix_player_host` built | **PASS** |
 
-No target firmware build was run in this work; the packer was not executed.
+Target build:
+
+| Command | Expected | Actual | Result |
+|---|---|---|---|
+| `make target` in `sonix-player/` | MIPS binary | exit 0; `check-abi` PASS; stripped 9.7 MB `sonix_player`; 1952-byte `sonix_launch` | **PASS** |
+
+Per-device firmware builds (root `Makefile`):
+
+| Command | Expected | Actual | Result |
+|---|---|---|---|
+| `make r1` | validated image | exit 0; `build/firmware/r1/r1.upt` 49,932,288 B; validator STRUCTURAL PASS | **PASS** |
+| `make v1` | validated image | exit 0; `build/firmware/v1/v1.upt` 49,539,072 B; validator STRUCTURAL PASS | **PASS** |
+| `make r3proii` | validated image | exit 2; image built but validator REJECTED (`required_metadata`, `compatibility_present` FAIL) | **FAIL (correct gate behaviour)** |
+| `make all` | three images | stops at the R3 Pro II gate | **FAIL (pending stock input)** |
 
 ## 3. Simulator capture
 
 | Command (abbreviated) | Expected | Actual | Result |
 |---|---|---|---|
 | `bwrap … env SDL_VIDEODRIVER=dummy SONIX_PANEL=480x800 ./sonix_player_host` + `touch /tmp/sonix/shot` | PNG from app screenshot path | PNG written to mapped `/mnt/sd_0/Screenshots`; 480×800, 44,443 B; opened and inspected | PASS for R1 main screen only |
-| same with `SONIX_PANEL=480x720` | 480×720 render | PNG still 480×800; duplicate discarded | FAIL for R3 Pro II evidence |
-| same for V1 240×320 | 240×320 render | unsupported by prebuilt binary (320×480 floor) | FAIL for V1 evidence |
+| same with per-device working directory and each device's `system-info.json`, after implementing the V1 profile and rebuilding the host binary | three correct frames | 480×800 (HiBy R1), 480×720 (HiBy R3 Pro II), 240×320 (TempoTec V1) PNGs, all opened and inspected | **PASS** for all three devices |
 
 ## 4. Firmware package validation (implemented tool)
 
