@@ -1,6 +1,6 @@
 Reviewed implementation commit (all source, assets, build/CI, reports, PDF, validator and screenshots):
 
-b85e694f5e33339c1f147874c26cfaed56f04961
+21e5fd2a9a7a53a97f03a996a848e0292465f95b
 
 Branch: integration/three-device
 Base commit: 7aa3637f7e7e0ad193994c79c055424a4edf056a
