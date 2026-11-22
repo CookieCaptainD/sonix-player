@@ -60,14 +60,20 @@ conclusions, re-ran the validator and performed additional primary inspection:
   `ota_compatibility.in` is absent; the generated image also differs from the
   official v1.3.1 digest. Classification: **REJECTED**. A failed mandatory check
   was not downgraded.
-* V1: no Sonix `v1.upt` exists. Stock 1.3 split parts were joined and their
-  digests matched the fork README, but the validator rejects the stock image for
-  missing generated-identity metadata. Classification:
-  **NOT VERIFIED FOR FLASHING**.
-* Local `r1.upt` (49,936,384 B, SHA-256 `ada3415b…`) and generated R3 Pro II
-  image (48,025,600 B, SHA-256 `3b4d2242…`) match **neither** official v1.3.1
-  asset (`b78cb5a5…`, `afee07d4…`); they are local rebuilds, not release
-  artefacts.
+* V1 (at the time of the independent review): no Sonix `v1.upt` existed yet.
+  Stock 1.3 split parts were joined and their digests matched the fork README,
+  but the validator rejects the stock image for missing generated-identity
+  metadata. Classification: **NOT VERIFIED FOR FLASHING**.
+* The images inspected by that reviewer were pre-implementation local rebuilds:
+  `r1.upt` (49,936,384 B, `ada3415b…`) and a generated R3 Pro II image
+  (48,025,600 B, `3b4d2242…`). Neither matched an official v1.3.1 asset
+  (`b78cb5a5…`, `afee07d4…`). They are not the images produced by `make` in this
+  branch.
+* Images produced after the implementation: `r1.upt` 49,932,288 B
+  (`7ee51491…`) and `v1.upt` 49,539,072 B (`fb142c3d…`), both STRUCTURAL PASS
+  with correct device identity; the R3 Pro II image is built but REJECTED by the
+  same mandatory metadata check. These are new local rebuilds, not release
+  artefacts, and remain NOT VERIFIED / REJECTED for flashing.
 * The validator checks only each component's MD5 declared *inside the image*;
   it does not check kernel architecture/model, rootfs-to-partition fit,
   compatibility value, signatures, or vendor authenticity. Device identity is
