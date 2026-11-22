@@ -22,7 +22,8 @@ This branch preserves the existing working tree and adds:
   metadata, MD5 chains, manifests, component MD5s and rootfs device identity;
   wrong-device, truncated and corrupted inputs are rejected in executed tests;
 * per-device flashability documentation, including an independent safety review;
-* one genuine host-simulator screenshot and a complete test report.
+* genuine host-simulator screenshots for all three panels (480×800, 480×720,
+  240×320) and a complete test report.
 
 ## Device status
 
