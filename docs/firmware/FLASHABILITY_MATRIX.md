@@ -9,7 +9,7 @@ not flashability approval.
 |Firmware image|R1|R3 Pro II|V1|
 |---|---|---|---|
 |Target filename|`r1.upt`|`r3proii.upt`|`v1.upt`|
-|Image present in this worktree|PASS (copied from local tree)|PASS (independent review: stock and generated images located elsewhere)|NOT TESTED (no Sonix `v1.upt` exists; stock 1.3 parts only)|
+|Image built by `make <device>`|PASS (`r1.upt` 49,932,288 B)|PASS (image built, but gate REJECTED)|PASS (`v1.upt` 49,539,072 B)|
 |Hardware identity verified on device|SOURCE ONLY|SOURCE ONLY|SOURCE ONLY|
 |Package format verified (ISO 9660, metadata)|PASS (r1.upt parsed)|FAIL (independent review: `ota_compatibility.in` absent)|NOT TESTED (stock 1.3 parsed: required OTA metadata absent)|
 |Device metadata verified|PASS (`HiBy R1` in rootfs)|PASS (independent: `HiBy R3 Pro II` in generated rootfs)|NOT TESTED (stock has no `system-info.json`)|

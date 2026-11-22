@@ -8,8 +8,8 @@ verified in source, not verified on hardware.
 | Item | HiBy R1 | HiBy R3 Pro II | TempoTec Variations V1 |
 |---|---|---|---|
 | Target image | `r1.upt` | `r3proii.upt` | `v1.upt` |
-| Local support | V (`assets/R1`) | V (`assets/R3PII`) | **absent** |
-| V1 fork support | absent | absent | V (`assets/V1`), only model |
+| Local support | V (`assets/R1`) | V (`assets/R3PII`) | **implemented** (model row + `sonix-packer/v1/assets/V1`) |
+| V1 fork support | absent | absent | V (`assets/V1`), only model; source of the port |
 | Panel (source) | 480×800 | 480×720 | 240×320 |
 | SoC family (source comments) | Ingenic X1600E | Ingenic X1600E | Ingenic X1600 |
 | Kernel (source) | custom 4.4.94, packaged `xImage-R1` 2,940,992 B | custom 4.4.94, `xImage-R3PII` 2,973,760 B | stock 1.3 kernel retained, never replaced |
@@ -43,7 +43,9 @@ UI constants (`padding=15`, `top_bar_height=44`, keyboard height 316, gesture
 
 ## Integration status
 
-No V1 code has been merged into this worktree. The worktree contains the
-original committed HEAD plus audit documents, a firmware validator and one
-genuine simulator screenshot. All three-device integration described here is a
-reviewed proposal, not an implemented result.
+V1 device support is implemented in the shared binary (model row, board profile,
+compact fonts, jack quirk), and the V1 asset tree and packer were imported from
+the fork. Per-device build targets and CI exist. `make r1` and `make v1` produce
+structurally validated images; `make r3proii` is blocked by a mandatory metadata
+check in the available stock image. No physical-device validation was performed,
+and V1-fork-only features beyond device support were not ported.
