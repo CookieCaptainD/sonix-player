@@ -58,6 +58,17 @@ attempted captures produced the same 480×800 frame regardless of `SONIX_PANEL`,
 so no R3 Pro II or V1 screenshot is claimed. The prebuilt binary's exact commit
 is unknown and is reported as such. **Status: applied in `docs/QA/UI_REVIEW.md`.**
 
+## D10 — Port V1 as a runtime profile in the shared binary
+
+The V1 fork's `board_profile` was imported and generalised: compact geometry is
+selected by the `compact_panel` flag in the model table, so one binary serves
+all three devices. The fork's own history indicates its profile was originally
+parameterised for three boards. HiBy constants stay unchanged (`bp_pick` returns
+the regular value). **Status: implemented** (`board_profile.c/h`, `sysinfo.c`,
+`main.c`, `fonts.c`, `alsa-controls.c`). The V1 stock packer and assets were
+imported under `sonix-packer/v1/` with provenance documented. V1-fork-only
+features were deliberately not ported in this change.
+
 ## D9 — Do not publish
 
 No push, tag, release, PR or firmware distribution was performed. The final
