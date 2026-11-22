@@ -19,6 +19,7 @@
 #include "src/gui/nowplaying/cover.h"
 #include "src/system/audio/waveform.h"
 #include "src/gui/fonts/fonts.h"
+#include "src/gui/board_profile.h"
 #include "src/gui/shell/gui.h"
 #include "src/gui/nowplaying/player.h"
 #include "src/gui/settings/powersettings.h"
@@ -1090,11 +1091,13 @@ static void tune_pointer(lv_indev_t *indev) {
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 720
 
-// The smallest panel the pages can be laid out on. Comfortably under either
-// real one: this is not a size anybody should reach, it is the floor under
-// which the arithmetic in the pages stops meaning anything.
+// The smallest panel the regular (480-pixel) pages can be laid out on. The V1
+// has its own, smaller floor: applying the regular floor to it was the reason
+// the compact widget sizes never reached its framebuffer.
 #define PANEL_MIN_WIDTH 320
 #define PANEL_MIN_HEIGHT 480
+#define COMPACT_MIN_WIDTH 240
+#define COMPACT_MIN_HEIGHT 320
 
 // The panel size for gui_config_t, in this order: SONIX_PANEL ("480x800"); the
 // model named in system-info.json; the model whose panel exactly matches the
@@ -1123,11 +1126,17 @@ static void panel_size(int *width, int *height, int fb_w, int fb_h) {
 	// Whatever the answer came from, it has to be a panel this interface can be
 	// laid out on. The pages subtract a title row and a bar from the height in
 	// unsigned arithmetic, so anything shorter than that does not crowd the
-	// layout, it wraps: the fallback is the only safe answer.
-	if (*width < PANEL_MIN_WIDTH || *height < PANEL_MIN_HEIGHT) {
-		printf("panel: %dx%d is too small to lay out, using %dx%d\n", *width, *height, SCREEN_WIDTH, SCREEN_HEIGHT);
-		*width = SCREEN_WIDTH;
-		*height = SCREEN_HEIGHT;
+	// layout, it wraps: the fallback is the only safe answer. The V1's compact
+	// layouts are written for 240x320 and have their own floor.
+	const bool compact = bp_is_compact();
+	const int min_w = compact ? COMPACT_MIN_WIDTH : PANEL_MIN_WIDTH;
+	const int min_h = compact ? COMPACT_MIN_HEIGHT : PANEL_MIN_HEIGHT;
+	if (*width < min_w || *height < min_h) {
+		const int fallback_w = compact ? bp_screen_w() : SCREEN_WIDTH;
+		const int fallback_h = compact ? bp_screen_h() : SCREEN_HEIGHT;
+		printf("panel: %dx%d is too small to lay out, using %dx%d\n", *width, *height, fallback_w, fallback_h);
+		*width = fallback_w;
+		*height = fallback_h;
 	}
 }
 
@@ -2135,8 +2144,8 @@ int main(int argc, char **argv) {
 	gui_config_t gui_cfg = {
 		.screen_width = (uint32_t)panel_w,
 		.screen_height = (uint32_t)panel_h,
-		.top_bar_height = 44,
-		.padding = 15,
+		.top_bar_height = (int8_t)bp_status_bar_h(),
+		.padding = (int8_t)bp_padding(),
 #ifdef HOST_BUILD
 		.sd_root_path = music_path,
 #else

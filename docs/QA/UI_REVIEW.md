@@ -31,20 +31,34 @@ project's own screenshot path using a prebuilt simulator binary; exact commit
 unknown. Demonstrates the six-tile home screen and status bar. No claim is made
 about device rendering.
 
+## Additional captures after the V1 port
+
+After the shared board profile was implemented and the host binary rebuilt with
+locally built audio libraries, genuine screenshots were captured for all three
+devices. Each run used the device's own `system-info.json` under a per-device
+working directory and the application's own `/tmp/sonix/shot` trigger.
+
+![R3 Pro II main screen, host SDL simulator](screenshots/r3proii/main.png)
+
+**Figure 2.** HiBy R3 Pro II, 480×720. Confirms the shorter panel retains the
+six-tile layout and status bar.
+
+![V1 main screen, host SDL simulator](screenshots/v1/main.png)
+
+**Figure 3.** TempoTec V1, 240×320. The compact profile is visible: two columns
+of tiles, 6 px padding, 24 px status bar and compact font rasters. This is a
+genuine compact layout, not a scaled 480-pixel frame. The smaller labels are a
+remaining readability limitation.
+
 ## Limitations
 
-* **R3 Pro II:** no screenshot produced. Attempts with `SONIX_PANEL=480x720`
-  produced a 480×800 PNG, so the captured bitmap does not represent that panel.
-  Those duplicate files were removed rather than mislabelled.
-* **V1:** no screenshot produced. The prebuilt binary knows only the two HiBy
-  profiles and clamps small panels to a 320×480 floor (`main.c:1113-1130`), so it
-  cannot render the 240×320 V1 UI. The V1 fork has its own emulator and
-  screenshot key, but no V1 image or emulator run was available here.
-* **Before/after comparisons:** none. There is no reproducible previous build
-  under the same conditions, so no comparison is claimed.
-* The source-level layout constants (`padding=15`, `top_bar_height=44`) are the
-  same for both HiBy devices; this was reported by the UI investigation but not
-  visually re-verified on a second panel size.
+* All three images are **host simulator** renders, not physical-device evidence.
+* The first R1 screenshot in this review came from an older prebuilt binary with
+  unproven commit; the updated `r1/main.png` came from the freshly built
+  simulator in this worktree.
+* Before/after comparisons are not available (no reproducible prior build under
+  identical conditions).
+* V1 label legibility at 240×320 needs device-level review.
 
 ## Assessment
 
