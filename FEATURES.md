@@ -109,7 +109,7 @@ This is everything Sonix Player can do today, on both the **R1** and the **R3 Pr
 >
 > The code fully supports last.fm, but the standard Sonix OS release does not have this feature enabled due to issues with sourcing the API keys for it.
 > 
-> To re-enable it (if you are forking Sonix) just edit `musicsettings.c` by uncommenting the lines for initializing last.fm and for adding the last.fm settings to the page.
+> To re-enable it (if you are forking Sonix) just edit `musicsettings.c`, uncommenting the lines for initializing last.fm and for adding the last.fm settings to the page. Also edit `main.c` to uncomment the `lastfm_init()` call.
 
 ## Podcasts
 
