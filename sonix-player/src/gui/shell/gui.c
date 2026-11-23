@@ -19,6 +19,7 @@
 #include "src/gui/bluetooth/btaudio.h"
 #include "src/gui/bluetooth/btsettings.h"
 #include "src/gui/shell/confirm.h"
+#include "src/system/audio/alsa-controls.h"
 #include "src/gui/shell/corners.h"
 #include "src/gui/settings/bootlogopage.h"
 #include "src/gui/settings/kblayoutpage.h"
@@ -568,6 +569,33 @@ static void volume_async_cb(void *user_data) {
 // From the AVRCP reader thread and from btvolume when the headphones move the
 // level themselves, so across the bridge like the key above.
 void gui_notify_volume(int percent) { gui_post(volume_async_cb, (void *)(intptr_t)percent); }
+
+static void allow_above_limit_ok_cb(void *user) {
+	int target = (int)(intptr_t)user;
+	volume_output_t out = volume_profile_output();
+	volume_limit_set_override_above(out, true);
+	set_volume_percent(target);
+	gui_notify_volume(get_volume_percent());
+}
+
+static void volume_above_limit_async_cb(void *user_data) {
+	int target = (int)(intptr_t)user_data;
+	volume_output_t out = volume_profile_output();
+	int cfg_ceiling = volume_limit_configured_ceiling(out);
+	if (!(volume_limit_enabled() && cfg_ceiling < 100 && target > cfg_ceiling)) {
+		return;
+	}
+	// Keep the user at the safe level and ask explicitly before going above it.
+	set_volume_percent(cfg_ceiling);
+	volume_overlay_show(get_volume_percent());
+	topbar_refresh_volume(get_volume_percent());
+	confirm_show("volume_limit_confirm_title", "volume_limit_confirm_note", "allow", allow_above_limit_ok_cb,
+				 (void *)(intptr_t)target);
+}
+
+void gui_request_volume_above_limit(int target_percent) {
+	gui_post(volume_above_limit_async_cb, (void *)(intptr_t)target_percent);
+}
 
 static void power_menu_async_cb(void *unused) {
 	(void)unused;
