@@ -3,12 +3,14 @@
 
 #include <stdbool.h>
 
+#include "src/system/library/playcount.h"
+
 // Scrobbling to ListenBrainz.
 //
-// Mirrors the Last.fm integration: the GUI thread reports playback once a
-// second with listenbrainz_note_playback(), and this module decides when a
-// play counts (half its length or four minutes, whichever comes first, for a
-// track of at least 30 seconds).
+// Mirrors the Last.fm integration: playcount.c follows what is played and
+// hands the play under way to listenbrainz_note_play() once a second while
+// this is active; it decides when a play counts. This module only announces
+// each play and queues it as a listen once it counts.
 //
 // A worker thread does the network and the files. "Now playing" and scrobbles
 // are submitted to the ListenBrainz submit-listens API when there is Wi-Fi.
@@ -62,19 +64,9 @@ void listenbrainz_logout(void);
 
 void listenbrainz_get_status(listenbrainz_status_t *out);
 
-typedef struct {
-	bool playing;
-	const char *file;
-	double position;
-	double duration;
-	const char *artist;
-	const char *title;
-	const char *album;
-	bool skip;
-} listenbrainz_playback_t;
-
-// GUI thread, about once a second.
-void listenbrainz_note_playback(const listenbrainz_playback_t *now);
+// From playcount.c, GUI thread, about once a second while
+// listenbrainz_active().
+void listenbrainz_note_play(const playcount_play_t *now);
 
 // True while a request is on the wire.
 bool listenbrainz_network_wanted(void);

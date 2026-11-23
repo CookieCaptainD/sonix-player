@@ -15,7 +15,6 @@
 #include "src/system/core/config.h"
 #include "src/system/device/system.h"
 #include "src/system/device/usb.h"
-#include "src/system/lastfm/lastfm.h"
 #include "src/system/net/http.h"
 #include "src/system/net/wifi.h"
 
@@ -1051,102 +1050,58 @@ bool listenbrainz_network_wanted(void) {
 	return wanted;
 }
 
+// ---------------------------------------------------------------------------
+// plays, as playcount.c follows them -- GUI thread only
+// ---------------------------------------------------------------------------
+
 static struct {
-	char file[512];
 	unsigned generation;
-	bool skip;
 	bool scrobbled;
-	bool was_playing;
-	double listened;
-	double last_tick;
-	double last_position;
-	double boot_start;
-	long long real_start;
 	play_t track;
 } play;
 
-static void take_tags(const listenbrainz_playback_t *now) {
+static void take_tags(const playcount_play_t *now) {
 	copy_field(play.track.artist, now->artist);
 	copy_field(play.track.title, now->title);
 	copy_field(play.track.album, now->album);
 }
 
-static void start_play(const listenbrainz_playback_t *now, double t) {
-	snprintf(play.file, sizeof(play.file), "%s", now->file);
-	play.generation++;
-	play.skip = now->skip;
-	play.scrobbled = false;
-	play.was_playing = true;
-	play.listened = 0;
-	play.last_tick = t;
-	play.last_position = now->position;
-	play.boot_start = t;
-	play.real_start = clock_valid() ? (long long)time(NULL) : 0;
-	memset(&play.track, 0, sizeof(play.track));
-	take_tags(now);
-}
-
-static void qualify(void) {
-	if (play.scrobbled || play.skip || !play.track.artist[0] || !play.track.title[0] || !lastfm_play_counts(play.track.duration, play.listened)) {
-		return;
-	}
-	play.scrobbled = true;
-
-	play_t p = play.track;
-	p.when = play.real_start;
-	p.boot_start = play.boot_start;
-	pthread_mutex_lock(&lock);
-	if (pending_count < PENDING_MAX) {
-		pending[pending_count++] = p;
-		pthread_cond_signal(&wake);
-	}
-	pthread_mutex_unlock(&lock);
-}
-
-void listenbrainz_note_playback(const listenbrainz_playback_t *now) {
-	if (!listenbrainz_active()) {
-		play.file[0] = '\0';
-		return;
-	}
-
-	double t = boot_seconds();
-	const char *file = now->file ? now->file : "";
-	bool same = play.file[0] && strcmp(play.file, file) == 0;
-	bool again = same && now->position < 5.0 && now->position + 10.0 < play.last_position;
-
+void listenbrainz_note_play(const playcount_play_t *now) {
 	bool announce = false;
-	if (now->playing && file[0] && (!same || again)) {
-		start_play(now, t);
+	if (now->generation != play.generation) {
+		play.generation = now->generation;
+		play.scrobbled = false;
+		memset(&play.track, 0, sizeof(play.track));
+		take_tags(now);
 		announce = true;
-	} else if (!same) {
-		play.file[0] = '\0';
-		return;
-	} else if (!play.track.title[0] && now->title && now->title[0]) {
+	} else if (!play.track.title[0] && now->title[0]) {
+		// The tags came in after the file started.
 		take_tags(now);
 		announce = true;
 	}
-
-	if (now->playing && play.was_playing) {
-		double step = t - play.last_tick;
-		if (step > 0 && step < 5.0)
-			play.listened += step;
+	play.track.when = now->real_start;
+	play.track.boot_start = now->boot_start;
+	if (now->duration > 0) {
+		play.track.duration = now->duration;
 	}
-	play.was_playing = now->playing;
-	play.last_tick = t;
-	play.last_position = now->position;
-	if (now->duration > 0)
-		play.track.duration = (int)(now->duration + 0.5);
+	bool named = !now->skip && play.track.artist[0] && play.track.title[0];
+	bool scrobble = named && now->counts && !play.scrobbled;
+	if (scrobble) {
+		play.scrobbled = true;
+	}
 
 	pthread_mutex_lock(&lock);
-	current_generation = play.generation;
+	current_generation = now->generation;
 	current_playing = now->playing;
-	if (announce && token[0] && !play.skip && play.track.artist[0] && play.track.title[0]) {
+	if (announce && token[0] && named) {
 		now_playing = play.track;
-		now_playing_generation = play.generation;
+		now_playing_generation = now->generation;
 		now_playing_waiting = true;
 		pthread_cond_signal(&wake);
 	}
+	if (scrobble && pending_count < PENDING_MAX) {
+		pending[pending_count++] = play.track;
+		pthread_cond_signal(&wake);
+	}
 	pthread_mutex_unlock(&lock);
-
-	qualify();
 }
