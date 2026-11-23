@@ -107,8 +107,12 @@ static void account_cb(lv_event_t *e) {
 	if (st.state == LISTENBRAINZ_STATE_SIGNING_IN)
 		return;
 	if (st.user[0]) {
-		char message[160];
-		snprintf(message, sizeof(message), tr("sign_out_confirm_note"), "ListenBrainz");
+		char message[320];
+		// Signing out throws away the listens still waiting to be sent: say so.
+		if (st.queued > 0)
+			snprintf(message, sizeof(message), tr("listenbrainz_sign_out_queued_note"), st.queued);
+		else
+			snprintf(message, sizeof(message), tr("sign_out_confirm_note"), "ListenBrainz");
 		confirm_show("listenbrainz_sign_out", message, "leave", do_logout, NULL);
 		return;
 	}
@@ -157,8 +161,12 @@ static void field_focus_cb(lv_event_t *e) {
 static void login_accept_cb(lv_event_t *e) {
 	(void)e;
 	const char *tok = lv_textarea_get_text(token_field);
-	if (!tok || !tok[0]) {
-		toast_error("credentials_required");
+	if (!tok || !tok[strspn(tok, " \t\r\n")]) {
+		toast_error("listenbrainz_token_required");
+		return;
+	}
+	if (!listenbrainz_available()) {
+		toast_error("listenbrainz_unavailable");
 		return;
 	}
 	wifi_status_t wifi;
@@ -168,8 +176,14 @@ static void login_accept_cb(lv_event_t *e) {
 		return;
 	}
 
-	listenbrainz_login(tok);
+	// Only wait for a result the worker has actually taken on, or the busy
+	// toast would never end.
+	bool taken = listenbrainz_login(tok);
 	lv_textarea_set_text(token_field, "");
+	if (!taken) {
+		toast_error("listenbrainz_wrong_token");
+		return;
+	}
 	waiting_for_login = true;
 	toast_busy("lastfm_state_signing_in");
 }

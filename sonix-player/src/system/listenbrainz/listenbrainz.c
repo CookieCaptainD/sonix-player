@@ -2,6 +2,7 @@
 
 #include "listenbrainz.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 
 #include "src/system/core/config.h"
+#include "src/system/device/sysinfo.h"
 #include "src/system/device/system.h"
 #include "src/system/device/usb.h"
 #include "src/system/net/http.h"
@@ -20,6 +22,7 @@
 
 #define API_URL "https://api.listenbrainz.org/1/submit-listens"
 #define VALIDATE_URL "https://api.listenbrainz.org/1/validate-token"
+#define CLIENT_NAME "Sonix Player"
 #define API_TIMEOUT_SECS 15
 #define BODY_LIMIT (64 * 1024)
 
@@ -689,8 +692,18 @@ static void flush_pending(const char *name) {
 	pthread_mutex_unlock(&lock);
 }
 
-static void build_track_json(text_t *t, const play_t *track) {
-	text_str(t, "{\"track_metadata\":{\"artist_name\":");
+// One listen. `listened_at` is left out for "playing_now", which must not
+// carry it.
+static void build_listen_json(text_t *t, const play_t *track, bool listened_at) {
+	text_str(t, "{");
+	if (listened_at) {
+		char ts[32];
+		snprintf(ts, sizeof(ts), "%lld", track->when);
+		text_str(t, "\"listened_at\":");
+		text_str(t, ts);
+		text_str(t, ",");
+	}
+	text_str(t, "\"track_metadata\":{\"artist_name\":");
 	text_json(t, track->artist);
 	text_str(t, ",\"track_name\":");
 	text_json(t, track->title);
@@ -698,35 +711,42 @@ static void build_track_json(text_t *t, const play_t *track) {
 		text_str(t, ",\"release_name\":");
 		text_json(t, track->album);
 	}
+	text_str(t, ",\"additional_info\":{\"media_player\":\"" CLIENT_NAME "\",\"submission_client\":\"" CLIENT_NAME "\"");
+	const char *version = sysinfo_os_version();
+	if (version && version[0]) {
+		text_str(t, ",\"submission_client_version\":");
+		text_json(t, version);
+	}
 	if (track->duration > 0) {
 		char num[32];
 		snprintf(num, sizeof(num), "%d", track->duration);
-		text_str(t, ",\"additional_info\":{\"duration\":");
+		text_str(t, ",\"duration\":");
 		text_str(t, num);
-		text_str(t, "}");
 	}
-	text_str(t, "}}");
+	text_str(t, "}}}");
 }
 
 static void send_now_playing(const play_t *track, const char *tok) {
 	text_t body = {0};
 	text_str(&body, "{\"listen_type\":\"playing_now\",\"payload\":[");
-	build_track_json(&body, track);
+	build_listen_json(&body, track, false);
 	text_str(&body, "]}");
 	char why[160];
 	if (body.failed) {
-		snprintf(why, sizeof(why), "out of memory");
-	} else {
-		result_t result = http_json(API_URL, tok, "POST", body.buf, why, sizeof(why), NULL);
 		free(body.buf);
-		if (result == RESULT_OK)
-			session_accepted();
-		else
-			fprintf(stderr, "listenbrainz: now playing not sent: %s\n", why);
+		fprintf(stderr, "listenbrainz: now playing not sent: out of memory\n");
 		return;
 	}
+	result_t result = http_json(API_URL, tok, "POST", body.buf, why, sizeof(why), NULL);
 	free(body.buf);
+	if (result == RESULT_OK) {
+		session_accepted();
+		return;
+	}
 	fprintf(stderr, "listenbrainz: now playing not sent: %s\n", why);
+	// A revoked token shows up here as well as on the queue: count it the same.
+	if (result == RESULT_SESSION)
+		session_refused(why);
 }
 
 static result_t send_batch(int max, const char *tok, char *why, size_t why_size, int *lines) {
@@ -746,26 +766,7 @@ static result_t send_batch(int max, const char *tok, char *why, size_t why_size,
 		for (int i = 0; i < count; i++) {
 			if (i)
 				text_str(&body, ",");
-			char ts[32];
-			snprintf(ts, sizeof(ts), "%lld", plays[i].when);
-			text_str(&body, "{\"listened_at\":");
-			text_str(&body, ts);
-			text_str(&body, ",\"track_metadata\":{\"artist_name\":");
-			text_json(&body, plays[i].artist);
-			text_str(&body, ",\"track_name\":");
-			text_json(&body, plays[i].title);
-			if (plays[i].album[0]) {
-				text_str(&body, ",\"release_name\":");
-				text_json(&body, plays[i].album);
-			}
-			if (plays[i].duration > 0) {
-				char num[32];
-				snprintf(num, sizeof(num), "%d", plays[i].duration);
-				text_str(&body, ",\"additional_info\":{\"duration\":");
-				text_str(&body, num);
-				text_str(&body, "}");
-			}
-			text_str(&body, "}}");
+			build_listen_json(&body, &plays[i], true);
 		}
 		text_str(&body, "]}");
 		if (body.failed) {
@@ -785,6 +786,9 @@ static result_t send_batch(int max, const char *tok, char *why, size_t why_size,
 
 typedef struct {
 	int batch;
+	// After a batch is refused as a bad request, its lines are sent one at a
+	// time to find the bad one; this many are left before full batches again.
+	int single_left;
 	double backoff;
 	double retry_at;
 	bool was_online;
@@ -807,9 +811,10 @@ static void send_queue(sender_t *s, const char *tok) {
 		pthread_mutex_unlock(&lock);
 		break;
 	case RESULT_BAD_REQUEST:
-		if (s->batch > 1)
+		if (s->batch > 1) {
 			s->batch = 1;
-		else {
+			s->single_left = lines;
+		} else {
 			fprintf(stderr, "listenbrainz: a queued listen was refused (%s); dropping it\n", why);
 			drop = true;
 		}
@@ -840,8 +845,15 @@ static void send_queue(sender_t *s, const char *tok) {
 		file_count = 0;
 	else if (drop)
 		file_count = file_count > lines ? file_count - lines : 0;
-	if (file_count == 0)
+	if (drop && s->batch == 1 && lines > 0) {
+		s->single_left -= lines;
+		if (s->single_left <= 0)
+			s->batch = BATCH_MAX;
+	}
+	if (file_count == 0) {
 		s->batch = BATCH_MAX;
+		s->single_left = 0;
+	}
 	pthread_mutex_unlock(&lock);
 	if (drop && lines > 0)
 		queue_drop_head(lines);
@@ -993,17 +1005,26 @@ bool listenbrainz_active(void) {
 	return counting;
 }
 
-void listenbrainz_login(const char *tok) {
-	if (!started || !tok || !tok[0])
-		return;
+bool listenbrainz_login(const char *tok) {
+	if (!started || !tok)
+		return false;
+	// Typed by hand on the device: a stray space must not make it "invalid".
+	while (isspace((unsigned char)*tok))
+		tok++;
+	size_t len = strlen(tok);
+	while (len && isspace((unsigned char)tok[len - 1]))
+		len--;
+	if (!len || len >= sizeof(login_token))
+		return false;
 	pthread_mutex_lock(&lock);
 	if (!logging_in) {
-		snprintf(login_token, sizeof(login_token), "%s", tok);
+		snprintf(login_token, sizeof(login_token), "%.*s", (int)len, tok);
 		logging_in = true;
 		login_requested = true;
 		pthread_cond_signal(&wake);
 	}
 	pthread_mutex_unlock(&lock);
+	return true;
 }
 
 void listenbrainz_logout(void) {

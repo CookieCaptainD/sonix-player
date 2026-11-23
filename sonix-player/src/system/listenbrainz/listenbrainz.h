@@ -59,7 +59,10 @@ bool listenbrainz_active(void);
 
 // Validates `token` (needs Wi-Fi), stores it and the user name on success.
 // Returns at once; the worker does the work. The token is wiped once used.
-void listenbrainz_login(const char *token);
+// Leading and trailing whitespace is ignored. False, and nothing happens, when
+// the module is not running or the token is empty or too long; the result of a
+// request that was taken comes later, through login_serial/login_result.
+bool listenbrainz_login(const char *token);
 void listenbrainz_logout(void);
 
 void listenbrainz_get_status(listenbrainz_status_t *out);
