@@ -101,7 +101,37 @@ SYSTEM_INFO="usr/resource/sonix/components/system-info.json"
 # Note what is NOT in this list: usr/resource/sonix, which is where the assets
 # folder lands. The stock fonts and strings live one level above it and go;
 # ours stay.
+# DEBUG-TOOLS-BEGIN
 STOCK_UI_DIRS=(usr/resource/litegui usr/resource/layout usr/resource/str usr/resource/fonts)
+
+# Debug tools inherited from the stock base. A release image has no use for
+# them, and each one costs space in a rootfs that has to fit in flash. Set
+# DEBUG_TOOLS=keep to leave them in place for a debugging build.
+STOCK_DEBUG_FILES=(
+	usr/bin/strace
+	usr/bin/strace-log-merge
+	usr/bin/btmon
+	usr/bin/iperf3
+	usr/lib/libiperf.so.0.0.0
+)
+
+strip_debug_tools() {
+	local dir="${1:-$SQUASH_DIR}"
+	if [ "${DEBUG_TOOLS:-}" = "keep" ]; then
+		say "    DEBUG_TOOLS=keep, debug tools left in place"
+		return 0
+	fi
+	local file
+	for file in "${STOCK_DEBUG_FILES[@]}"; do
+		if [ -e "$dir/$file" ]; then
+			rm -f "$dir/$file"
+			say "    $file removed"
+		else
+			say "    $file was not there"
+		fi
+	done
+}
+# DEBUG-TOOLS-END
 
 # The working folders always go, whether the run succeeded or not.
 cleanup() { rm -rf "$WORK_DIR" "$SQUASH_DIR" "$MERGED_SQUASHFS" 2>/dev/null || true; }
@@ -604,6 +634,9 @@ build_one() {
 			say "    $dir was not there"
 		fi
 	done
+
+	# Remove the stock debug tools unless DEBUG_TOOLS=keep.
+	strip_debug_tools "$SQUASH_DIR"
 	say ""
 
 	# ==========================================================================
