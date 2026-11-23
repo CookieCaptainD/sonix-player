@@ -42,6 +42,7 @@ MOUNTED_STATE="$TMP/mounted.state"
 UMOUNT_MODE="$TMP/umount.mode"
 UMOUNT_ATTEMPTED="$TMP/umount.attempted"
 CONFIG_FILE="$TMP/device_config.ini"
+FLAG_FILE="$TMP/copy-from-sd0"
 ERR="$TMP/stderr"
 
 mkdir -p "$SD_ROOT" "$DEV_DIR" "$TMP/staging" "$TMP/bin"
@@ -123,10 +124,14 @@ reset_case() {
 	: > "$UMOUNT_MODE"
 	rm -f "$SD_ROOT/sonix_player" "$STAGING" "$UMOUNT_ATTEMPTED" "$ERR"
 	rm -rf "$TMP/no-such-dir"
+	# The developer-settings toggle writes this flag. Present by default, so
+	# the existing cases keep exercising the full card flow unless overridden.
+	printf '1\n' > "$FLAG_FILE"
 	CASE_DEVICES=''
 	CASE_LAUNCH="$NO_LAUNCH"
 	CASE_STAGING="$STAGING"
 	CASE_CONFIG="$CONFIG_FILE"
+	CASE_FLAG="$FLAG_FILE"
 	CASE_FAILS=$FAILS
 }
 
@@ -148,6 +153,7 @@ run_case() {
 		SONIX_STAGING="$CASE_STAGING" \
 		SONIX_LAUNCH="$CASE_LAUNCH" \
 		SONIX_CONFIG_FILE="$CASE_CONFIG" \
+		SONIX_FLAG_FILE="$CASE_FLAG" \
 		sh "$HELPER" 2>"$ERR")
 }
 
@@ -330,6 +336,17 @@ mounted_empty
 LABEL='launcher absent on fallback path -> direct handoff'
 run_case
 assert_selection "$INSTALLED" yes direct
+finish_case
+
+reset_case
+rm -f "$FLAG_FILE"
+mounted_card "$CARD_BIN"
+CASE_LAUNCH="$LAUNCH_STUB"
+LABEL='toggle flag absent -> card ignored, installed, no mount or umount'
+run_case
+assert_selection "$INSTALLED" no launch
+[ ! -s "$CALL_LOG" ] || bad "$LABEL" "unexpected mount: $(cat "$CALL_LOG")"
+[ ! -s "$UMOUNT_LOG" ] || bad "$LABEL" "unexpected umount: $(cat "$UMOUNT_LOG")"
 finish_case
 
 reset_case

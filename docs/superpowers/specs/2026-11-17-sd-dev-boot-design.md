@@ -32,9 +32,10 @@ UBIFS, not the card (`system.c:320-330`, `factoryreset.c:50-54`).
 ## Scope
 
 - **Single-file switch.** `/mnt/sd_0/sonix_player` on a FAT32 card is the only control.
-- **Developer-options gate.** Read `devoptions_unlocked` from `[system]` in
-  `/usr/data/device_config.ini`. Mount the card only when the value is `1`. With the value
-  absent or `0`, run the firmware binary without a mount attempt.
+- **Developer-settings toggle and flag.** A switch in Settings > Developer options creates
+  or removes `/usr/data/copy-from-sd0`. The boot helper mounts the card only when that file
+  exists *and* `devoptions_unlocked` is `1` in `[system]` of `/usr/data/device_config.ini`.
+  With either absent, run the firmware binary without a mount attempt.
 - **One-file revert.** Remove or rename it; no reflash, no ADB, no state files.
 - **Both players.** One helper installed by the packer for R1 and R3 Pro II.
 - **No writes to rootfs.** rootfs is read-only squashfs (`sonix_firmware_packer.sh:658-659`;
@@ -43,9 +44,10 @@ UBIFS, not the card (`system.c:320-330`, `factoryreset.c:50-54`).
 - **Card unmounted before the player starts.** The helper unmounts in every branch; the
   player's own mount logic runs normally afterwards (`system.c:681-704`, `system.c:757`).
 
-Not in scope: a new developer-option toggle or marker file (the gate reads a flag the
-settings UI already writes), a first-party toolchain for custom languages, or replacing the
-OTA path (`firmware.c:104-159`).
+The only player-code change is the developer-settings toggle and its language strings: as
+@Tartarus6 asked in PR #68, every other part of the feature stays in the boot helper.
+Out of scope: a first-party toolchain for custom languages, or replacing the OTA path
+(`firmware.c:104-159`).
 
 ## Approaches considered
 
@@ -62,11 +64,13 @@ delay, so there is no timing problem to guard against. Size/ELF validation, an A
 and ADB verification were removed in the same change. Any binary is accepted; a bad one is
 recovered by removing the card file.
 
-The Developer-options gate differs from the rejected `devmode` marker. `devoptions_unlocked`
-already exists in `/usr/data/device_config.ini`, and the settings UI writes it when the user
-taps Build number five times in About (`systempage.c:158,180-181`). The gate needs no ADB,
-writes no new file and adds no second toggle. @sandreas proposed reading it before mounting;
-the human partner approved adopting that check.
+The explicit toggle follows @Tartarus6's review on PR #68: an easy-to-use switch in
+Developer options writes a flag file, which the helper checks before mounting. The switch
+is the sole change inside the player (`devoptions.c` plus the language files). Keeping the
+existing `devoptions_unlocked` check as a second barrier means hiding Developer options also
+disarms the override, so no boot can pick up a card binary without a deliberate choice. The
+rejected `devmode` marker would have needed ADB to arm from outside the UI; this switch does
+not.
 
 ## Decided design
 
@@ -87,8 +91,10 @@ the human partner approved adopting that check.
    - The rewrite runs only when exactly one line equals `/usr/bin/sonix_player` and
      `sonix_launch` is installed (`:578-600`); the init script tests launcher existence
      with `-f`, not `-x` (`:507-517`).
-3. `README.md`: the `### Persistent dev build from microSD` subsection documents the
-   one-file workflow and the Developer-options prerequisite; the packer input tree lists
+3. `src/gui/settings/devoptions.c` and the language `.ini` files: the single player-side
+   change, a switch that writes/removes `/usr/data/copy-from-sd0` and its translations.
+4. `README.md`: the `### Persistent dev build from microSD` subsection documents the
+   switch, the card file and the recovery paths; the packer input tree lists
    `sonix_devboot.sh` beside `sonix_launch`.
 
 ### Runtime flow of `sonix_devboot.sh`
@@ -97,13 +103,14 @@ Run as `/bin/sh` from `sonix_player.sh` at S92, with rootfs read-only and `/usr/
 already mounted (S21).
 
 1. Set `INSTALLED=/usr/bin/sonix_player`, `CARD=/mnt/sd_0/sonix_player`,
-   `TMP=/tmp/sonix_player`, `CONFIG=/usr/data/device_config.ini`.
-2. **Gate on Developer options.** Read `devoptions_unlocked` from `$CONFIG`. Match the format
-   the config writer emits: a `[system]` header followed by `key = value` lines
-   (`config.c:281-284`). If the value is not `1`, start `$INSTALLED` through
-   `sonix_launch` and do not touch the card; no mount attempt happens
-   (`systempage.c:158,180-181`). The key exists in the shipped config, so this needs no ADB
-   and writes no new file.
+   `TMP=/tmp/sonix_player`, `CONFIG=/usr/data/device_config.ini`,
+   `FLAG=/usr/data/copy-from-sd0`.
+2. **Gate on the switch and Developer options.** Require `$FLAG` to be a regular file, and
+   read `devoptions_unlocked` from `$CONFIG` in the format the writer emits: a `[system]`
+   header followed by `key = value` lines (`config.c:281-284`). If either is missing, start
+   `$INSTALLED` through `sonix_launch` and do not touch the card; no mount attempt happens
+   (`systempage.c:158,180-181`). The flag is written by the one setting added in
+   `devoptions.c`; nothing else in the player changes.
 3. **Make the card visible if needed.** If the mount point is not already mounted, try, in
    order, `/dev/mmcblk0p1`, `/dev/mmcblk1p1`, `/dev/mmcblk0`, `/dev/mmcblk1` — only `-b`
    devices — `mount -t vfat "$dev" /mnt/sd_0`, breaking on success. The device order
@@ -122,11 +129,11 @@ already mounted (S21).
    (`launcher/sonix_launch.c:1-10,111-127`; `Makefile:330-338`). If `sonix_launch` is absent,
    `exec "$SELECTED"` directly, mirroring the original launcher.
 
-**No binary validation.** There is no size check, no ELF/ABI check, no boot counter, no new
-devmode marker and no ADB. The Developer-options gate reads an existing key; it does not
-validate the binary. Recovery from a corrupt or crashing binary is to remove or rename the
-file on the card; the next boot returns to the firmware binary. Custom binaries from other
-projects are accepted as-is.
+**No binary validation.** There is no size check, no ELF/ABI check, no boot counter, no
+`devmode` marker and no ADB. The gate reads the switch's flag file and an existing config
+key; neither validates the binary. Recovery from a corrupt or crashing binary is to remove
+or rename the file on the card, or switch the setting off; the next boot returns to the
+firmware binary. Custom binaries from other projects are accepted as-is.
 
 ## Verification plan (before claiming done)
 

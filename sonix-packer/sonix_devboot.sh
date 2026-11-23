@@ -2,11 +2,12 @@
 # Pick a dev build from a microSD card and hand it to the Sonix player at boot.
 # Every path is overridable so the same script can be exercised on a host.
 #
-# Runtime flow: skip the card unless devoptions_unlocked is 1 in the device
-# config; otherwise mount the card if needed, copy its binary to /tmp, umount,
-# then run the result under sonix_launch. Without a card binary, run the
-# installed one the same way. Delete the card file to go back to the installed
-# firmware; turn Developer options off to skip the check entirely.
+# Runtime flow: skip the card unless the developer-settings toggle has written
+# a flag file AND devoptions_unlocked is 1 in the device config; otherwise mount
+# the card if needed, copy its binary to /tmp, umount, then run the result under
+# sonix_launch. Without a card binary, run the installed one the same way.
+# Switch the toggle off (or remove the card file) to go back to the installed
+# firmware; turning Developer options off also disables the check entirely.
 
 INSTALLED=${SONIX_INSTALLED:-/usr/bin/sonix_player}
 CARD_ROOT=${SONIX_SD_ROOT:-/mnt/sd_0}
@@ -20,6 +21,7 @@ STAGING=${SONIX_STAGING:-/tmp/sonix_player}
 LAUNCH=${SONIX_LAUNCH:-/usr/bin/sonix_launch}
 TEST_MODE=${SONIX_DEVBOOT_TEST:-}
 CONFIG_FILE=${SONIX_CONFIG_FILE:-/usr/data/device_config.ini}
+FLAG_FILE=${SONIX_FLAG_FILE:-/usr/data/copy-from-sd0}
 AWK=${SONIX_AWK:-awk}
 
 log() {
@@ -88,10 +90,12 @@ main() {
 	CARD_MOUNTED=no
 	UMOUNTED=no
 
-	# Developer options gate the whole card check. With the flag off, skip
-	# straight to the handoff: no mount, no umount and no "no card" noise on a
-	# normal boot. The device loop and card reads only run when it is exactly 1.
-	if [ "$(devoptions_value)" = 1 ]; then
+	# The developer-settings toggle writes FLAG_FILE; require it before even
+	# looking at the card, so an ordinary boot never touches an inserted card.
+	# Requiring Developer options as well is a second barrier: hiding the
+	# setting also disarms the override. With either off, skip straight to the
+	# handoff -- no mount, no umount and no "no card" noise.
+	if [ -f "$FLAG_FILE" ] && [ "$(devoptions_value)" = 1 ]; then
 		# 1. Mount the card only when the mount point is not already in use.
 		if card_is_mounted; then
 			log "card already mounted at $CARD_ROOT"

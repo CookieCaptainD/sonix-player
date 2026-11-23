@@ -234,18 +234,21 @@ sitting in memory for the whole session.
 ### Persistent dev build from microSD
 
 Unlock Developer options first: in About, tap **Build number** five times. Then
-copy a binary to the root of a FAT32 microSD card named `sonix_player` and
-reboot. With Developer options locked, the helper skips the card and runs the
-firmware binary; it does not try to mount the card.
+switch on **Run dev build from microSD** in Settings > Developer options. The
+switch writes the flag file `/usr/data/copy-from-sd0` on the writable partition;
+switching it off removes the file. Copy a binary to the root of a FAT32
+microSD card named `sonix_player` and reboot.
 
-With Developer options on, every boot mounts the card, copies that file to
+With the switch on, every boot mounts the card, copies that file to
 `/tmp/sonix_player`, unmounts the card, and runs the copy through
 `sonix_launch` instead of the firmware binary. A patched build stays in place
 across reboots, and a completely custom one can be tried without flashing.
 
-With no `sonix_player` file on the card, the firmware binary runs as usual.
-Remove or rename the file to revert - no reflash and no recovery mode needed.
-Turning Developer options off has the same effect: the card is skipped.
+With the switch off, the card is not mounted at all. With no `sonix_player`
+file on the card, the firmware binary runs as usual. Remove or rename the file
+to revert - no reflash and no recovery mode needed. Switching the setting off
+also reverts; turning Developer options off disarms the override as well, even
+if the flag file is still present.
 
 Any binary is accepted; nothing inspects its size or format. If one fails to
 run, remove the file from the card and the device boots normally again. Works
