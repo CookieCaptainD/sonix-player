@@ -57,6 +57,7 @@
 #include "src/system/lastfm/lastfm.h"
 #include "src/system/listenbrainz/listenbrainz.h"
 #include "src/system/library/library.h"
+#include "src/system/library/playcount.h"
 #include "src/system/core/logging.h"
 #include "src/system/playback/playlist.h"
 #include "src/system/library/playlists.h"
@@ -2220,6 +2221,10 @@ int main(int argc, char **argv) {
 	sleeptimer_init();
 
 	gui_init(&gui_cfg);
+
+	// Following what is played, for the play counts and the scrobblers. Its
+	// own timer, so it runs whichever settings pages are built.
+	playcount_init();
 
 	// "Rotate screen", as it was left. After gui_init so there are screens to
 	// redraw, and before the first frame the user sees.
