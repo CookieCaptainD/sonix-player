@@ -231,6 +231,26 @@ script execs it, and it runs the player as its child and does `sleep 1; reboot`
 when the player exits - what the rest of the script would do, without a shell
 sitting in memory for the whole session.
 
+### Persistent dev build from microSD
+
+Unlock Developer options first: in About, tap **Build number** five times. Then
+copy a binary to the root of a FAT32 microSD card named `sonix_player` and
+reboot. With Developer options locked, the helper skips the card and runs the
+firmware binary; it does not try to mount the card.
+
+With Developer options on, every boot mounts the card, copies that file to
+`/tmp/sonix_player`, unmounts the card, and runs the copy through
+`sonix_launch` instead of the firmware binary. A patched build stays in place
+across reboots, and a completely custom one can be tried without flashing.
+
+With no `sonix_player` file on the card, the firmware binary runs as usual.
+Remove or rename the file to revert - no reflash and no recovery mode needed.
+Turning Developer options off has the same effect: the card is skipped.
+
+Any binary is accepted; nothing inspects its size or format. If one fails to
+run, remove the file from the card and the device boots normally again. Works
+on both the R1 and the R3 Pro II.
+
 
 ## Creating the firmware image
 
@@ -243,6 +263,7 @@ sonix-packer/
 ├── r1_original.upt          the stock firmware of the R1, from HiBy
 ├── sonix_player             the binary from `make target`
 ├── sonix_launch             also from `make target`; optional
+├── sonix_devboot.sh         SD-card override helper, installed by the packer
 ├── kernel/                  xImage-R3PII and xImage-R1; optional
 └── assets/
     ├── R3PII/               the overlay for the R3 Pro II
