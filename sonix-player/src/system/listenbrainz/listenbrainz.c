@@ -62,7 +62,7 @@ static bool login_requested;
 static bool logout_requested;
 static bool logging_in;
 static char login_token[512];
-static unsigned login_serial;
+static unsigned login_serial;  // increments each login attempt, tells GUI thread that a new login attempt has happened
 static listenbrainz_login_result_t login_result;
 
 static play_t pending[PENDING_MAX];
@@ -541,27 +541,28 @@ static result_t http_json(const char *url, const char *tok, const char *method, 
 static void do_login(char *tok) {
 	char why[160];
 	char *body = NULL;
-	result_t result = http_json(VALIDATE_URL, tok, "GET", NULL, why, sizeof(why), &body);
+	result_t req_result = http_json(VALIDATE_URL, tok, "GET", NULL, why, sizeof(why), &body);
 
 	char name_out[128] = "";
-	if (result == RESULT_OK) {
-		if (!json_bool_true(body, "valid") || !json_string(body, "user_name", name_out, sizeof(name_out))) {
-			snprintf(why, sizeof(why), "invalid token");
-			result = RESULT_REFUSED;
-		}
-	}
-	free(body);
-
 	listenbrainz_login_result_t outcome;
-	if (result == RESULT_OK)
-		outcome = LISTENBRAINZ_LOGIN_OK;
-	else if (result == RESULT_RETRY)
+	if (req_result == RESULT_OK) {
+		if (!json_bool_true(body, "valid") || !json_string(body, "user_name", name_out, sizeof(name_out))) {
+			// handle 200 response that says token is invalid
+			snprintf(why, sizeof(why), "invalid token");
+			outcome = LISTENBRAINZ_LOGIN_WRONG_CREDENTIALS;
+		} else {
+			// handle 200 response that says token is valid
+			outcome = LISTENBRAINZ_LOGIN_OK;
+		}
+	} else if (req_result == RESULT_RETRY) {
 		outcome = LISTENBRAINZ_LOGIN_NO_REPLY;
-	else if (result == RESULT_SESSION)
+	} else if (req_result == RESULT_SESSION) {
 		outcome = LISTENBRAINZ_LOGIN_WRONG_CREDENTIALS;
-	else
+	} else {
 		outcome = LISTENBRAINZ_LOGIN_REFUSED;
+	}
 
+	// save new session, if login was successful
 	if (outcome == LISTENBRAINZ_LOGIN_OK) {
 		save_session(tok, name_out);
 		printf("listenbrainz: signed in as %s\n", name_out);
@@ -569,11 +570,15 @@ static void do_login(char *tok) {
 		fprintf(stderr, "listenbrainz: token validation failed: %s\n", why);
 	}
 
+	free(body);  // clean up `body` pointer
+
 	pthread_mutex_lock(&lock);
 	logging_in = false;
-	login_result = outcome;
+	login_result = outcome;  // update global login_result variable
+
 	login_serial++;
 	if (outcome == LISTENBRAINZ_LOGIN_OK) {
+		// update global state variables
 		snprintf(token, sizeof(token), "%s", tok);
 		snprintf(user, sizeof(user), "%s", name_out);
 		session_expired = false;
@@ -583,6 +588,7 @@ static void do_login(char *tok) {
 	} else {
 		snprintf(detail, sizeof(detail), "%s", why);
 	}
+
 	pthread_mutex_unlock(&lock);
 	wipe(tok, strlen(tok));
 }
