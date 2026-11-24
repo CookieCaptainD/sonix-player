@@ -1981,6 +1981,29 @@ library_quality_t library_track_quality(const char *path, int *rate_out, int *bi
 	return (bits <= 16 && rate <= 44100) ? LIBRARY_QUALITY_CD : LIBRARY_QUALITY_HIFI;
 }
 
+long library_track_duration(const char *path) {
+	if (!path || !path[0]) {
+		return -1;
+	}
+
+	long seconds = -1;
+	pthread_mutex_lock(&db_lock);
+	sqlite3_stmt *stmt = NULL;
+	if (db && sqlite3_prepare_v2(db, "SELECT duration FROM MEDIA_TABLE WHERE path=? LIMIT 1", -1,
+								 &stmt, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+		if (sqlite3_step(stmt) == SQLITE_ROW) {
+			if (sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+				seconds = (long)sqlite3_column_int64(stmt, 0);
+			}
+		}
+		sqlite3_finalize(stmt);
+	}
+	pthread_mutex_unlock(&db_lock);
+
+	return seconds;
+}
+
 // One name and the slot it came from, for the batch below.
 typedef struct {
 	const char *name;
