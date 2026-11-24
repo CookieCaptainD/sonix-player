@@ -41,8 +41,24 @@
 # that is deliberate; the once it is not, it says so.
 #
 # No questions asked: run it and it does the lot.
+#
+#   ./sonix_firmware_packer.sh                       the images
+#   ./sonix_firmware_packer.sh --strip-debug-tools   the same, without the stock
+#                                                    debugging tools (see
+#                                                    STOCK_DEBUG_TOOLS below)
 
 set -euo pipefail
+
+# --- options ---
+STRIP_DEBUG_TOOLS=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--strip-debug-tools) STRIP_DEBUG_TOOLS=1 ;;
+	-h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+	*) echo "unknown option: $1 (see --help)" >&2; exit 1 ;;
+	esac
+	shift
+done
 export COLUMNS=1
 
 # --- terminal colours ---
@@ -130,7 +146,8 @@ STOCK_UI_DIRS=(usr/resource/litegui usr/resource/layout usr/resource/str usr/res
 #
 # The debugging tools (strace, btmon, the bt-* and dbus-* tools...), obexd
 # and ntpd, and the R1's AIC8800 Wi-Fi files are unused too, but are kept on
-# purpose -- and so is libical, which obexd links.
+# purpose -- and so is libical, which obexd links. --strip-debug-tools takes
+# out the debugging tools (STOCK_DEBUG_TOOLS, below).
 STOCK_UNUSED=(
 	etc/logo1.jpeg etc/logo2.jpeg
 	usr/share/zoneinfo
@@ -150,6 +167,66 @@ STOCK_UNUSED=(
 	usr/lib/libvorbis.so usr/lib/libdsd2pcm.so usr/lib/libqrencode.so
 	'usr/lib/libjson-glib-1.0.so*' 'usr/lib/libevent*.so*'
 	'usr/lib/libpcrecpp.so*'
+)
+
+# The stock debugging tools, removed only with --strip-debug-tools: about
+# 4.5 MB on each model. Checked against both models' images: nothing that
+# stays starts or links any of them -- not the init scripts, not the scripts
+# sys_server runs, not sys_server itself, not Sonix Player. A tool missing on
+# one model is skipped there. Without them, debugging over adb has no strace
+# and no UBI or flash maintenance tools.
+#
+# Kept, although they look like debugging tools, because something uses them:
+#   btmon                        Sonix Player's Bluetooth log (btlog.c)
+#   hciconfig, hciattach,        the bt_* scripts sys_server runs (and the
+#   sdptool, bt_test, bt-media,  stock bt_init, which Sonix Player still
+#   rfkill, aic_radio.sh         copes with)
+#   bt-adapter, bt-device,       run by the R3 Pro II's sys_server
+#   bt-agent, bluealsa-cli,
+#   dbus-send
+#   dbus-uuidgen                 S30dbus and Sonix Player
+#   nanddump, nandwrite,         the boot logo marker (bootlogo.c) and the
+#   flash_erase, mtdinfo         OTA scripts
+#   ubiattach, ubidetach,        mount_ubifs.sh
+#   ubimkvol
+#
+#   strace                       system call tracing
+#   hcidump ... sbcinfo          Bluetooth tests and extras; hcitool goes
+#                                with dut.sh, its only user
+#   dbus-*, gdbus, gio ...       D-Bus and GLib command line tools
+#   alsamixer ... arecord        ALSA command line tools
+#   pcregrep ... cmd_gpio        tests
+#   mtd_debug ... ubiupdatevol   flash and UBI maintenance
+#   usr/lib/...                  linked only by the tools above: the ncurses
+#                                form, menu and panel libraries (alsamixer),
+#                                libbsd (hcitop), libpcreposix (pcregrep,
+#                                pcretest), libiperf (iperf3)
+STOCK_DEBUG_TOOLS=(
+	usr/bin/strace usr/bin/strace-log-merge
+	usr/bin/hcidump usr/bin/hcitop usr/bin/bccmd usr/bin/bluemoon
+	usr/bin/ciptool usr/bin/l2ping usr/bin/l2test usr/bin/rctest
+	usr/bin/gatttool usr/bin/btattach usr/bin/hex2hcd
+	usr/bin/hcitool usr/bin/dut.sh
+	usr/bin/bt-network usr/bin/bt-obex usr/bin/bt-connect
+	usr/bin/bluealsa-aplay usr/bin/bluealsa-rfcomm usr/bin/mpris-proxy
+	usr/bin/sbcdec usr/bin/sbcenc usr/bin/sbcinfo
+	usr/bin/dbus-monitor usr/bin/dbus-test-tool usr/bin/dbus-binding-tool
+	usr/bin/dbus-launch usr/bin/dbus-run-session usr/bin/dbus-cleanup-sockets
+	usr/bin/dbus-update-activation-environment
+	usr/bin/gdbus usr/bin/gio usr/bin/gio-launch-desktop
+	usr/bin/gio-querymodules usr/bin/gresource usr/bin/gsettings
+	usr/bin/gapplication
+	usr/bin/alsamixer usr/bin/amixer usr/bin/aplay usr/bin/arecord
+	usr/bin/pcregrep usr/bin/pcretest usr/bin/xmlwf usr/bin/memtester
+	usr/bin/iperf3 usr/bin/tree usr/bin/getevent usr/bin/cmd_fb
+	usr/bin/cmd_gpio
+	usr/sbin/mtd_debug usr/sbin/nandtest usr/sbin/flashcp
+	usr/sbin/flash_lock usr/sbin/flash_unlock
+	usr/sbin/ubiblock usr/sbin/ubicrc32 usr/sbin/ubiformat usr/sbin/ubinfo
+	usr/sbin/ubinize usr/sbin/ubirename usr/sbin/ubirmvol usr/sbin/ubirsvol
+	usr/sbin/ubiupdatevol
+	'usr/lib/libform.so*' 'usr/lib/libmenu.so*' 'usr/lib/libpanel.so*'
+	'usr/lib/libbsd.so*' 'usr/lib/libpcreposix.so*' 'usr/lib/libiperf.so*'
 )
 
 # The working folders always go, whether the run succeeded or not.
@@ -415,6 +492,51 @@ drop_builtin_modules() {
 	done < "$list"
 	say "    $removed modules removed"
 	say ""
+}
+
+# Removes paths of the rootfs, given as patterns (see STOCK_UNUSED), and says
+# what went and how much it was. A path the assets bring is kept; a symlink
+# left pointing into something that went is reported. Runs inside
+# build_one(), whose SQUASH_DIR and MODEL_DIR it uses.
+remove_stock_paths() {
+	local pattern path rel freed=0 count=0 kb dangling removed_paths=""
+	for pattern in "$@"; do
+		# the pattern expands inside the rootfs; no match leaves it as it is
+		for path in "$SQUASH_DIR"/$pattern; do
+			[ -e "$path" ] || [ -L "$path" ] || continue
+			rel="${path#"$SQUASH_DIR"/}"
+			if [ -e "$ASSETS_DIR/$MODEL_DIR/$rel" ] || [ -L "$ASSETS_DIR/$MODEL_DIR/$rel" ]; then
+				warn "$rel is in the assets: kept"
+				continue
+			fi
+			kb=""
+			[ -L "$path" ] || kb="$(du -sk "$path" | cut -f1)"
+			rm -rf "$path"
+			[ ! -e "$path" ] && [ ! -L "$path" ] || die "could not remove $rel."
+			freed=$((freed + ${kb:-0}))
+			count=$((count + 1))
+			removed_paths="$removed_paths/$rel"$'\n'
+			say "    $rel removed${kb:+ (${kb} KiB)}"
+		done
+	done
+	# A symlink left pointing into something that went. Only those: the stock
+	# tree has links to files that exist only at runtime (/etc/resolv.conf in
+	# /tmp, /etc/localtime on userdata), which are fine.
+	dangling="$(cd "$SQUASH_DIR" && find . -type l 2>/dev/null |
+		while IFS= read -r l; do
+			t="$(readlink "$l")"
+			case "$t" in
+			/*) ;;
+			*) t="/$(cd "$(dirname "$l")" && pwd -P | sed "s|^$(cd "$SQUASH_DIR" && pwd -P)||")/$t" ;;
+			esac
+			t="$(echo "$t" | sed -E ':a; s|/[^/]+/\.\./|/|; ta; s|/\./|/|g; s|//+|/|g')"
+			while IFS= read -r r; do
+				[ -n "$r" ] || continue
+				case "$t" in "$r"|"$r"/*) echo "${l#./}"; break ;; esac
+			done <<< "$removed_paths"
+		done)"
+	[ -z "$dangling" ] || warn "symlinks left pointing at removed files: $(echo "$dangling" | tr '\n' ' ')"
+	say "    $count removed, $freed KiB"
 }
 
 # ==========================================================================
@@ -753,45 +875,17 @@ build_one() {
 	# ==========================================================================
 	step "[$MODEL_NAME] removing the stock files nothing uses"
 
-	local pattern path rel freed=0 count=0 kb dangling removed_paths=""
-	for pattern in "${STOCK_UNUSED[@]}"; do
-		# the pattern expands inside the rootfs; no match leaves it as it is
-		for path in "$SQUASH_DIR"/$pattern; do
-			[ -e "$path" ] || [ -L "$path" ] || continue
-			rel="${path#"$SQUASH_DIR"/}"
-			if [ -e "$ASSETS_DIR/$MODEL_DIR/$rel" ] || [ -L "$ASSETS_DIR/$MODEL_DIR/$rel" ]; then
-				warn "$rel is in the assets: kept"
-				continue
-			fi
-			kb=""
-			[ -L "$path" ] || kb="$(du -sk "$path" | cut -f1)"
-			rm -rf "$path"
-			[ ! -e "$path" ] && [ ! -L "$path" ] || die "could not remove $rel."
-			freed=$((freed + ${kb:-0}))
-			count=$((count + 1))
-			removed_paths="$removed_paths/$rel"$'\n'
-			say "    $rel removed${kb:+ (${kb} KiB)}"
-		done
-	done
-	# A symlink left pointing into something that went. Only those: the stock
-	# tree has links to files that exist only at runtime (/etc/resolv.conf in
-	# /tmp, /etc/localtime on userdata), which are fine.
-	dangling="$(cd "$SQUASH_DIR" && find . -type l 2>/dev/null |
-		while IFS= read -r l; do
-			t="$(readlink "$l")"
-			case "$t" in
-			/*) ;;
-			*) t="/$(cd "$(dirname "$l")" && pwd -P | sed "s|^$(cd "$SQUASH_DIR" && pwd -P)||")/$t" ;;
-			esac
-			t="$(echo "$t" | sed -E ':a; s|/[^/]+/\.\./|/|; ta; s|/\./|/|g; s|//+|/|g')"
-			while IFS= read -r r; do
-				[ -n "$r" ] || continue
-				case "$t" in "$r"|"$r"/*) echo "${l#./}"; break ;; esac
-			done <<< "$removed_paths"
-		done)"
-	[ -z "$dangling" ] || warn "symlinks left pointing at removed files: $(echo "$dangling" | tr '\n' ' ')"
-	say "    $count removed, $freed KiB"
+	remove_stock_paths "${STOCK_UNUSED[@]}"
 	say ""
+
+	# ==========================================================================
+	# 6c. The debugging tools, with --strip-debug-tools
+	# ==========================================================================
+	if [ "$STRIP_DEBUG_TOOLS" = 1 ]; then
+		step "[$MODEL_NAME] removing the debugging tools (--strip-debug-tools)"
+		remove_stock_paths "${STOCK_DEBUG_TOOLS[@]}"
+		say ""
+	fi
 
 	# ==========================================================================
 	# 7. The build stamp
