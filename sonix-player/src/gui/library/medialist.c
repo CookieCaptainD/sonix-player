@@ -4257,6 +4257,7 @@ static void page_paint(panel_t *p) {
 		local_color(row->button, LV_STYLE_BG_COLOR, LV_STATE_PRESSED, t, p->tint_pressed);
 		local_color(row->label, LV_STYLE_TEXT_COLOR, 0, t, p->tint_ink);
 		local_color(row->artist, LV_STYLE_TEXT_COLOR, 0, t, p->tint_dim);
+		local_color(row->duration, LV_STYLE_TEXT_COLOR, 0, t, p->tint_dim);
 		local_color(row->playmark, LV_STYLE_BG_COLOR, 0, t, p->tint_ink);
 		if (row->menu_btn) {
 			local_color(lv_obj_get_child(row->menu_btn, 0), LV_STYLE_IMAGE_RECOLOR, 0, t, p->tint_ink);
