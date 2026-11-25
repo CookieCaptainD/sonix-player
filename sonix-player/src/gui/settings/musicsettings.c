@@ -1478,22 +1478,36 @@ static lv_obj_t *scroll_switch;
 static lv_obj_t *scroll_pills;
 static lv_obj_t *scroll_pill[3];
 
+static const int scroll_speed_values[3] = {SCROLL_SPEED_SLOW, SCROLL_SPEED_NORMAL, SCROLL_SPEED_FAST};
+
+static int scroll_speed_gap(int a, int b) { return a > b ? a - b : b - a; }
+
 static void scroll_refresh(void) {
 	if (!scroll_switch) {
 		return;
 	}
-	bool on = scrolltext_auto_enabled();
-	if (on) {
+	if (scrolltext_auto_enabled()) {
 		lv_obj_add_state(scroll_switch, LV_STATE_CHECKED);
-		lv_obj_set_hidden(scroll_pills, false);
 	} else {
 		lv_obj_remove_state(scroll_switch, LV_STATE_CHECKED);
-		lv_obj_set_hidden(scroll_pills, true);
 	}
+	// The speed also drives Now Playing and the other always-on scrolling
+	// labels, so it stays editable even with list scrolling switched off.
+	lv_obj_set_hidden(scroll_pills, false);
+
 	int speed = scrolltext_speed_px_s();
-	settingsrow_pill_active(scroll_pill[0], speed == 35);
-	settingsrow_pill_active(scroll_pill[1], speed == 55);
-	settingsrow_pill_active(scroll_pill[2], speed == 80);
+	int best = 0;
+	int best_gap = scroll_speed_gap(speed, scroll_speed_values[0]);
+	for (int i = 1; i < 3; i++) {
+		int gap = scroll_speed_gap(speed, scroll_speed_values[i]);
+		if (gap < best_gap) {
+			best_gap = gap;
+			best = i;
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		settingsrow_pill_active(scroll_pill[i], i == best);
+	}
 }
 
 static void scroll_toggle_cb(lv_event_t *e) {
@@ -1564,9 +1578,9 @@ static void build_library_page(gui_config_t *cfg) {
 	// Long names in lists scroll instead of ending in dots. The speed is also
 	// used by the player and the other labels that scroll.
 	settingsrow_toggle_pills(container, "musicsettings_scroll_names", scroll_toggle_cb, &scroll_switch, &scroll_pills);
-	scroll_pill[0] = settingsrow_pill(scroll_pills, "musicsettings_scroll_slow", 35, scroll_pick_cb);
-	scroll_pill[1] = settingsrow_pill(scroll_pills, "musicsettings_scroll_normal", 55, scroll_pick_cb);
-	scroll_pill[2] = settingsrow_pill(scroll_pills, "musicsettings_scroll_fast", 80, scroll_pick_cb);
+	scroll_pill[0] = settingsrow_pill(scroll_pills, "musicsettings_scroll_slow", scroll_speed_values[0], scroll_pick_cb);
+	scroll_pill[1] = settingsrow_pill(scroll_pills, "musicsettings_scroll_normal", scroll_speed_values[1], scroll_pick_cb);
+	scroll_pill[2] = settingsrow_pill(scroll_pills, "musicsettings_scroll_fast", scroll_speed_values[2], scroll_pick_cb);
 	option_note(container, "musicsettings_scroll_names_note");
 	scroll_refresh();
 	theme_register_refresh(scroll_refresh);

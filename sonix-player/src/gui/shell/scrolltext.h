@@ -48,6 +48,12 @@ void scrolltext_set(lv_obj_t *label, const char *text);
 // labels ignore this setting.
 bool scrolltext_auto_enabled(void);
 
+// The three speeds offered by the settings UI, in pixels per second. Kept
+// here so the pills and the runtime value cannot drift apart.
+#define SCROLL_SPEED_SLOW 35
+#define SCROLL_SPEED_NORMAL 55
+#define SCROLL_SPEED_FAST 80
+
 // The current speed in pixels per second, clamped to 20..120.
 int scrolltext_speed_px_s(void);
 
