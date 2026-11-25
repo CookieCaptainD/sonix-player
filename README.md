@@ -363,6 +363,13 @@ stock `sa_sound_hbc3000.ko` (see step 5).
 ./sonix_firmware_packer.sh
 ```
 
+`--strip-debug-tools` also takes out the stock debugging tools nothing in the
+image uses (strace, the Bluetooth test tools, the D-Bus, GLib and ALSA command
+line tools, the flash and UBI maintenance tools and the libraries only they
+link): about 4.5 MB on each model, at the cost of those tools over adb. The
+list, and what is kept and why, is `STOCK_DEBUG_TOOLS` in the script. Off by
+default.
+
 It runs through without asking anything, once for each model:
 
 1. unpacks the `.upt`, joins the rootfs chunks and extracts the squashfs
