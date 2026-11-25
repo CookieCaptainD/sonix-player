@@ -549,6 +549,8 @@ static const char *prepare_install(const char *path) {
 		return NULL;
 	case OTA_MODEL_MISMATCH:
 		return "system_update_model_mismatch";
+	case OTA_NO_MODEL:
+		return "system_update_unknown_model";
 	default:
 		return "system_update_file_missing";
 	}
@@ -616,6 +618,9 @@ static void download_finished(ota_result_t r) {
 		break;
 	case OTA_MODEL_MISMATCH:
 		show_notice(tr("system_update_model_mismatch"));
+		break;
+	case OTA_NO_MODEL:
+		show_notice(tr("system_update_unknown_model"));
 		break;
 	case OTA_CANCELLED:
 		close_card();

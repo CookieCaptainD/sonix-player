@@ -13,7 +13,9 @@
 #include "src/system/audio/audio.h"
 #include "src/system/core/config.h"
 #include "src/system/device/clock.h"
+#ifndef HOST_BUILD
 #include "src/system/device/power.h"
+#endif
 #include "src/system/device/sysinfo.h"
 #include "src/system/device/system.h"
 #include "src/system/remote/dlna.h"

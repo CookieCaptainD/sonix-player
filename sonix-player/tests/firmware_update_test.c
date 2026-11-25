@@ -159,6 +159,15 @@ static void case_prepare_mismatch(void) {
 	CHECK(firmware_update_prepare(image_path("r1.upt")) == OTA_MODEL_MISMATCH, "prepare refuses another model");
 }
 
+// 14. An unrecognised device has no model to check against; nothing may be
+// prepared for it, and the caller can report that instead of "file missing".
+static void case_unknown_model(void) {
+	active_model = NULL;
+	write_image("r1.upt", "junk HiBy R1 junk");
+	CHECK(firmware_update_prepare(image_path("r1.upt")) == OTA_NO_MODEL, "prepare refuses an unknown model");
+	active_model = &MODEL_R1;
+}
+
 int main(void) {
 	if (!mkdtemp(dir)) {
 		printf("FAIL cannot make a temporary directory\n");
@@ -177,6 +186,7 @@ int main(void) {
 	case_sha256_missing();
 	case_prepare_ok();
 	case_prepare_mismatch();
+	case_unknown_model();
 	printf("firmware update checks: all passed\n");
 	return 0;
 }
