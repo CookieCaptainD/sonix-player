@@ -26,8 +26,11 @@ table, but the fixed 44/15 constants must be reviewed for the small panel.
 
 **Decision: hybrid (D)** — retain A for HiBy devices, use B's pattern for V1.
 Origin: A = upstream/local; B = V1 fork. Needed modification: extract the
-fixed 44/15 constants into profile values before sharing code. Not implemented
-in this worktree; recorded as architecture direction.
+fixed 44/15 constants into profile values before sharing code. **Implemented in
+this branch**: `src/gui/board_profile.{c,h}` supplies the profile, `sysinfo.c`
+selects it at runtime, and `main.c`/`fonts.c` consume it. Only padding, status
+bar height, screen size and compact fonts are wired; the fork's radius and
+header-button helpers were not ported.
 
 ## 2. Firmware packaging
 

@@ -2,7 +2,7 @@
 
 ## Provenance of the evidence
 
-One genuine screenshot was captured in this session:
+The first genuine screenshot was captured from a prebuilt binary in this session:
 
 * Device profile: **HiBy R1 main screen** (the 480×800 frame actually captured).
 * Environment: **host SDL simulator**, not a physical device.
@@ -62,8 +62,9 @@ remaining readability limitation.
 
 ## Assessment
 
-The one captured image is an authentic rendering of the application and confirms
-that the simulator screenshot path works. It is insufficient to support any
-claim about R3 Pro II or V1 UI quality, readability, touch targets or
-device-specific adaptation. Those require either a working per-device simulator
-target or physical hardware.
+All three images are authentic renderings from the application's own screenshot
+path and confirm that the per-device profiles are visible in the simulator: the
+HiBy six-tile layouts at 480×800 and 480×720, and the two-column compact V1
+layout at 240×320. They are host-simulator evidence only. They do not establish
+flashability, touch-target quality or physical-device behaviour, and the V1
+labels still need device-level review.

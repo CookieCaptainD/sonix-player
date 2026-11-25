@@ -40,6 +40,10 @@ sonix-packer/r3proii_original.upt
 sonix-packer/r1_original.upt
 sonix-packer/sonix_launch
 
+# Python bytecode (never commit generated artefacts)
+__pycache__/
+*.pyc
+
 # --- three-device firmware builds ---
 # Per-device staging trees and their images/reports. No firmware image is
 # ever committed; stock inputs are proprietary and are copied locally only.

@@ -22,14 +22,6 @@ int bp_screen_w(void);
 int bp_screen_h(void);
 int bp_padding(void);
 int bp_status_bar_h(void);
-int bp_tile_radius(void);
-int bp_screen_corner_radius(void);
-int bp_header_button_size(void);
-int bp_header_button_gap(void);
-
-// Compact/regular pairs: the regular value is returned on HiBy panels, the
-// compact one on the V1. This preserves existing HiBy layouts exactly.
-int bp_pick(int compact, int regular);
 
 // The compact flag from the model table; kept as a helper for callers that
 // already include sysinfo.h but want a single question to ask.

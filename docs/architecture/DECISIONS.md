@@ -53,18 +53,21 @@ NOT VERIFIED FOR FLASHING. **Status: applied in `FLASHABILITY_MATRIX.md`.**
 
 ## D8 — Screenshots only where genuine evidence exists
 
-A real host-simulator screenshot of the R1 main screen was captured. All other
-attempted captures produced the same 480×800 frame regardless of `SONIX_PANEL`,
-so no R3 Pro II or V1 screenshot is claimed. The prebuilt binary's exact commit
-is unknown and is reported as such. **Status: applied in `docs/QA/UI_REVIEW.md`.**
+An initial host-simulator screenshot of the R1 main screen was captured from a
+prebuilt binary whose exact commit is unknown and is reported as such. After the
+V1 port the host binary was rebuilt locally, and genuine per-device frames were
+captured for R1 (480×800), R3 Pro II (480×720) and V1 (240×320). All are
+simulator renders, not physical-device evidence.
+**Status: applied in `docs/QA/UI_REVIEW.md`.**
 
 ## D10 — Port V1 as a runtime profile in the shared binary
 
 The V1 fork's `board_profile` was imported and generalised: compact geometry is
 selected by the `compact_panel` flag in the model table, so one binary serves
 all three devices. The fork's own history indicates its profile was originally
-parameterised for three boards. HiBy constants stay unchanged (`bp_pick` returns
-the regular value). **Status: implemented** (`board_profile.c/h`, `sysinfo.c`,
+parameterised for three boards. HiBy constants stay unchanged: the profile only
+supplies padding, status-bar height and screen size, which `main.c` and
+`fonts.c` actually read. **Status: implemented** (`board_profile.c/h`, `sysinfo.c`,
 `main.c`, `fonts.c`, `alsa-controls.c`). The V1 stock packer and assets were
 imported under `sonix-packer/v1/` with provenance documented. V1-fork-only
 features were deliberately not ported in this change.

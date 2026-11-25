@@ -114,15 +114,19 @@ isolated build staging; and a mandatory structural validation gate. Source:
 D1–D9 in `docs/architecture/DECISIONS.md`, plus the V1-port decision: port the
 fork's compact geometry rather than ship a separate binary, because the fork's
 own history shows its board profile was originally parameterised for three
-boards. HiBy layout constants remain unchanged by `bp_pick()`.
+boards. HiBy layout constants remain unchanged: the profile only supplies
+padding, status-bar height and screen size to `main.c` and the compact font
+remap in `fonts.c`.
 
 ## 9. Device-specific implementation
 
 * **V1 model row**: 240×320, `v1` update stem, AXP2101 charger, two CS43131s,
   swapped media keys, SGM31324 LED and idle-one headset switch
   (`sysinfo.c:MODELS`).
-* **Compact UI**: padding 6, status bar 24, tile radius 10, corner radius 16,
-  header button 36; named fonts remapped to compact rasters; 240×320 panel floor.
+* **Compact UI**: padding 6, status bar 24; named fonts remapped to compact
+  rasters; 240×320 panel floor. The fork's tile radius, screen corner radius and
+  header-button helpers are not wired into any layout, so no radius or header
+  size claim is made.
 * **Hardware quirk**: line-out route accepts the V1's idle-one jack switch
   (`alsa-controls.c`).
 * **Packaging**: V1 packer and `assets/V1` imported from `e962720`; stock 1.3

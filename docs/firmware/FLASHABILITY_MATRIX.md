@@ -96,7 +96,8 @@ case. For every device the following mandatory items remain unknown:
   a mis-targeted image could be accepted by the device;
 * no physical device, boot test, or USB recovery test was available;
 * the official R1/R3 Pro II release assets were not downloaded or inspected;
-* no V1 Sonix image was produced or inspected.
+* a V1 Sonix image was produced and passed structural validation, but it was
+  not installed or inspected on a V1 device.
 
 Do not flash any of these images. Explicit "do not flash" cases: the generated
 R3 Pro II image; a local `r1.upt` presented as v1.3.1; any image presented under

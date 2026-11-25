@@ -2,8 +2,7 @@
 //
 // The compact values come from the TempoTec V1 fork (mr-f0xx). The regular
 // values are the ones the HiBy builds have always used. Nothing here changes
-// the HiBy layouts: bp_pick() returns the regular value unless the recognised
-// model is the V1.
+// the HiBy layouts: bp_is_compact() is true only for the recognised V1 model.
 
 #include "src/gui/board_profile.h"
 
@@ -29,13 +28,3 @@ int bp_screen_h(void) {
 int bp_padding(void) { return bp_is_compact() ? 6 : 15; }
 
 int bp_status_bar_h(void) { return bp_is_compact() ? 24 : 44; }
-
-int bp_tile_radius(void) { return bp_is_compact() ? 10 : 16; }
-
-int bp_screen_corner_radius(void) { return bp_is_compact() ? 16 : 0; }
-
-int bp_header_button_size(void) { return bp_is_compact() ? 36 : 48; }
-
-int bp_header_button_gap(void) { return bp_is_compact() ? 4 : 8; }
-
-int bp_pick(int compact, int regular) { return bp_is_compact() ? compact : regular; }
