@@ -233,8 +233,8 @@ TARGET_OBJS = $(APP_SRCS:src/%.c=build_target/%.o) $(APP_CXX_SRCS:src/%.cpp=buil
 
 all: host compile_commands.json
 
-test-radio-volume: tools/radio_volume_test.c src/system/streaming/radio_volume.h src/system/streaming/radio.c
-	gcc -std=c11 -Wall -Wextra -Werror -I. tools/radio_volume_test.c -o /tmp/radio_volume_test
+test-radio-volume: tools/radio_volume_test.c src/system/streaming/radio_volume.h src/system/audio/swvolume.c src/system/streaming/radio.c
+	gcc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -I. tools/radio_volume_test.c src/system/audio/swvolume.c -lm -o /tmp/radio_volume_test
 	/tmp/radio_volume_test
 
 host: $(HOST_BIN) compile_commands.json
