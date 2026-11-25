@@ -56,23 +56,24 @@ bool axpcharge_reg_write(uint8_t reg, uint8_t value);
 bool axpcharge_charging_control_supported(void);
 
 // Stops (or allows) charging the cell while leaving VBUS feeding the system.
-// A user request: on failure the requested state is put back to the last
-// confirmed one and nothing is retried, so the UI cannot show one state while
-// the next tick produces another. Returns true when the PMIC read back the
-// requested state.
+// A user request: on failure the last confirmed state is written back at once
+// and kept enforced by the tick until the PMIC agrees, so the UI cannot show
+// one state while the PMIC holds another. Returns true only when the PMIC read
+// back the requested state.
 bool axpcharge_set_charging(bool on);
 
 // True while the PMIC has confirmed that cell charging is stopped.
 bool axpcharge_charging_blocked(void);
 
-// Re-enables charging. Called at startup, at DAC exit, at poweroff, and from
-// the crash handler. Unlike a user request this one is retried by the tick
-// until the PMIC confirms it. Returns the result of the immediate attempt.
+// Re-enables charging. Called at startup (power_init), at DAC exit
+// (usbdac_stop), at poweroff (power_shutdown), and from the crash handler via
+// the quiet variant below. Unlike a user request a failed release is retried
+// by the tick; a confirmed one is not. Returns the immediate attempt's result.
 bool axpcharge_charging_release(void);
 
 // The crash handler's variant: never blocks and never logs. False when the
-// lock is held or the write fails, in which case the driver's own shutdown
-// write and the next boot's release are the backstops.
+// lock is held or the write fails, in which case the next boot's release at
+// power_init is the backstop.
 bool axpcharge_charging_release_quiet(void);
 
 #endif /* AXPCHARGE_H */

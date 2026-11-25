@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // The rest of axpcharge.c's dependencies. A request reads one config key, and
 // asks the model table, the cable and the gauge whether a stop is safe.
@@ -33,7 +34,19 @@ void config_set_int(const char *section, const char *key, long value) {
 
 bool config_save(void) { return true; }
 
-const sysinfo_model_t *sysinfo_model(void) { return NULL; }
+// The model the stubbed sysinfo table reports. The host gate consults it when
+// a model is named, so the real `model && model->pmic_charger` expression is
+// exercised by these tests and not only on the device.
+static sysinfo_model_t test_model;
+static bool test_model_known;
+
+static void set_test_model(bool known, bool pmic_charger) {
+	memset(&test_model, 0, sizeof test_model);
+	test_model.pmic_charger = pmic_charger;
+	test_model_known = known;
+}
+
+const sysinfo_model_t *sysinfo_model(void) { return test_model_known ? &test_model : NULL; }
 
 bool usb_vbus_present(void) { return vbus_present; }
 
@@ -59,10 +72,11 @@ void axpcharge_test_set_vbus(bool present) { vbus_present = present; }
 
 // 1. The strict gate answers true on the model that has the PMIC as charger.
 static void case_supported_r1(void) {
-	axpcharge_test_set_applies(true);
 	axpcharge_test_reset();
+	set_test_model(true, true);
 	axpcharge_test_set_reg(REG18, 0x0e);
 	CHECK(axpcharge_charging_control_supported(), "supported_r1");
+	set_test_model(false, false);
 }
 
 // 2. A stop clears bit 1 and nothing else.
@@ -173,14 +187,26 @@ static void case_low_cell_refuses(void) {
 	CHECK(axpcharge_test_reg(REG18) == 0x0a, "low_cell_refuses leaves the register");
 }
 
-// 8. A model the table does not know is never written: the gate is the model,
-//    not the absent MP2731 node.
-static void case_unknown_model_no_write(void) {
+// 8. A known model charged by the MP2731 is never written: the strict gate is
+//    the model table, not an absent MP2731 node. host_applies is reset true, so
+//    this case runs the same model expression the device build runs.
+static void case_mp2731_model_no_write(void) {
+	axpcharge_test_reset();
+	set_test_model(true, false);
+	CHECK(!axpcharge_set_charging(false), "mp2731_model_no_write returns false");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "mp2731_model_no_write leaves the register");
+	CHECK(!axpcharge_charging_control_supported(), "mp2731_model_no_write gate is false");
+	set_test_model(false, false);
+}
+
+// 8b. The host stub can close the gate too, as it does when the simulator has
+//     no model named and the test asks for an unsupported player.
+static void case_host_gate_closed(void) {
 	axpcharge_test_reset();
 	axpcharge_test_set_applies(false);
-	CHECK(!axpcharge_set_charging(false), "unknown_model_no_write returns false");
-	CHECK(axpcharge_test_reg(REG18) == 0x0a, "unknown_model_no_write leaves the register");
-	CHECK(!axpcharge_charging_control_supported(), "unknown_model_no_write gate is false");
+	CHECK(!axpcharge_set_charging(false), "host_gate_closed returns false");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "host_gate_closed leaves the register");
+	CHECK(!axpcharge_charging_control_supported(), "host_gate_closed gate is false");
 }
 
 // 9. The driver can set the bit again after a gauge reset; the tick bounds it.
@@ -203,6 +229,74 @@ static void case_read_failure_reverts(void) {
 	axpcharge_test_fail_read(false);
 }
 
+// 11. A write that lands but whose confirm read fails is recovered: the last
+//     confirmed state is written back, so the PMIC and the icon agree.
+static void case_confirm_read_failure_restores(void) {
+	axpcharge_test_reset();
+	axpcharge_test_set_reg(REG18, 0x0e);
+	axpcharge_test_fail_next_confirm_read();
+	CHECK(!axpcharge_set_charging(false), "confirm_read_failure_restores returns false");
+	CHECK(axpcharge_test_reg(REG18) == 0x0e, "confirm_read_failure_restores puts the bit back");
+	CHECK(!axpcharge_charging_blocked(), "confirm_read_failure_restores reports allowed");
+	axpcharge_test_advance_ms(6000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x0e, "confirm_read_failure_restores stays allowed at the tick");
+}
+
+// 12. A first stop that finds the bit already clear still remembers an allowed
+//     cell, so a release can put it back.
+static void case_saved_bit_already_clear(void) {
+	axpcharge_test_reset();
+	axpcharge_test_set_reg(REG18, 0x08);
+	CHECK(axpcharge_set_charging(false), "saved_bit_already_clear stops");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "saved_bit_already_clear leaves the bit clear");
+	CHECK(axpcharge_charging_blocked(), "saved_bit_already_clear reports blocked");
+	CHECK(axpcharge_charging_release(), "saved_bit_already_clear releases");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "saved_bit_already_clear restores the bit on release");
+}
+
+// 13. A new stop cancels a release the tick had queued after a failed write.
+static void case_stop_cancels_pending_release(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "stop_cancels_pending_release stops first");
+	axpcharge_test_fail_write(true);
+	CHECK(!axpcharge_charging_release(), "stop_cancels_pending_release leaves a pending release");
+	axpcharge_test_fail_write(false);
+	CHECK(axpcharge_set_charging(false), "stop_cancels_pending_release takes the new stop");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "stop_cancels_pending_release keeps the bit clear");
+	axpcharge_test_advance_ms(6000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "stop_cancels_pending_release is not undone by the tick");
+}
+
+// 14. The crash handler's quiet release: it cannot take a held lock, and it
+//     restores the bit when it can.
+static void case_quiet_release(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "quiet_release stops first");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "quiet_release starts stopped");
+	axpcharge_test_hold_lock();
+	CHECK(!axpcharge_charging_release_quiet(), "quiet_release trylock fails");
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "quiet_release leaves the bit when locked");
+	axpcharge_test_release_lock();
+	CHECK(axpcharge_charging_release_quiet(), "quiet_release restores the bit");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "quiet_release sets bit 1");
+	CHECK(!axpcharge_charging_blocked(), "quiet_release reports unblocked");
+}
+
+// 15. A confirmed release is not re-asserted by the tick: a later write by the
+//     stock driver stays put until a new stop is asked for.
+static void case_release_stops_reasserting(void) {
+	axpcharge_test_reset();
+	CHECK(axpcharge_set_charging(false), "release_stops_reasserting stops first");
+	CHECK(axpcharge_charging_release(), "release_stops_reasserting releases");
+	CHECK(axpcharge_test_reg(REG18) == 0x0a, "release_stops_reasserting restores the bit");
+	axpcharge_test_set_reg(REG18, 0x08);
+	axpcharge_test_advance_ms(6000);
+	axpcharge_tick();
+	CHECK(axpcharge_test_reg(REG18) == 0x08, "release_stops_reasserting leaves a later driver write alone");
+}
+
 int main(void) {
 	case_supported_r1();
 	case_stop_clears_only_bit1();
@@ -213,9 +307,15 @@ int main(void) {
 	case_release_waits_5s();
 	case_release_enables();
 	case_low_cell_refuses();
-	case_unknown_model_no_write();
+	case_mp2731_model_no_write();
+	case_host_gate_closed();
 	case_tick_reclears_driver_write();
 	case_read_failure_reverts();
+	case_confirm_read_failure_restores();
+	case_saved_bit_already_clear();
+	case_stop_cancels_pending_release();
+	case_quiet_release();
+	case_release_stops_reasserting();
 	printf("all axpcharge cases passed\n");
 	return 0;
 }

@@ -84,9 +84,9 @@ static bool logged_contact;
 static uint8_t voltage_stock = AXP_VOLTAGE_STOCK;
 static bool voltage_seen;
 
-// The charge bit. charge_known is set by a user request that succeeded and by
-// every release; the tick re-asserts the bit only then, so opening the Power
-// page is not required for the DAC toggle to work.
+// The charge bit. charge_known is set while a stop is wanted or a release is
+// still pending; a confirmed release clears it, so the tick stops touching the
+// bit until a new stop is asked for.
 static bool charge_known;
 static bool charge_wanted_off;		 // the state the tick keeps enforcing
 static bool charge_saved_bit = true; // REG18h[1] before the first stop; always 1 (see below)
@@ -120,9 +120,25 @@ static uint8_t host_regs[256] = {
 static bool host_fail_read;
 static bool host_fail_write;
 static bool host_applies = true;
+// Only these three registers are simulated. Everything else still has no
+// answer, as it did before this change: chargescreen.c tells a failed read
+// from a successful zero, and must not take its cable-start branch just
+// because the simulator has a map now.
+static bool host_reg_simulated(uint8_t reg) {
+	return reg == AXP_REG_MODULE || reg == AXP_REG_CURRENT || reg == AXP_REG_VOLTAGE;
+}
+// A write followed by a read is a confirm read. One-shot, so the recovery
+// write after a failed stop can confirm normally.
+static bool host_fail_confirm_read;
+static bool host_wrote;
 
 static bool axp_read(uint8_t reg, uint8_t *value) {
-	if (host_fail_read) {
+	bool fail_confirm = host_wrote && host_fail_confirm_read;
+	host_wrote = false;
+	if (fail_confirm) {
+		host_fail_confirm_read = false;
+	}
+	if (host_fail_read || fail_confirm || !host_reg_simulated(reg)) {
 		return false;
 	}
 	*value = host_regs[reg];
@@ -134,6 +150,7 @@ static bool axp_write(uint8_t reg, uint8_t value) {
 		return false;
 	}
 	host_regs[reg] = value;
+	host_wrote = true;
 	return true;
 }
 
@@ -261,21 +278,29 @@ static void log_first_contact(void) {
 		   current_ma(cur & AXP_CURRENT_MASK));
 }
 
+// The model table's answer, shared by the device and by the host tests so the
+// strict gate is exercised in both. Never a guess from an absent MP2731 node.
+static bool pmic_charger_model(void) {
+	const sysinfo_model_t *model = sysinfo_model();
+	return model && model->pmic_charger;
+}
+
 #ifdef HOST_BUILD
 
 // The host build answers true and simulates the write, so the simulator's
 // toggle keeps working; AXPCHARGE_TEST decides which answer the tests see.
-bool axpcharge_charging_control_supported(void) { return host_applies; }
+// When a model is named, the model table decides on the host too.
+bool axpcharge_charging_control_supported(void) {
+	if (!host_applies) {
+		return false;
+	}
+	return sysinfo_model() ? pmic_charger_model() : true;
+}
 
 #else
 
-// True only where the model table says the PMIC is the charger (the R1). The
-// host build answers true and simulates the write, so the simulator's toggle
-// keeps working. Never a guess from an absent MP2731 node.
-bool axpcharge_charging_control_supported(void) {
-	const sysinfo_model_t *model = sysinfo_model();
-	return model && model->pmic_charger;
-}
+// True only where the model table says the PMIC is the charger (the R1).
+bool axpcharge_charging_control_supported(void) { return pmic_charger_model(); }
 
 #endif
 
@@ -315,12 +340,19 @@ static bool charge_apply_locked(bool reassert, bool quiet) {
 
 // The release both variants share, with the lock already held. A failed write
 // stays queued: the deadline is the usual re-assert period away, and the tick
-// keeps trying until the PMIC confirms it.
+// keeps trying until the PMIC confirms it. A confirmed release clears the
+// pending state -- the tick must not go on re-asserting "allowed" forever and
+// undo a later write by the stock driver.
 static bool charge_release_locked(bool quiet) {
 	charge_wanted_off = false;
 	charge_known = true;
 	bool ok = charge_apply_locked(false, quiet);
-	charge_next_ms = now_ms() + REASSERT_MS;
+	if (ok) {
+		charge_known = false;
+		charge_next_ms = 0;
+	} else {
+		charge_next_ms = now_ms() + REASSERT_MS;
+	}
 	return ok;
 }
 
@@ -368,10 +400,25 @@ bool axpcharge_set_charging(bool on) {
 	if (ok) {
 		charge_known = true;
 		charge_next_ms = now_ms() + (charge_wanted_off ? CHARGE_REASSERT_MS : REASSERT_MS);
+		if (!charge_wanted_off) {
+			// Confirmed and allowed: nothing left for the tick to enforce.
+			charge_known = false;
+			charge_next_ms = 0;
+		}
 	} else {
-		// Nothing is retried behind the UI: put the wanted state back to what
-		// the PMIC last confirmed, which is what the icon shows.
+		// set_field() can fail after the write was accepted, when the confirm
+		// read fails. Put the last confirmed state back now and leave it queued
+		// if that restore also fails, so the PMIC cannot be left stopped while
+		// the icon says charging is allowed.
 		charge_wanted_off = confirmed_off;
+		charge_known = true;
+		bool restored = charge_apply_locked(false, false);
+		if (restored && !confirmed_off) {
+			charge_known = false;
+			charge_next_ms = 0;
+		} else {
+			charge_next_ms = now_ms() + (restored ? CHARGE_REASSERT_MS : REASSERT_MS);
+		}
 	}
 
 	pthread_mutex_unlock(&axp_lock);
@@ -437,8 +484,15 @@ void axpcharge_tick(void) {
 	// reset. Everything else, a failed release included, waits the usual five:
 	// only a requested stop earns the fast period.
 	if (charge_known && now >= charge_next_ms) {
-		charge_apply_locked(true, false);
-		charge_next_ms = now_ms() + (charge_wanted_off ? CHARGE_REASSERT_MS : REASSERT_MS);
+		bool ok = charge_apply_locked(true, false);
+		if (ok && !charge_wanted_off) {
+			// A release only needs one confirmed write; a stop is re-asserted
+			// because the driver can set the bit back after a gauge reset.
+			charge_known = false;
+			charge_next_ms = 0;
+		} else {
+			charge_next_ms = now_ms() + (charge_wanted_off ? CHARGE_REASSERT_MS : REASSERT_MS);
+		}
 	}
 
 	pthread_mutex_unlock(&axp_lock);
@@ -473,6 +527,8 @@ void axpcharge_test_reset(void) {
 	host_regs[AXP_REG_VOLTAGE] = 0x05;
 	host_fail_read = false;
 	host_fail_write = false;
+	host_fail_confirm_read = false;
+	host_wrote = false;
 	host_applies = true;
 
 	configured = false;
@@ -509,6 +565,14 @@ void axpcharge_test_fail_write(bool fail) { host_fail_write = fail; }
 
 void axpcharge_test_fail_read(bool fail) { host_fail_read = fail; }
 
+// Fails only the read that confirms the next write: the write lands, so the
+// charge state has to recover from a state the PMIC did not confirm.
+void axpcharge_test_fail_next_confirm_read(void) { host_fail_confirm_read = true; }
+
 void axpcharge_test_set_applies(bool applies) { host_applies = applies; }
+
+// Lets a test hold axp_lock to check the crash handler's trylock variant.
+void axpcharge_test_hold_lock(void) { pthread_mutex_lock(&axp_lock); }
+void axpcharge_test_release_lock(void) { pthread_mutex_unlock(&axp_lock); }
 
 #endif /* AXPCHARGE_TEST */

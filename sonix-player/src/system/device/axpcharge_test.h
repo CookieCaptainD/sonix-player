@@ -29,8 +29,16 @@ uint8_t axpcharge_test_reg(uint8_t reg);
 void axpcharge_test_fail_write(bool fail);
 void axpcharge_test_fail_read(bool fail);
 
+// Fails the read confirming the next write, once: the write lands but is not
+// confirmed, which is the case a stop must recover from.
+void axpcharge_test_fail_next_confirm_read(void);
+
 // The answer axpcharge_charging_control_supported() gives on the host.
 void axpcharge_test_set_applies(bool applies);
+
+// Holds and drops the driver's lock, to exercise the crash handler's trylock.
+void axpcharge_test_hold_lock(void);
+void axpcharge_test_release_lock(void);
 
 // What the stubbed gauge and cable detect report. Both are implemented in
 // tools/test_axpcharge.c, beside the stubs whose state they set; the other
