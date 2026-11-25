@@ -925,10 +925,25 @@ static bool import_confirm_overwrite(void) {
 	int taken = 0;
 	char names[IMPORT_OVERWRITE_NAMED * 64 + 16] = "";
 	size_t used = 0;
+	// Count playlists, not rows: two files can carry the same derived name,
+	// and one replacement of a name is still one replacement.
+	const char *named[IMPORT_MAX_CANDIDATES];
+	int named_count = 0;
 	for (int i = 0; i < import_count; i++) {
 		if (!import_selected[i] || !import_candidates[i].exists) {
 			continue;
 		}
+		bool already_named = false;
+		for (int n = 0; n < named_count; n++) {
+			if (strcasecmp(named[n], import_candidates[i].name) == 0) {
+				already_named = true;
+				break;
+			}
+		}
+		if (already_named) {
+			continue;
+		}
+		named[named_count++] = import_candidates[i].name;
 		if (taken < IMPORT_OVERWRITE_NAMED) {
 			int wrote = snprintf(names + used, sizeof(names) - used, "\n%.60s", import_candidates[i].name);
 			if (wrote > 0 && (size_t)wrote < sizeof(names) - used) {
