@@ -71,10 +71,12 @@ static void clear_locked(void) {
 // ---------------------------------------------------------------------------
 //
 // Some tools that cut a book into chapters write the length into the name --
-// "Chapter 2 - 23:41" -- and some folder books arrive with files named that
-// way. The progress row already shows that number beside the name and the
-// chapter list has a clock of its own, so the suffix is taken off here, once,
-// where both read the name from.
+// "Chapter 2 - 23:41". File chapters get a clock of their own in the chapter
+// list, so their suffix is taken off in name_chapter(), once, where both the
+// list and the progress row read the name from.
+//
+// Folder-book parts are different: the part list passes no clock, so the
+// length in a part's name is the only place it is shown. add_part() keeps it.
 //
 // Only a trailing " - M:SS" or " - H:MM:SS" (a dash with spaces around it, as
 // a person writes it) is removed. Anything else is left exactly as it is: a
@@ -158,7 +160,6 @@ static bool add_part(const char *path, const char *title, void *user) {
 	}
 	snprintf(parts[part_count].path, sizeof(parts[0].path), "%s", path);
 	snprintf(parts[part_count].title, sizeof(parts[0].title), "%s", title);
-	strip_trailing_clock(parts[part_count].title);
 	part_count++;
 	return true;
 }
