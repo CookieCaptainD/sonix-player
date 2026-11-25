@@ -1425,18 +1425,44 @@ static void browser_open_dir(const char *path) {
 	lv_timer_resume(thumb_timer);
 }
 
-// Takes the finished listing over from the reader thread. Runs on the UI
-// thread, from the list tick.
+// The strip has to use the alphabet that orders these rows. entry_cmp() ends
+// in strcasecmp() on the file name: ASCII case is folded, punctuation and
+// digits sort above A, and every UTF-8 byte sorts below Z. The library
+// collation is a different alphabet -- it skips leading articles and folds
+// accents -- and would file "The Beatles" under B while the row sits under T.
+static int browser_name_bucket(const char *name) {
+	unsigned char c = name ? (unsigned char)*name : 0;
+	if (c >= 'a' && c <= 'z') {
+		c = (unsigned char)(c - ('a' - 'A'));
+	}
+	if (c >= 'A' && c <= 'Z') {
+		return c - 'A' + 1;
+	}
+	if (c >= 0x80) {
+		return LIBRARY_INDEX_PAST_Z_SLOT;
+	}
+	return 0; // empty names, punctuation and digits are filed above A
+}
+
+// A row in record order -- a scanned track with a known place, or a cue track
+// -- is not filed by a letter: it follows its album/disc/track or its cue
+// number. Offering a letter for it would point into the middle of the record.
+static bool browser_filed_by_name(const entry_t *entry) {
+	if (entry->is_dir) {
+		return true;
+	}
+	if (entry->place.track > 0) {
+		return false;
+	}
+	return cue_split_path(shown.pool + entry->file_offset, NULL, 0) <= 0;
+}
+
 // Where each letter starts in the list on screen, so the A-Z strip can jump
-// to it. The list is sorted folders first, then files, each group alphabetically,
-// so a letter may appear in both groups; the first row that carries it is the one
-// the strip lands on.
+// to it. Folders come first, then files in record order where that is known
+// and alphabetically otherwise; only the rows ordered by name get a bucket,
+// and the first of those carrying a letter is where the strip lands.
 static void browser_rebuild_index(void) {
 	if (!az_index) {
-		return;
-	}
-	if (shown.count < AZINDEX_MIN_ROWS) {
-		azindex_set_rows(az_index, NULL, 0, false);
 		return;
 	}
 
@@ -1444,15 +1470,27 @@ static void browser_rebuild_index(void) {
 	for (int i = 0; i < LIBRARY_INDEX_BUCKETS; i++) {
 		first[i] = -1;
 	}
+	int filed = 0;
 	for (size_t i = 0; i < shown.count; i++) {
-		int bucket = library_index_slot(library_index_letter(entry_name(i)));
+		if (!browser_filed_by_name(&shown.entries[i])) {
+			continue;
+		}
+		int bucket = browser_name_bucket(entry_file(i));
 		if (first[bucket] < 0) {
 			first[bucket] = (int)i;
 		}
+		filed++;
 	}
-	azindex_set_rows(az_index, first, (int)shown.count, false);
+
+	if (filed < AZINDEX_MIN_ROWS) {
+		azindex_set_rows(az_index, NULL, 0, false);
+		return;
+	}
+	azindex_set_rows(az_index, first, filed, false);
 }
 
+// Takes the finished listing over from the reader thread. Runs on the UI
+// thread, from the list tick.
 static void adopt_listing(void) {
 	// The rows point into `shown`, which is about to change hands. Park them
 	// first -- while `shown` is still the listing their indices refer to --
