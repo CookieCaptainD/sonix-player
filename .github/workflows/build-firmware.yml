@@ -19,6 +19,8 @@ on:
       - tools/validate_upt.py
       - sonix-packer/**
       - sonix-player/Makefile
+      - sonix-player/src/**
+      - sonix-player/tests/**
       - .github/workflows/build-firmware.yml
       - docs/firmware/STOCK_SHA256.sha256
 

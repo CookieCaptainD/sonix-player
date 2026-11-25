@@ -1,5 +1,9 @@
 .DS_Store
 
+# Python bytecode / caches (generated test fixtures must not be committed)
+__pycache__/
+*.pyc
+
 sonix-player/sonix_player
 sonix-player/sonix_player_debug
 sonix-player/sonix_player_host
