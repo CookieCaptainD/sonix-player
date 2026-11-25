@@ -14,6 +14,10 @@ typedef struct {
 
 void holdpreview_init(const holdpreview_ops_t *ops);
 bool holdpreview_active(void);
+// Only a headset hold can own an audible preview. A case-button hold always
+// owns a silent scrub, so it must commit that scrub even while a preview from
+// the other input thread happens to be active.
+bool holdpreview_owns_hold(bool headset);
 double holdpreview_position(void);
 bool holdpreview_begin(double step, bool forward, bool live, double total, double current, const char *file);
 bool holdpreview_step(double step, bool forward, bool live, double total, double current, const char *file);

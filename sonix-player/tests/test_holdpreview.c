@@ -60,6 +60,28 @@ static int test_begin_seeks_first_step(void) {
     return 0;
 }
 
+// The four hold-completion sites in the input loop must not mistake a
+// headset's preview for a case button's silent scrub. The ownership predicate
+// is what decides between holdpreview_end()/cancel() and scrub_commit().
+static int test_preview_owner_is_input_source_specific(void) {
+    reset_fakes();
+    EXPECT(holdpreview_owns_hold(true) == false);
+    EXPECT(holdpreview_owns_hold(false) == false);
+
+    EXPECT(holdpreview_begin(10.0, false, false, 600.0, 30.0, "book.flac") == true);
+    EXPECT(holdpreview_owns_hold(true) == true);  /* the headset owns it */
+    EXPECT(holdpreview_owns_hold(false) == false); /* a case hold never does */
+
+    holdpreview_end();
+    EXPECT(holdpreview_owns_hold(true) == false);
+    EXPECT(holdpreview_owns_hold(false) == false);
+
+    EXPECT(holdpreview_begin(10.0, false, false, 600.0, 30.0, "book.flac") == true);
+    holdpreview_cancel();
+    EXPECT(holdpreview_owns_hold(true) == false);
+    return 0;
+}
+
 static int test_begin_refuses_paused_and_live(void) {
     reset_fakes();
     fake_status = SEEK_STATUS_PAUSED;
@@ -150,6 +172,8 @@ int main(void) {
     int rc = test_target_clamps();
     if (rc != 0) return rc;
     rc = test_begin_seeks_first_step();
+    if (rc != 0) return rc;
+    rc = test_preview_owner_is_input_source_specific();
     if (rc != 0) return rc;
     rc = test_begin_refuses_paused_and_live();
     if (rc != 0) return rc;

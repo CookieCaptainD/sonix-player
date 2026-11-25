@@ -1668,6 +1668,15 @@ static bool seek_headset_step(int code) {
 		return false;
 	}
 
+	// A case hold, or an earlier silent headset hold, can leave a scrub open
+	// when this preview starts. Land it before the first excerpt instead of
+	// letting device_state_seek_hold()'s scrub_cancel_only() drop it. This has
+	// to happen here: the preview ops run with holdpreview's lock held, where
+	// device_state_scrub_commit() would deadlock via holdpreview_cancel().
+	if (device_state_scrub_active(NULL)) {
+		device_state_scrub_commit();
+	}
+
 	device_state_t state;
 	device_state_get(&state);
 	if (state.live || state.progress_total_secs <= 0) {
@@ -1984,7 +1993,7 @@ static void *input_thread_func(void *arg) {
 					headset_hold_consumed = held;
 					headset_hold_consumed_until = now + HEADSET_HOLD_CONSUMED_MS;
 				}
-				if (holdpreview_active()) {
+				if (holdpreview_owns_hold(info->headset)) {
 					holdpreview_end();
 				} else {
 					device_state_scrub_commit();
@@ -2023,7 +2032,7 @@ static void *input_thread_func(void *arg) {
 					continue;
 				}
 				bool seeking = key_seeks_held(held, info->headset);
-				bool previewing = info->headset && holdpreview_active();
+				bool previewing = holdpreview_owns_hold(info->headset);
 				bool seek_started = false;
 				if (!suppressed) {
 					if (previewing) {
@@ -2150,8 +2159,8 @@ static void *input_thread_func(void *arg) {
 					held_repeated = true;
 					// The first excerpt gets the full preview window too; a
 					// 250 ms repeat would cut the very step the listener needs.
-					next_repeat = now_ms() + (holdpreview_active() ? PREVIEW_PERIOD_MS : SEEK_REPEAT_MS);
-					if (holdpreview_active()) {
+					next_repeat = now_ms() + (holdpreview_owns_hold(info->headset) ? PREVIEW_PERIOD_MS : SEEK_REPEAT_MS);
+					if (holdpreview_owns_hold(info->headset)) {
 						log_preview_step();
 					}
 					seek_deadline = now_ms() + SEEK_DEADLINE_HEADSET_MS;
@@ -2184,7 +2193,7 @@ static void *input_thread_func(void *arg) {
 			// another key went down first and took `held` with it -- is closed
 			// here rather than left to freeze the position for good.
 			if (seeked) {
-				if (holdpreview_active()) {
+				if (holdpreview_owns_hold(info->headset)) {
 					holdpreview_cancel();
 				} else {
 					device_state_scrub_commit();
@@ -2310,7 +2319,7 @@ static void *input_thread_func(void *arg) {
 					if (info->headset) {
 						printf("input: %s headset hold end\n", node);
 					}
-					if (holdpreview_active()) {
+					if (holdpreview_owns_hold(info->headset)) {
 						holdpreview_end();
 					} else {
 						device_state_scrub_commit();
@@ -2331,7 +2340,7 @@ static void *input_thread_func(void *arg) {
 	// A node that disappears mid-hold (the headset unplugged) has no release to
 	// commit the scrub, and no reader to wait out the click window.
 	if (seeked) {
-		if (holdpreview_active()) {
+		if (holdpreview_owns_hold(info->headset)) {
 			holdpreview_cancel();
 		} else {
 			device_state_scrub_commit();

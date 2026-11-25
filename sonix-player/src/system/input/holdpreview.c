@@ -31,6 +31,13 @@ bool holdpreview_active(void) {
 	return value;
 }
 
+bool holdpreview_owns_hold(bool headset) {
+	pthread_mutex_lock(&lock);
+	bool value = headset && active;
+	pthread_mutex_unlock(&lock);
+	return value;
+}
+
 double holdpreview_position(void) {
 	pthread_mutex_lock(&lock);
 	double value = preview_target;
