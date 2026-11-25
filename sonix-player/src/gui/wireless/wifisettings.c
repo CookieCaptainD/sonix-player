@@ -161,7 +161,15 @@ static void manual_accept_cb(lv_event_t *e) {
 		return;
 	}
 
-	// The name is capped at 32 bytes by the field, the most 802.11 carries.
+	// 802.11 carries at most 32 bytes of SSID. The textarea's limit counts
+	// characters, not bytes, so a multi-byte name can still be too long;
+	// refuse it here rather than let the connect truncate it into a
+	// different network.
+	if (strlen(ssid) > 32) {
+		toast_error("wifi_connection_failed");
+		return;
+	}
+
 	// The passphrase is judged by the connect itself, where its refusal turns
 	// into the usual "incorrect password" instead of a second opinion here.
 	wifi_connect(ssid, psk, true);
@@ -907,8 +915,8 @@ static void build_manual_page(gui_config_t *cfg) {
 
 	manual_ssid_field = lv_textarea_create(manual_screen);
 	lv_textarea_set_one_line(manual_ssid_field, true);
-	// 32 bytes is all 802.11 carries in an SSID; a longer name would be cut by
-	// the supplicant instead, after the page had already moved on.
+	// Caps characters, not bytes; manual_accept_cb checks the byte limit that
+	// 802.11 actually imposes on an SSID.
 	lv_textarea_set_max_length(manual_ssid_field, 32);
 	lv_obj_set_size(manual_ssid_field, field_w, field_h);
 	lv_obj_set_scrollbar_mode(manual_ssid_field, LV_SCROLLBAR_MODE_OFF);

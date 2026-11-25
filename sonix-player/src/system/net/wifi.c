@@ -891,6 +891,10 @@ static direct_result_t connect_direct(const char *ssid, const char *psk, bool hi
 		// having been saved with scan_ssid the first time.
 		if (hidden) {
 			wpa4("set_network", id_text, "scan_ssid", "1", out, sizeof(out));
+			if (!wpa_ok(out)) {
+				printf("wifi: scan_ssid was refused (%s)\n", out[0] ? out : "no reply");
+				return DIRECT_REFUSED;
+			}
 		}
 		// A saved network whose password is being re-entered. key_mgmt goes
 		// with it: a network first joined as an open one carries key_mgmt=NONE,
