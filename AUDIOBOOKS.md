@@ -18,7 +18,9 @@ Audiobooks/
         02 - Chapter Two.mp3
 ```
 
-- Only `Audiobooks` is scanned, at any depth below it.
+- Only `Audiobooks` is scanned, up to 12 levels below it. A folder is read up
+  to 4096 entries (files and subfolders together); anything deeper or past
+  that cap is not added to the index.
 - `Author/Series` is used when the tags do not carry the author and series.
   The first folder below `Audiobooks` is the author, the second is the series.
 - A book without a series can sit directly under the author:
@@ -103,9 +105,12 @@ are also ignored.
 
 ### Summary
 
-The summary page uses the first description it finds. `DESCRIPTION` and
-`SUMMARY` win over an MP4 `ldes`/`desc` and over an ID3 `COMM` frame. For a
-folder book, the first part that carries a summary supplies it.
+The summary page uses the highest-priority description it finds, not simply
+the first one. A field named for the purpose wins over a bare comment: MP4
+`ldes` has the same standing as `DESCRIPTION`/`SUMMARY`, while MP4 `desc` and
+an ID3 `COMM` frame rank below them and a plain `©cmt`/`COMMENT` ranks last.
+Among tags of equal priority, the first one read wins. For a folder book, the
+first part that carries a summary supplies it.
 
 ## Chapter marks inside one file
 
@@ -210,14 +215,16 @@ no series.
   avoids it.
 - **A year is not a number.** `1984` in a title is not a series number. Add
   `SERIES-PART` explicitly.
-- **One chapter mark at zero is not a chapter list.** Give a single file at
-  least two real marks.
+- **One MP4 mark at zero is not a chapter list.** In an `.m4b`, `.m4a` or
+  `.mp4`, a single mark at 0:00 is discarded, so give the file at least two
+  real marks. A lone zero-time mark in ID3 `CHAP` or Vorbis comments is kept
+  and does make a one-chapter book.
 - **Do not put a book's files loose in `Audiobooks`.** Files in that root are
   each a book of their own; the author and series folders are lost.
 
 ## Quick checklist
 
-- [ ] The book is under `Audiobooks` (any depth below it).
+- [ ] The book is under `Audiobooks` (up to 12 levels below it).
 - [ ] The author and series are in tags, or the folders are
       `Audiobooks/Author/Series/Book`.
 - [ ] The title is in `TITLE`, or at least `ALBUM` for a folder book.
