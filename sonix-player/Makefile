@@ -409,12 +409,13 @@ clean:
 
 .PHONY: test
 TEST_CFLAGS = -O2 -g -Wall -Wextra -I.
-TEST_BINS = build_tests/test_seekpolicy build_tests/test_keymap build_tests/test_hookclicks
+TEST_BINS = build_tests/test_seekpolicy build_tests/test_keymap build_tests/test_hookclicks build_tests/test_holdpreview
 
 test: $(TEST_BINS)
 	./build_tests/test_seekpolicy
 	./build_tests/test_keymap
 	./build_tests/test_hookclicks
+	./build_tests/test_holdpreview
 	python3 tests/check_language_keys.py
 
 # The headers are prerequisites so that editing one rebuilds the test, but they
@@ -436,6 +437,12 @@ build_tests/test_hookclicks: tests/test_hookclicks.c src/system/input/hookclicks
 							 src/system/input/hookclicks.h
 	@mkdir -p build_tests
 	$(CC) $(TEST_CFLAGS) -o $@ $(filter %.c,$^)
+
+build_tests/test_holdpreview: tests/test_holdpreview.c src/system/input/holdpreview.c \
+							   src/system/input/seekpolicy.c \
+							   src/system/input/holdpreview.h src/system/input/seekpolicy.h
+	@mkdir -p build_tests
+	$(CC) $(TEST_CFLAGS) -pthread -o $@ $(filter %.c,$^)
 
 # The bundled libraries and their extracted sources. The downloaded tarballs stay.
 .PHONY: libs-clean

@@ -2,7 +2,7 @@
 0 164 1 1
 60 164 0 1
 
-# Two clicks inside the 300 ms hook window: next chapter/track.
+# Two clicks inside the 250 ms hook window: next chapter/track.
 1000 164 1 1
 1060 164 0 1
 1150 164 1 1
