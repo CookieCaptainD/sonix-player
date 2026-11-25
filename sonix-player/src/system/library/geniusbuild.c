@@ -99,7 +99,6 @@ typedef struct {
 } build_t;
 
 static bool cancelled(const build_t *b) { return b->cancel && atomic_load(b->cancel); }
-static int interrupt_sql(void *user) { return cancelled(user); }
 
 static void report(build_t *b, geniusbuild_phase_t phase, int completed, int total) {
 	if (b->progress) {
@@ -487,7 +486,8 @@ static bool read_generation(build_t *b, const char *path, char out[4097]) {
 	sqlite3_blob *blob = NULL;
 	bool ok = false;
 	if (sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) goto done;
-	sqlite3_progress_handler(db, 1024, interrupt_sql, b);
+	// This tree's SQLite is built with SQLITE_OMIT_PROGRESS_CALLBACK.
+	// Cancellation is checked at every row and bulk read instead.
 	sqlite3_exec(db, "PRAGMA cache_size=-128", NULL, NULL, NULL);
 	const char *sql = "SELECT id, CASE WHEN typeof(generation)='text' AND octet_length(generation)"
 		" BETWEEN 1 AND 4096 THEN generation END,typeof(data),length(data) FROM GENIUS_SNAPSHOT";
@@ -728,7 +728,8 @@ static geniusbuild_result_t publish(build_t *b, int dir, const char *parent, con
 	if (sqlite3_open_v2(staging, &db, SQLITE_OPEN_READWRITE, NULL) != SQLITE_OK) goto done;
 	const char *opened = sqlite3_db_filename(db, "main");
 	if (!opened || stat(opened, &current) != 0 || current.st_dev != artifact.st_dev || current.st_ino != artifact.st_ino) goto done;
-	sqlite3_progress_handler(db, 1024, interrupt_sql, b);
+	// This tree's SQLite is built with SQLITE_OMIT_PROGRESS_CALLBACK.
+	// Cancellation is checked at every row and bulk write instead.
 	sqlite3_limit(db, SQLITE_LIMIT_LENGTH, (int)GENIUSBUILD_MAX_BLOB_BYTES + 4096);
 	if (sqlite3_exec(db, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA cache_size=-128;"
 		" BEGIN; CREATE TABLE GENIUS_SNAPSHOT(id INTEGER PRIMARY KEY CHECK(id=0),generation TEXT,data BLOB)", NULL, NULL, NULL) != SQLITE_OK) goto done;

@@ -65,6 +65,7 @@ bool pictureview_open(const char *path) {
 
 void pictureview_init(gui_config_t *cfg) {
 	view_cfg = cfg;
+	pictureview_screen = lv_obj_create(NULL);
 	lv_obj_add_style(pictureview_screen, &theme_style_screen, 0);
 	title_label = settingsrow_title(pictureview_screen, cfg, "");
 	settingsrow_title_corner_slots(title_label, cfg, 0);

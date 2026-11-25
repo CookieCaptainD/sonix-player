@@ -56,3 +56,7 @@ sonix-packer/v1/v1_md5_original.txt
 sonix-packer/v1/temp/
 sonix-packer/v1/squashfs-root/
 sonix-packer/v1/rootfs_original.squashfs
+
+# --- Python fixture generators ---
+__pycache__/
+*.pyc

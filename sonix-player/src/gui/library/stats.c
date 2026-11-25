@@ -274,6 +274,22 @@ static void chart_build(lv_obj_t *parent) {
 	lv_obj_set_height(chart_marks, lv_font_get_line_height(&font_ui_14));
 }
 
+// The inclusive last day of a bucket, with days in oldest-first order. Thirty
+// days do not divide by seven, so the extra days go to the newest buckets and
+// the bar at the right end always includes today. Bars and weekday letters
+// share this one mapping so they cannot disagree about where a bucket ends.
+static int chart_bucket_end(int count, int bucket) {
+	int per = count / STATS_CHART_BUCKETS;
+	int extra = count % STATS_CHART_BUCKETS;
+	int threshold = STATS_CHART_BUCKETS - extra;
+	int after = bucket + 1 - threshold;
+	if (after < 0) {
+		after = 0;
+	}
+	int end = (bucket + 1) * per + after - 1;
+	return end < count ? end : count - 1;
+}
+
 // The letters under the bars: the weekday initial of each bucket's last day,
 // which is what makes the chart readable -- a bar is "the days up to Sunday",
 // so the letter is the day it ends on.
@@ -284,15 +300,8 @@ static void chart_marks_fill(const stats_day_t *days, int count) {
 	static const char *const WEEKDAY_KEYS[7] = {"Sun", "Mon", "Tue", "Wed",
 												"Thu", "Fri", "Sat"};
 	// 1970-01-01 was a Thursday, and the day number is days since then.
-	int per_bucket = count / STATS_CHART_BUCKETS;
-	if (per_bucket < 1) {
-		per_bucket = 1;
-	}
 	for (int i = 0; i < STATS_CHART_BUCKETS; i++) {
-		int last = (i + 1) * per_bucket - 1;
-		if (last >= count) {
-			last = count - 1;
-		}
+		int last = chart_bucket_end(count, i);
 		int weekday = last >= 0 ? (days[last].day + 4) % 7 : 0; // 0 = Sunday
 		lv_obj_t *mark = text(chart_marks, tr(WEEKDAY_KEYS[weekday]), &font_ui_14, theme()->text_secondary);
 		// A box of its own, one seventh of the card: the letter sits centred
@@ -319,18 +328,13 @@ static void chart_fill(void) {
 	// is what the summary card above it is in and what the eye reads. A day
 	// with anything at all on it gets at least a minute, so a single track is
 	// not a bar of zero height.
-	int per_bucket = chart_days / chart_points;
-	if (per_bucket < 1) {
-		per_bucket = 1;
-	}
 	int32_t peak = 0;
 	for (int i = 0; i < chart_points; i++) {
 		long seconds = 0;
-		for (int j = 0; j < per_bucket; j++) {
-			int index = i * per_bucket + j;
-			if (index < chart_days) {
-				seconds += days[index].seconds;
-			}
+		int first = i == 0 ? 0 : chart_bucket_end(chart_days, i - 1) + 1;
+		int last = chart_bucket_end(chart_days, i);
+		for (int index = first; index <= last; index++) {
+			seconds += days[index].seconds;
 		}
 		int32_t minutes = (int32_t)((seconds + 30) / 60);
 		if (seconds > 0 && minutes <= 0) {
