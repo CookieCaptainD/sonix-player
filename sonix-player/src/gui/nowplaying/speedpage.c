@@ -16,6 +16,8 @@
 // podcast at 1.5x, a book slowed down at 0.75x -- as pills. The setting is
 // stored in thousandths, the way podcast.c and audiobook.c keep it, and each
 // one remembers its own: changing an episode's speed leaves the books' alone.
+// The stretcher is 16-bit only: a 24/32-bit source takes the S32 playback path
+// and stays at 1.0x whatever this page says.
 // ---------------------------------------------------------------------------
 
 #define SPEED_MIN_PERMILLE 250

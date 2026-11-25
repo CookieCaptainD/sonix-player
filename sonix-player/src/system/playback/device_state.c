@@ -479,9 +479,13 @@ void device_state_note_storage_gone(void) {
 static void apply_track_speed(void) {
 	bool book = audiobook_is_playing();
 	bool episode = podcastcache_is_episode(current_metadata_file);
-	// The output sizes its buffer from this: one long file gets a short one, so
-	// a speed change is heard at once instead of after the deep buffer drains.
-	audio_set_long_form(book || episode);
+	// Only one file with no file change in front of it can use the short buffer:
+	// a speed change is then heard at once instead of after the deep buffer
+	// drains. A folder book (CD 1 / Disc 2) and an episode queue do change file,
+	// where that buffer is what absorbs the stall of the next track's cover
+	// decode; they keep it, as does every other track.
+	bool one_file = playlist_count() <= 1 && (!book || audiobook_part_count() <= 1);
+	audio_set_long_form(one_file && (book || episode));
 	if (book) {
 		audio_set_speed(audiobook_speed());
 	} else if (episode) {
