@@ -218,8 +218,9 @@ int volume_limit_configured_ceiling(volume_output_t out);
 void volume_limit_set_override_above(volume_output_t out, bool allow);
 bool volume_limit_override_active(volume_output_t out);
 // Bring the active output's level under its configured safety limit, applying
-// it to the hardware now. This ignores temporary overrides and is used as a
-// guard against unexpected volume jumps (e.g. at playback start). Returns the
+// it to the hardware now. A level the user explicitly confirmed above the
+// limit is left alone, as is line out's fixed hardware index. Used as a guard
+// against unexpected volume jumps (e.g. at playback start). Returns the
 // percent in force.
 int volume_safety_enforce_active(void);
 

@@ -4357,6 +4357,10 @@ void audio_pause(void) {
 }
 
 void audio_resume(void) {
+	// The ordinary pause/resume toggle is a playback start too, so the same
+	// safety clamp as audio_play() applies before sound is allowed to resume.
+	volume_safety_enforce_active();
+
 	// The fresh restart, when the freeze armed one: the track context no longer
 	// exists (killed before mem, deliberately), so "resume" here means
 	// rebuilding everything from scratch at the right point -- fresh decoder,

@@ -989,13 +989,18 @@ void volume_limit_set(volume_output_t out, int percent) {
 }
 
 // Safety net: if the volume ever ends up above the configured limit (a stale
-// restore, a firmware/hardware quirk, or any path that bypassed a user-confirmed
-// raise), pull it down before audio is allowed to play. This deliberately
-// ignores temporary overrides so an unexpected jump never plays loud without an
-// explicit user action in context.
+// restore, a firmware/hardware quirk, or any path that bypassed the confirmation
+// gate), pull it down before audio is allowed to play. A raise the user already
+// confirmed is not an unexpected jump: the permission lasts until the output,
+// the limit or the reboot changes, so a track start must not silently revoke it
+// while leaving the gate open for the next volume press.
 int volume_safety_enforce_active(void) {
 	limit_load();
 	int ceiling = limit_configured_ceiling(profile_out);
+
+	if (volume_limit_override_active(profile_out)) {
+		return current_percent;
+	}
 
 	// Keep the remembered level for this output within bounds too, so a later
 	// profile switch cannot resurrect an unsafe value.
@@ -1004,23 +1009,23 @@ int volume_safety_enforce_active(void) {
 		profile_dirty = true;
 	}
 
+	// With line out on, current_percent is the fixed hardware index (100), not
+	// the user's level, and set_volume_percent() already refuses to move it.
+	// Clamping that index here would desync it from the DAC attenuation and
+	// overwrite the remembered level with a number nobody chose. Bring down
+	// the level to return to instead, and leave the hardware index alone.
+	if (lineout_on) {
+		if (lineout_saved_percent > ceiling) {
+			lineout_saved_percent = ceiling;
+		}
+		volume_profile_persist();
+		return current_percent;
+	}
+
 	if (current_percent > ceiling) {
 		fprintf(stderr, "volume: safety clamp %d%% -> %d%% (limit)\n", current_percent, ceiling);
-		if (lineout_on) {
-			// The user's level underneath a fixed line-out drive must come down;
-			// the hardware index itself stays where line out needs it.
-			if (lineout_saved_percent > ceiling) {
-				lineout_saved_percent = ceiling;
-			}
-			current_percent = ceiling;
-			if (output_in_range(profile_out)) {
-				level[profile_out] = ceiling;
-			}
-			profile_dirty = true;
-		} else {
-			profile_dirty = true;
-			apply_volume_hw(ceiling);
-		}
+		profile_dirty = true;
+		apply_volume_hw(ceiling);
 		volume_profile_persist();
 	}
 	return current_percent;
