@@ -355,9 +355,8 @@ static void row_clicked_cb(lv_event_t *e) {
 		}
 		if (duplicate) {
 			snprintf(confirm_playlist, sizeof(confirm_playlist), "%s", name);
-			confirm_show("Song already in playlist",
-						 "One or more of these songs are already in this playlist. Add them anyway?",
-						 "Add anyway", add_pending_batch_confirmed, NULL);
+			confirm_show("playlist_duplicate_title", "playlist_duplicate_batch_note",
+						 "playlist_add_anyway", add_pending_batch_confirmed, NULL);
 			return;
 		}
 		batch_start(name);
@@ -367,9 +366,8 @@ static void row_clicked_cb(lv_event_t *e) {
 
 	if (pending_track[0] && playlists_has_track(name, pending_track)) {
 		snprintf(confirm_playlist, sizeof(confirm_playlist), "%s", name);
-		confirm_show("Song already in playlist",
-					 "This song is already in this playlist. Add it anyway?",
-					 "Add anyway", add_pending_track_confirmed, NULL);
+		confirm_show("playlist_duplicate_title", "playlist_duplicate_track_note",
+					 "playlist_add_anyway", add_pending_track_confirmed, NULL);
 		return;
 	}
 
