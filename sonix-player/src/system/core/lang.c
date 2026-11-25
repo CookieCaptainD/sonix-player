@@ -411,38 +411,53 @@ static bool read_declared_name(const char *name, char *out, size_t size);
 // The order the list is shown in. The key is the file name, not the name the
 // file declares: a declared name stays in its own script (CJK, Cyrillic) and
 // has no place in an A-Z list, while the file names are the English names the
-// set is organised by.
+// set is organised by. Windows-style `#Uxxxx` escapes in a file name are
+// decoded first, so an escaped spelling sorts with the name the page shows.
 //
 // A Latin letter written with a mark, a stroke or a ligature folds to the plain
 // letter a reader looks for it under: the Czech name with a caron sorts with C,
 // the Spanish one with a tilde with E, the Vietnamese one with a dot below with
 // E, the OE ligature with O. The table below covers every Latin block a name can
 // be written in -- the Supplement, the two Extended blocks and the Additional
-// block the Vietnamese letters live in -- and leaves out only the code points
-// that stand for two letters at once and so have no single letter to fold to
-// (the clicks, "oi", "ou", "hv", the glottal stop, the multiplication and
-// division signs). Those, and every script outside Latin, keep their code point
+// block the Vietnamese letters live in -- and leaves out code points with no
+// single letter to fold to: digraphs (the clicks, "oi", "ou", "hv", the glottal
+// stop), signs (multiplication, division) and letters that are a shape of their
+// own, such as TONE SIX. Those, and every script outside Latin, keep their code point
 // and therefore follow the Latin names.
 static uint32_t utf8_next(const char **p) {
 	const unsigned char *s = (const unsigned char *)*p;
+	unsigned char lead = s[0];
 	uint32_t cp;
+	int extra;
 
-	if (s[0] < 0x80) {
-		cp = s[0];
-		*p += 1;
-	} else if ((s[0] & 0xE0) == 0xC0 && s[1]) {
-		cp = ((uint32_t)(s[0] & 0x1F) << 6) | (s[1] & 0x3F);
-		*p += 2;
-	} else if ((s[0] & 0xF0) == 0xE0 && s[1] && s[2]) {
-		cp = ((uint32_t)(s[0] & 0x0F) << 12) | ((uint32_t)(s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-		*p += 3;
-	} else if ((s[0] & 0xF8) == 0xF0 && s[1] && s[2] && s[3]) {
-		cp = ((uint32_t)(s[0] & 0x07) << 18) | ((uint32_t)(s[1] & 0x3F) << 12) | ((uint32_t)(s[2] & 0x3F) << 6) | (s[3] & 0x3F);
-		*p += 4;
+	if (lead < 0x80) {
+		cp = lead;
+		extra = 0;
+	} else if ((lead & 0xE0) == 0xC0) {
+		cp = lead & 0x1F;
+		extra = 1;
+	} else if ((lead & 0xF0) == 0xE0) {
+		cp = lead & 0x0F;
+		extra = 2;
+	} else if ((lead & 0xF8) == 0xF0) {
+		cp = lead & 0x07;
+		extra = 3;
 	} else {
-		cp = s[0];
-		*p += 1;
+		cp = lead;
+		extra = 0;
 	}
+
+	// As in library.c, every continuation byte must be present and be a real
+	// UTF-8 continuation byte. Otherwise the lead byte alone is consumed, so a
+	// raw legacy high byte cannot be read as part of a bogus code point.
+	for (int i = 1; i <= extra; i++) {
+		if ((s[i] & 0xC0) != 0x80) {
+			(*p)++;
+			return lead;
+		}
+		cp = (cp << 6) | (s[i] & 0x3F);
+	}
+	*p += extra + 1;
 	return cp;
 }
 
@@ -507,17 +522,28 @@ static const struct {
 	// letters of the International Phonetic Alphabet; the ones that are a base
 	// letter with a hook, a bar or a stroke rather than a shape of their own are
 	// folded with it.
-	{0x0184, 0x0185, 'b'},
+	{0x0180, 0x0183, 'b'}, // B with stroke, hook, top bar (TONE SIX is not a B)
 	{0x0186, 0x0186, 'o'}, // open O
+	{0x0187, 0x0188, 'c'}, // C with hook
+	{0x018A, 0x018C, 'd'}, // D with hook, top bar
 	{0x018E, 0x0190, 'e'}, // reversed E, schwa, open E
+	{0x0191, 0x0192, 'f'}, // F with hook
+	{0x0193, 0x0193, 'g'}, // G with hook
 	{0x0196, 0x0197, 'i'}, // iota, barred I
+	{0x0198, 0x0199, 'k'}, // K with hook
+	{0x019A, 0x019A, 'l'}, // L with bar
 	{0x019C, 0x019C, 'm'},
 	{0x019D, 0x019E, 'n'},
+	{0x019F, 0x019F, 'o'}, // O with middle tilde
 	{0x01A0, 0x01A1, 'o'}, // O with horn
+	{0x01A4, 0x01A5, 'p'}, // P with hook
 	{0x01A6, 0x01A6, 'r'},
 	{0x01A9, 0x01A9, 's'}, // esh
+	{0x01AB, 0x01AE, 't'}, // T with hook, retroflex hook
 	{0x01AF, 0x01B1, 'u'}, // U with horn, upsilon
 	{0x01B2, 0x01B2, 'v'},
+	{0x01B3, 0x01B4, 'y'}, // Y with hook
+	{0x01B5, 0x01B6, 'z'}, // Z with stroke
 	{0x01B7, 0x01BA, 'z'}, // ezh
 	{0x01BF, 0x01BF, 'w'}, // wynn
 	{0x01C4, 0x01C6, 'd'}, // DZ ligature
@@ -551,6 +577,7 @@ static const struct {
 	{0x021E, 0x021F, 'h'},
 	{0x0220, 0x0220, 'n'},
 	{0x0221, 0x0221, 'd'},
+	{0x0224, 0x0225, 'z'}, // Z with hook
 	{0x0226, 0x0227, 'a'},
 	{0x0228, 0x0229, 'e'},
 	{0x022A, 0x0231, 'o'},
@@ -629,8 +656,72 @@ static uint32_t folded_letter(uint32_t cp) {
 	return cp;
 }
 
+static int hex_digit(char c) {
+	if (c >= '0' && c <= '9') {
+		return c - '0';
+	}
+	if (c >= 'a' && c <= 'f') {
+		return c - 'a' + 10;
+	}
+	if (c >= 'A' && c <= 'F') {
+		return c - 'A' + 10;
+	}
+	return -1;
+}
+
+// Decode the Windows-style `#Uxxxx` escapes some file names use. This is the
+// fallback lang_display_name() uses when a file has no declared name; the sorter
+// needs the same decoder so an escaped spelling orders like the name on screen.
+// See lang.h -- basic multilingual plane only, four hex digits.
+static void decode_name_escapes(const char *name, char *out, size_t size) {
+	if (!out || size == 0) {
+		return;
+	}
+	if (!name) {
+		out[0] = '\0';
+		return;
+	}
+
+	size_t w = 0;
+	for (const char *p = name; *p && w + 1 < size;) {
+		int d0, d1, d2, d3;
+		if (p[0] == '#' && (p[1] == 'U' || p[1] == 'u') && (d0 = hex_digit(p[2])) >= 0 &&
+			(d1 = hex_digit(p[3])) >= 0 && (d2 = hex_digit(p[4])) >= 0 && (d3 = hex_digit(p[5])) >= 0) {
+			unsigned cp = (unsigned)((d0 << 12) | (d1 << 8) | (d2 << 4) | d3);
+
+			// Code point to UTF-8, and only if the whole sequence fits: half a
+			// sequence would be worse than leaving it undecoded.
+			char enc[4];
+			size_t n = 0;
+			if (cp < 0x80) {
+				enc[n++] = (char)cp;
+			} else if (cp < 0x800) {
+				enc[n++] = (char)(0xC0 | (cp >> 6));
+				enc[n++] = (char)(0x80 | (cp & 0x3F));
+			} else {
+				enc[n++] = (char)(0xE0 | (cp >> 12));
+				enc[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+				enc[n++] = (char)(0x80 | (cp & 0x3F));
+			}
+			if (w + n + 1 > size) {
+				break;
+			}
+			for (size_t i = 0; i < n; i++) {
+				out[w++] = enc[i];
+			}
+			p += 6;
+			continue;
+		}
+		out[w++] = *p++;
+	}
+	out[w] = '\0';
+}
+
 static int name_order(const char *a, const char *b) {
-	const char *pa = a, *pb = b;
+	char key_a[64], key_b[64];
+	decode_name_escapes(a, key_a, sizeof(key_a));
+	decode_name_escapes(b, key_b, sizeof(key_b));
+	const char *pa = key_a, *pb = key_b;
 	for (;;) {
 		uint32_t ca = folded_letter(utf8_next(&pa));
 		uint32_t cb = folded_letter(utf8_next(&pb));
@@ -724,19 +815,6 @@ int lang_list(const char **names, int max) {
 	return count;
 }
 
-static int hex_digit(char c) {
-	if (c >= '0' && c <= '9') {
-		return c - '0';
-	}
-	if (c >= 'a' && c <= 'f') {
-		return c - 'a' + 10;
-	}
-	if (c >= 'A' && c <= 'F') {
-		return c - 'A' + 10;
-	}
-	return -1;
-}
-
 // The name a file gives for itself, from its header line:
 //
 //     [Language: English]
@@ -798,43 +876,8 @@ void lang_display_name(const char *name, char *out, size_t size) {
 	}
 
 	// No header: fall back to the file name, decoding the Windows-style
-	// `#Uxxxx` escapes some of the shipped files use. See lang.h -- basic
-	// multilingual plane only, since `#Uxxxx` is four hex digits and no
-	// existing language name needs more.
-
-	size_t w = 0;
-	for (const char *p = name; *p && w + 1 < size;) {
-		int d0, d1, d2, d3;
-		if (p[0] == '#' && (p[1] == 'U' || p[1] == 'u') && (d0 = hex_digit(p[2])) >= 0 &&
-			(d1 = hex_digit(p[3])) >= 0 && (d2 = hex_digit(p[4])) >= 0 && (d3 = hex_digit(p[5])) >= 0) {
-			unsigned cp = (unsigned)((d0 << 12) | (d1 << 8) | (d2 << 4) | d3);
-
-			// Code point to UTF-8, and only if the whole sequence fits: half a
-			// sequence would be worse than leaving it undecoded.
-			char enc[4];
-			size_t n = 0;
-			if (cp < 0x80) {
-				enc[n++] = (char)cp;
-			} else if (cp < 0x800) {
-				enc[n++] = (char)(0xC0 | (cp >> 6));
-				enc[n++] = (char)(0x80 | (cp & 0x3F));
-			} else {
-				enc[n++] = (char)(0xE0 | (cp >> 12));
-				enc[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
-				enc[n++] = (char)(0x80 | (cp & 0x3F));
-			}
-			if (w + n + 1 > size) {
-				break;
-			}
-			for (size_t i = 0; i < n; i++) {
-				out[w++] = enc[i];
-			}
-			p += 6;
-			continue;
-		}
-		out[w++] = *p++;
-	}
-	out[w] = '\0';
+	// `#Uxxxx` escapes some of the shipped files use.
+	decode_name_escapes(name, out, size);
 }
 
 bool lang_set(const char *name) {
