@@ -861,7 +861,10 @@ void power_set_standby_after(uint32_t seconds) {
 }
 
 void power_set_usb_wake_check(uint32_t seconds) {
-	g_usb_check_s = usbwake_interval_valid(seconds) ? seconds : 0;
+	// The setter is the one gate on the device: only the R1's PMIC needs the
+	// check, and the shared normalizer keeps a saved value in step with what
+	// the settings slider would show.
+	g_usb_check_s = axpcharge_applies() ? usbwake_normalize_seconds((long)seconds) : 0;
 }
 
 // What the kernel says about the last suspend: counters and, above all, the
@@ -1302,10 +1305,17 @@ static void suspend_to_ram(void) {
 	// would push the shutdown out by a whole period on every suspend. That
 	// shutdown counts on CLOCK_BOOTTIME, which counted the sleep; a real user
 	// wake stamps the marker through power_screen_on().
-	g_mem_active_ms =
-		usbwake_mem_active_after_wake(lv_tick_get(), g_mem_after_ms, usb_check_wake, cable_found);
-	g_screen_off_at = lv_tick_get();
-	g_mem_last_attempt_ms = lv_tick_get();
+	uint32_t now = lv_tick_get();
+	g_mem_active_ms = usbwake_mem_active_after_wake(now, g_mem_after_ms, usb_check_wake, cable_found);
+	// A cable that was found already turned the screen on: keep the dark-time
+	// marker at the real power-off, so the next suspend reports that duration.
+	if (!g_screen_on) {
+		g_screen_off_at = now;
+	}
+	// The re-attempt guard is for attempts that gave up. A cable check really
+	// did sleep and wake on its alarm; restamping here would keep the device
+	// awake for the whole guard and make the short awake window unreachable.
+	g_mem_last_attempt_ms = usbwake_attempt_stamp_after_wake(now, g_mem_last_attempt_ms, usb_check_wake);
 	g_mem_skip_logged[0] = '\0';
 	// After a look at the battery, back to sleep sooner: only the readings were
 	// waited for.
@@ -1323,7 +1333,7 @@ static void suspend_if_idle(uint32_t now, bool playing) {
 	if (since(g_mem_active_ms, now) < g_mem_after_ms) {
 		return; // not yet the full idle wait (see g_mem_active_ms)
 	}
-	if (since(g_mem_last_attempt_ms, now) < 30 * 1000) {
+	if (since(g_mem_last_attempt_ms, now) < USBWAKE_REATTEMPT_GUARD_MS) {
 		return; // the last attempt gave up: do not hammer
 	}
 	if (playing) {
@@ -2013,14 +2023,13 @@ void power_init(const power_config_t *cfg, lv_display_t *disp) {
 	}
 	power_set_standby_after(mem_secs > 0 ? (uint32_t)mem_secs : 0);
 
-	// Periodic cable check during standby. Only the player whose PMIC is its
-	// charger needs it (the MP2731 on the others wakes on insert by itself), so
-	// that is the default; [power] usb_wake_check_seconds overrides it, and the
-	// setter drops anything the settings slider would not offer.
-	const sysinfo_model_t *model = sysinfo_model();
+	// Periodic cable check during standby. Only the R1 needs it (the MP2731 on
+	// the others wakes on insert by itself), so that is the default. Both this
+	// path and Settings use axpcharge_applies() for the device and the same
+	// normalizer for a hand-edited interval, so the UI and the scheduler agree.
 	long usb_check_s = config_get_int("power", "usb_wake_check_seconds",
-		(long)usbwake_default_seconds(model && model->pmic_charger));
-	power_set_usb_wake_check(usb_check_s > 0 ? (uint32_t)usb_check_s : 0);
+		(long)usbwake_default_seconds(axpcharge_applies()));
+	power_set_usb_wake_check(usbwake_normalize_seconds(usb_check_s));
 
 	// The radios go down on their own clock, not the Standby toggle's: they are
 	// worth switching off whether or not the SoC is going to sleep.

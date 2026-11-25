@@ -11,6 +11,7 @@
 #include "src/system/device/led.h"
 #include "src/system/device/power.h"
 #include "src/system/device/system.h"
+#include "src/system/device/usbwake.h"
 
 lv_obj_t *powersettings_screen;
 
@@ -103,18 +104,18 @@ static int standby_after_index(void) {
 	return STANDBY_AFTER_COUNT - 1;
 }
 
-// The first offered interval that is at least the saved one, or the longest
-// when the saved value is past the table. On a player without the PMIC charger
-// the key is absent and the answer is off, which keeps its path unchanged.
+// The saved interval rounded to the next one on the slider, by the same helper
+// the startup path uses, then mapped back to the slider index. On a player
+// without the PMIC charger the key is absent and the answer is off.
 static int usb_wake_after_index(void) {
 	long fallback = axpcharge_applies() ? USB_WAKE_AFTER[USB_WAKE_DEFAULT_INDEX].seconds : 0;
-	int seconds = (int)config_get_int("power", "usb_wake_check_seconds", fallback);
+	uint32_t seconds = usbwake_normalize_seconds(config_get_int("power", "usb_wake_check_seconds", fallback));
 	for (int i = 0; i < USB_WAKE_AFTER_COUNT; i++) {
-		if (seconds <= USB_WAKE_AFTER[i].seconds) {
+		if ((uint32_t)USB_WAKE_AFTER[i].seconds == seconds) {
 			return i;
 		}
 	}
-	return USB_WAKE_AFTER_COUNT - 1;
+	return 0;
 }
 
 // --- applying them ---
@@ -150,8 +151,9 @@ void powersettings_apply(void) {
 	power_set_standby_enabled(config_get_bool("power", "standby_mem", true));
 	power_set_standby_after((uint32_t)STANDBY_AFTER[standby_after_index()].seconds);
 
-	// The cable check is a standby-only wake, so it follows the same saved
-	// interval as the slider; 0 leaves it off.
+	// The cable check is a standby-only wake on the R1 (the setter ignores it
+	// on the other player), so it follows the same saved interval as the
+	// slider; 0 leaves it off.
 	power_set_usb_wake_check((uint32_t)USB_WAKE_AFTER[usb_wake_after_index()].seconds);
 
 	// The LED master switch comes first: with it off there is nothing for the
@@ -213,16 +215,15 @@ static void refresh_labels(void) {
 	}
 
 	// The cable check, like standby, keeps its interval on a slider that is
-	// only meaningful while the switch is on. A saved 0 is off.
-	int usb_wake_index = usb_wake_after_index();
-	bool usb_wake = USB_WAKE_AFTER[usb_wake_index].seconds > 0;
-	if (usb_wake) {
-		lv_obj_add_state(usb_wake_switch, LV_STATE_CHECKED);
-	} else {
-		lv_obj_remove_state(usb_wake_switch, LV_STATE_CHECKED);
+	// only meaningful while the switch is on. A saved 0 is off. The card only
+	// exists on the R1, whose PMIC needs the check.
+	if (usb_wake_card) {
+		int usb_wake_index = usb_wake_after_index();
+		bool usb_wake = USB_WAKE_AFTER[usb_wake_index].seconds > 0;
+		set_checked(usb_wake_switch, usb_wake);
+		lv_label_set_text(usb_wake_value, tr(USB_WAKE_AFTER[usb_wake_index].label));
+		settingsrow_toggle_slider_expanded(usb_wake_card, usb_wake);
 	}
-	lv_label_set_text(usb_wake_value, tr(USB_WAKE_AFTER[usb_wake_index].label));
-	settingsrow_toggle_slider_expanded(usb_wake_card, usb_wake);
 
 	// One card: the slider is only on it while the toggle is on.
 	bool auto_off = config_get_bool("power", "auto_off", false);
@@ -351,6 +352,11 @@ static void usb_wake_toggled_cb(lv_event_t *e) {
 void powersettings_init(gui_config_t *cfg) {
 	lv_obj_t *container = settingsrow_page(powersettings_screen, cfg, "power");
 
+	// The R1 charges through its PMIC. That decides both its two charge
+	// switches and whether the periodic cable check is offered at all: the
+	// MP2731 on the other player wakes on insert by itself.
+	bool pmic = axpcharge_applies();
+
 	// Suspend-to-RAM standby: suspends the player a while after the screen goes
 	// off to save battery, and playback resumes on wake. On by default. What it
 	// waits for is the screen going dark, and that timeout lives on the Screen
@@ -369,22 +375,23 @@ void powersettings_init(gui_config_t *cfg) {
 
 	// While it sleeps, the R1 wakes briefly every so often to see whether a
 	// cable arrived, so storage can show up without pressing power. The shorter
-	// the wait the more often it wakes, and the more battery that costs.
-	usb_wake_card = settingsrow_toggle_slider(container, "power_usb_wake", USB_WAKE_AFTER_COUNT, &usb_wake_switch,
-											 &usb_wake_value, &usb_wake_slider, usb_wake_toggled_cb,
-											 usb_wake_changed_cb);
-	lv_slider_set_value(usb_wake_slider, usb_wake_after_index(), LV_ANIM_OFF);
-	lv_obj_t *usb_wake_note = lv_label_create(container);
-	lv_label_set_long_mode(usb_wake_note, LV_LABEL_LONG_WRAP);
-	lv_obj_set_width(usb_wake_note, lv_pct(100));
-	lv_obj_add_style(usb_wake_note, &theme_style_text_dim, 0);
-	lv_obj_set_style_text_font(usb_wake_note, &font_ui_22, 0);
-	lv_label_set_text(usb_wake_note, tr("power_usb_wake_note"));
+	// the wait the more often it wakes, and the more battery that costs. Only
+	// the R1 needs it: elsewhere the charger wakes on insert on its own.
+	if (pmic) {
+		usb_wake_card = settingsrow_toggle_slider(container, "power_usb_wake", USB_WAKE_AFTER_COUNT, &usb_wake_switch,
+												 &usb_wake_value, &usb_wake_slider, usb_wake_toggled_cb,
+												 usb_wake_changed_cb);
+		lv_slider_set_value(usb_wake_slider, usb_wake_after_index(), LV_ANIM_OFF);
+		lv_obj_t *usb_wake_note = lv_label_create(container);
+		lv_label_set_long_mode(usb_wake_note, LV_LABEL_LONG_WRAP);
+		lv_obj_set_width(usb_wake_note, lv_pct(100));
+		lv_obj_add_style(usb_wake_note, &theme_style_text_dim, 0);
+		lv_obj_set_style_text_font(usb_wake_note, &font_ui_22, 0);
+		lv_label_set_text(usb_wake_note, tr("power_usb_wake_note"));
+	}
 
-	// The R1 charges through its PMIC, which takes a lower target voltage and a
-	// lower current rather than a percentage: two switches there, the slider
-	// everywhere else.
-	bool pmic = axpcharge_applies();
+	// The R1's PMIC takes a lower target voltage and a lower current rather
+	// than a percentage: two switches there, the slider everywhere else.
 	if (pmic) {
 		settingsrow_toggle(container, "power_charge_limit_80", &axp_limit_switch, axp_limit_toggled_cb);
 		lv_obj_t *limit_note = lv_label_create(container);

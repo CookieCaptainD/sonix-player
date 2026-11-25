@@ -8,8 +8,26 @@ uint32_t usbwake_default_seconds(bool pmic_charger) {
 	return pmic_charger ? 30u : 0u;
 }
 
+// The intervals the settings slider offers, in its own order.
+static const uint32_t usbwake_intervals[] = {0u, 15u, 30u, 60u};
+#define USBWAKE_INTERVAL_COUNT ((int)(sizeof(usbwake_intervals) / sizeof(usbwake_intervals[0])))
+
 bool usbwake_interval_valid(uint32_t seconds) {
-	return seconds == 0u || seconds == 15u || seconds == 30u || seconds == 60u;
+	for (int i = 0; i < USBWAKE_INTERVAL_COUNT; i++) {
+		if (seconds == usbwake_intervals[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+uint32_t usbwake_normalize_seconds(long seconds) {
+	for (int i = 0; i < USBWAKE_INTERVAL_COUNT; i++) {
+		if (seconds <= (long)usbwake_intervals[i]) {
+			return usbwake_intervals[i];
+		}
+	}
+	return usbwake_intervals[USBWAKE_INTERVAL_COUNT - 1];
 }
 
 usbwake_reason_t usbwake_pick(long auto_off_s, long battery_s, long usb_s,
@@ -46,4 +64,9 @@ uint32_t usbwake_mem_active_after_wake(uint32_t now_ms, uint32_t mem_after_ms,
 		return now_ms - (mem_after_ms - USBWAKE_AWAKE_MS);
 	}
 	return now_ms;
+}
+
+uint32_t usbwake_attempt_stamp_after_wake(uint32_t now_ms, uint32_t last_attempt_ms,
+										 bool usb_check_wake) {
+	return usb_check_wake ? last_attempt_ms : now_ms;
 }
