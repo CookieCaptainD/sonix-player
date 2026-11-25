@@ -1426,22 +1426,24 @@ static void browser_open_dir(const char *path) {
 }
 
 // The strip has to use the alphabet that orders these rows. entry_cmp() ends
-// in strcasecmp() on the file name: ASCII case is folded, punctuation and
-// digits sort above A, and every UTF-8 byte sorts below Z. The library
-// collation is a different alphabet -- it skips leading articles and folds
-// accents -- and would file "The Beatles" under B while the row sits under T.
+// in strcasecmp() on the file name: ASCII case is folded to lower case,
+// punctuation and digits sort before A, and the bytes from '{' on -- including
+// UTF-8 lead bytes -- sort past Z. The library collation is a different
+// alphabet -- it skips leading articles and folds accents -- and would file
+// "The Beatles" under B while the row sits under T.
 static int browser_name_bucket(const char *name) {
 	unsigned char c = name ? (unsigned char)*name : 0;
-	if (c >= 'a' && c <= 'z') {
-		c = (unsigned char)(c - ('a' - 'A'));
-	}
 	if (c >= 'A' && c <= 'Z') {
-		return c - 'A' + 1;
+		c = (unsigned char)(c + ('a' - 'A'));
 	}
-	if (c >= 0x80) {
+	if (c >= 'a' && c <= 'z') {
+		return c - 'a' + 1;
+	}
+	if (c > 'z') {
+		// '{'..'~' and every UTF-8 lead byte sort past a folded 'z'.
 		return LIBRARY_INDEX_PAST_Z_SLOT;
 	}
-	return 0; // empty names, punctuation and digits are filed above A
+	return 0; // empty names, punctuation and digits are filed before A
 }
 
 // A row in record order -- a scanned track with a known place, or a cue track
