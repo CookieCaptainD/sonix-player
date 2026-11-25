@@ -913,6 +913,9 @@ static void *worker_main(void *arg) {
 		if (in) {
 			snprintf(tok, sizeof(tok), "%s", signin_token);
 			wipe(signin_token, sizeof(signin_token));
+			// The request has been taken: let a later token be queued,
+			// including after a sign-out or a refused token is lost.
+			signing_in = false;
 		}
 		signout_requested = false;
 		signin_requested = false;

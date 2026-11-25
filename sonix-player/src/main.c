@@ -2010,7 +2010,11 @@ int main(int argc, char **argv) {
 		addons_seed(first_start);
 #endif
 		batteryhistory_init();
-		listenbrainz_init();
+		// An addon that is off is not built: no worker, queue file or HTTP
+		// client is started for it (see addons.h).
+		if (addons_enabled("listenbrainz")) {
+			listenbrainz_init();
+		}
 	}
 
 	// A start by the cable is the charging screen alone, until the power key is

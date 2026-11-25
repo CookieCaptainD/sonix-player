@@ -318,8 +318,10 @@ void systempage_init(gui_config_t *cfg) {
 	// TempoTec V1 (mr-f0xx fork) extras. The two HiBy models keep the
 	// System page exactly as it was.
 	if (bp_is_compact()) {
-		lv_obj_t *profile = batteryprofilepage_init(cfg);
+		// An off addon's page is never built, so it holds no RAM and its
+		// poll timer is not created; the row is gated by the same switch.
 		if (addons_enabled("battery_profile")) {
+			lv_obj_t *profile = batteryprofilepage_init(cfg);
 			settingsrow_add(container, "battery_profile_title", NULL, switch_screen_cb, profile);
 		}
 		settingsrow_add(container, "plugins", NULL, switch_screen_cb, plugins_screen);

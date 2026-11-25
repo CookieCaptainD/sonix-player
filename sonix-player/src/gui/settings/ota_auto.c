@@ -59,6 +59,8 @@ static char s_dismissed_tag[32];
 static char s_taken_tag[32];
 static char s_shown_tag[32];
 static uint32_t s_connect_last;
+// Written by the Wi-Fi worker in try_start_check(), read and cleared by the
+// interface thread in poll_cb(); an atomic keeps the handoff race-free.
 static bool s_inflight;
 static lv_timer_t *s_poll_timer;
 static lv_timer_t *s_periodic_timer;
@@ -107,7 +109,7 @@ static void try_start_check(void) {
 		return;
 	}
 	if (ota_check_start()) {
-		s_inflight = true;
+		__atomic_store_n(&s_inflight, true, __ATOMIC_RELEASE);
 	}
 }
 
@@ -188,7 +190,7 @@ static void show_notice(bool led) {
 
 static void poll_cb(lv_timer_t *timer) {
 	(void)timer;
-	if (!s_inflight) {
+	if (!__atomic_load_n(&s_inflight, __ATOMIC_ACQUIRE)) {
 		return; // not ours: the manual card polls this result
 	}
 	ota_state_t s = ota_state();
@@ -197,7 +199,7 @@ static void poll_cb(lv_timer_t *timer) {
 	}
 	ota_result_t r = ota_result();
 	ota_acknowledge();
-	s_inflight = false;
+	__atomic_store_n(&s_inflight, false, __ATOMIC_RELAXED);
 	if (r != OTA_OK) {
 		return; // no network, no card-sized release, check failed: silent
 	}

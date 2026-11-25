@@ -21,6 +21,7 @@
 #include "src/gui/shell/confirm.h"
 #include "src/gui/shell/corners.h"
 #include "src/gui/board_profile.h"
+#include "src/system/addons/addons.h"
 #include "src/gui/settings/bootlogopage.h"
 #include "src/gui/settings/bootpicpage.h"
 #include "src/gui/settings/listenbrainzsettings.h"
@@ -721,7 +722,7 @@ void gui_init(gui_config_t *cfg) {
 	// after devoptions: the system entry opens the page that can unlock it
 	systempage_init(cfg);
 	bootlogopage_init(cfg); // before appearance: its row carries the screen
-	if (bp_is_compact()) {
+	if (bp_is_compact() && addons_enabled("bootpic")) {
 		bootpicpage_init(cfg); // V1's folder of boot pictures
 	}
 	appearance_init(cfg);
@@ -731,7 +732,7 @@ void gui_init(gui_config_t *cfg) {
 	eqsettings_init(cfg);	// and the equalizer page hangs its own off this
 	peqsettings_init(cfg); // the parametric page hangs its preset screen off the gear
 	peqautoeq_init(cfg);  // the waveform entry on that page searches AutoEq profiles
-	if (bp_is_compact()) {
+	if (bp_is_compact() && addons_enabled("listenbrainz")) {
 		listenbrainzsettings_init(cfg); // the Music page row opens it
 	}
 	musicsettings_init(cfg);

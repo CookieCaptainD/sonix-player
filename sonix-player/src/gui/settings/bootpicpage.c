@@ -243,6 +243,11 @@ void bootpicpage_init(gui_config_t *cfg) {
 	// a card swapped while the player runs readable here.
 	bootpic_set_root(cfg->sd_root_path);
 
+	// The page needs a real screen before settingsrow_page() styles it and
+	// before the Appearance row can open it. The boot logo page does the same.
+	bootpicpage_screen = lv_obj_create(NULL);
+	lv_obj_add_style(bootpicpage_screen, &theme_style_screen, 0);
+
 	lv_obj_t *container = settingsrow_page(bootpicpage_screen, cfg, "bootpic_title");
 
 	// The note first, so it sits above the list rather than under a page
