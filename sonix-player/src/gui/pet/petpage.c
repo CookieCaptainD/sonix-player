@@ -3245,6 +3245,15 @@ static bool pet_back_guard(void) {
 		wardrobe_close();
 		return true;
 	}
+	// The treat game sits over the box sheet: dismiss it first, then the box.
+	if (treat_visible) {
+		treat_close();
+		return true;
+	}
+	if (box_visible) {
+		box_close();
+		return true;
+	}
 	return false;
 }
 
@@ -3283,6 +3292,7 @@ static void screen_unloaded_cb(lv_event_t *e) {
 	customise_close();
 	tap_close();
 	wardrobe_close();
+	box_close(); // also stops the treat timer and hides its sheet
 	if (page_timer) {
 		lv_timer_delete(page_timer);
 		page_timer = NULL;

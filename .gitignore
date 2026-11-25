@@ -1,5 +1,9 @@
 .DS_Store
 
+# Python bytecode from the test fixture generators is a local build artefact.
+__pycache__/
+*.pyc
+
 sonix-player/sonix_player
 sonix-player/sonix_player_debug
 sonix-player/sonix_player_host
