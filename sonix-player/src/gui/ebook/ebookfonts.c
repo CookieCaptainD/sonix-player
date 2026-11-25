@@ -38,20 +38,33 @@ static const char *const JAPANESE_FILES[FACE_COUNT] = {
 	NULL,
 };
 
+// The script faces ship as .otf on the R1 resources and as .ttf on some other
+// firmwares/cards. Try both extensions in the resource tree, then the host
+// fallback, the way the main faces are looked up in fonts.c.
+#ifdef HOST_BUILD
+#define SCRIPT_FONT_DIR_FALLBACK "assets/fonts"
+#else
+#define SCRIPT_FONT_DIR_FALLBACK SCRIPT_FONT_DIR
+#endif
+
+#define SCRIPT_FILES(base)                                                                                             \
+	{SCRIPT_FONT_DIR "/" base ".otf", SCRIPT_FONT_DIR "/" base ".ttf", SCRIPT_FONT_DIR_FALLBACK "/" base ".otf",      \
+	 SCRIPT_FONT_DIR_FALLBACK "/" base ".ttf", NULL}
+
 typedef struct {
 	const char *name;
-	const char *regular;
-	const char *bold;
+	const char *const regular[5];
+	const char *const bold[5];
 } script_face_t;
 
 // Script fallback fonts chained behind the primary ebook face so glyphs the
 // primary lacks (Hangul, CJK, Thai, Arabic, etc.) still render. Korean comes
 // first to satisfy #190 regardless of metadata hints.
 static const script_face_t SCRIPT_FACES[] = {
-	{"korean", "korean.otf", "korean-bold.otf"},
-	{"japanese", "japanese.otf", "japanese-bold.otf"},
-	{"thai", "thai.otf", "thai-bold.otf"},
-	{"arabic", "arabic.otf", "arabic-bold.otf"},
+	{"korean", SCRIPT_FILES("korean"), SCRIPT_FILES("korean-bold")},
+	{"japanese", SCRIPT_FILES("japanese"), SCRIPT_FILES("japanese-bold")},
+	{"thai", SCRIPT_FILES("thai"), SCRIPT_FILES("thai-bold")},
+	{"arabic", SCRIPT_FILES("arabic"), SCRIPT_FILES("arabic-bold")},
 };
 
 #define SCRIPT_FACE_COUNT (sizeof(SCRIPT_FACES) / sizeof(SCRIPT_FACES[0]))
@@ -82,6 +95,26 @@ static lv_font_t *open_font_path(const char *path, int size) {
 	}
 	return lv_freetype_font_create(path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP, (uint32_t)size,
 								   LV_FREETYPE_FONT_STYLE_NORMAL);
+}
+
+// The candidate that exists, or NULL. Mirrors first_present() in fonts.c.
+static const char *first_present(const char *const *candidates) {
+	for (int i = 0; candidates[i]; i++) {
+		if (access(candidates[i], R_OK) == 0) {
+			return candidates[i];
+		}
+	}
+	return NULL;
+}
+
+// Opens the first available candidate and reports which path won, so the
+// duplicate-instance path below can open the very same file again.
+static lv_font_t *open_script_face(const char *const *candidates, int size, const char **found_path) {
+	const char *path = first_present(candidates);
+	if (found_path) {
+		*found_path = path;
+	}
+	return path ? open_font_path(path, size) : NULL;
 }
 
 static lv_font_t *open_primary_face(face_t which, int size) {
@@ -119,29 +152,25 @@ static void fallbacks_close(void) {
 	fallback_korean_open = false;
 }
 
-static void fallbacks_open(int size, bool japanese, bool korean) {
-	(void)japanese;
-	(void)korean;
-
+static void fallbacks_open(int size) {
 	fallbacks_close();
 
 	lv_font_t *reg_tail = NULL;
 	lv_font_t *bold_tail = NULL;
 
 	for (size_t i = 0; i < SCRIPT_FACE_COUNT; i++) {
-		char reg_path[640];
-		char bold_path[640];
-		snprintf(reg_path, sizeof(reg_path), "%s/%s", SCRIPT_FONT_DIR, SCRIPT_FACES[i].regular);
-		snprintf(bold_path, sizeof(bold_path), "%s/%s", SCRIPT_FONT_DIR, SCRIPT_FACES[i].bold);
-
-		lv_font_t *reg = open_font_path(reg_path, size);
-		lv_font_t *bld = open_font_path(bold_path, size);
+		const char *reg_path = NULL;
+		const char *bold_path = NULL;
+		lv_font_t *reg = open_script_face(SCRIPT_FACES[i].regular, size, &reg_path);
+		lv_font_t *bld = open_script_face(SCRIPT_FACES[i].bold, size, &bold_path);
 		if (!reg && !bld) {
 			continue;
 		}
 		script_regular[i] = reg;
 		script_bold[i] = bld;
-		if (i == 0 && reg) {
+		// The bold face alone is enough to render Hangul; it is used in both
+		// chains when the regular file is missing.
+		if (i == 0 && (reg || bld)) {
 			fallback_korean_open = true;
 		}
 
@@ -241,7 +270,7 @@ static void close_faces(void) {
 	have_regular = false;
 }
 
-bool ebookfonts_open(const char *sd_root, int size, bool japanese, bool korean) {
+bool ebookfonts_open(const char *sd_root, int size, bool japanese) {
 	ebookfonts_close();
 
 	current_size = size > 0 ? size : 20;
@@ -263,10 +292,10 @@ bool ebookfonts_open(const char *sd_root, int size, bool japanese, bool korean) 
 	// face lacks still render. They are attached even when the primary is the
 	// interface font fallback, but in that case ebookfonts_face() returns the
 	// UI font object directly.
-	fallbacks_open(current_size, japanese, korean);
+	fallbacks_open(current_size);
 	attach_fallbacks_to_loaded();
-	if (korean && !fallback_korean_open) {
-		fprintf(stderr, "ebook: korean.otf not found in %s; Hangul may not render\n", SCRIPT_FONT_DIR);
+	if (!fallback_korean_open) {
+		fprintf(stderr, "ebook: no Korean fallback face found in %s; Hangul may not render\n", SCRIPT_FONT_DIR);
 	}
 
 	return have_regular;
@@ -293,7 +322,7 @@ bool ebookfonts_set_size(int size) {
 
 	close_faces();
 	current_size = size;
-	fallbacks_open(current_size, face_files == JAPANESE_FILES, false);
+	fallbacks_open(current_size);
 	for (int i = 0; i < FACE_COUNT; i++) {
 		if (wanted[i]) {
 			faces[i] = open_primary_face((face_t)i, current_size);

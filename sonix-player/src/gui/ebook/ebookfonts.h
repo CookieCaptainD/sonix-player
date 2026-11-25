@@ -15,7 +15,9 @@
 //
 // Script fallback fonts (Korean, Japanese, Thai, Arabic) from the firmware's
 // fonts folder are chained behind the primary face so glyphs the primary lacks
-// (e.g. Hangul) still render, regardless of EPUB language metadata.
+// (e.g. Hangul) still render, regardless of EPUB language metadata. They are
+// looked up as .otf first, then .ttf, in the resource tree and the host
+// fallback folder.
 //
 // So: nothing is loaded until the reader opens, the regular face is loaded
 // then, and the other three only when a book actually uses them -- a novel
@@ -33,9 +35,8 @@
 //
 // `japanese` sets the book in the interface's Japanese faces (Rodin, regular
 // and bold, from the firmware's fonts folder or the card's .local/fonts)
-// instead: Bookerly has no kana or kanji. `korean` hints a Korean book;
-// script fallbacks (including Korean) are attached whenever available.
-bool ebookfonts_open(const char *sd_root, int size, bool japanese, bool korean);
+// instead: Bookerly has no kana or kanji.
+bool ebookfonts_open(const char *sd_root, int size, bool japanese);
 
 // Everything above, undone. Safe when nothing was opened.
 void ebookfonts_close(void);
