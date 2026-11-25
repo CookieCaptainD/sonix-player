@@ -13,9 +13,11 @@
 // usr/resource/sonix/fonts/ebook; a set in `.local/fonts/` on the card is used
 // when that folder has none.
 //
-// Script fallback fonts (Korean, Japanese, Thai, Arabic) from the firmware's
-// fonts folder are chained behind the primary face so glyphs the primary lacks
-// (e.g. Hangul) still render, regardless of EPUB language metadata.
+// Script fallback fonts from the firmware's fonts folder are chained behind
+// the primary face so glyphs the primary lacks still render, regardless of
+// EPUB language metadata. The chain covers Korean, Chinese, Japanese, Thai,
+// Arabic, Devanagari, Tamil, Malayalam, Gurmukhi, Ethiopic and Hebrew; the six
+// new subsets ship one regular-weight file used for both chains.
 //
 // So: nothing is loaded until the reader opens, the regular face is loaded
 // then, and the other three only when a book actually uses them -- a novel

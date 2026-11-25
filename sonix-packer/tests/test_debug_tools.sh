@@ -12,7 +12,6 @@ trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 DEBUG_PATHS="
 usr/bin/strace
 usr/bin/strace-log-merge
-usr/bin/btmon
 usr/bin/iperf3
 usr/lib/libiperf.so.0.0.0
 "

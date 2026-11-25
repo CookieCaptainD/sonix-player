@@ -9,8 +9,10 @@
 
 // The firmware's own copy, then the card's.
 #define EBOOK_FONT_DIR SONIX_RESOURCE_DIR "/fonts/ebook"
-// The interface's script faces (Japanese, Korean, Thai, Arabic), used as
-// fallbacks and as the primary face for a Japanese book.
+// The interface's script faces, used as fallbacks and as the primary face for
+// a Japanese book: Korean, Chinese, Japanese, Thai, Arabic and the six
+// regular-weight-only subsets (Devanagari, Tamil, Malayalam, Gurmukhi,
+// Ethiopic, Hebrew).
 #define SCRIPT_FONT_DIR SONIX_RESOURCE_DIR "/fonts"
 
 // The four files, in the order ebookfonts_face() falls back through.
@@ -268,7 +270,7 @@ bool ebookfonts_open(const char *sd_root, int size, bool japanese, bool korean) 
 				japanese ? SCRIPT_FONT_DIR : EBOOK_FONT_DIR, font_dir);
 	}
 
-	// Script fallbacks (Korean, Japanese, Thai, Arabic) so glyphs the primary
+	// Script fallbacks (every SCRIPT_FACES[] entry) so glyphs the primary
 	// face lacks still render. They are attached even when the primary is the
 	// interface font fallback, but in that case ebookfonts_face() returns the
 	// UI font object directly.

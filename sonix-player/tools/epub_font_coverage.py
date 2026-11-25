@@ -22,7 +22,6 @@ import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHAPTER_RE = re.compile(r"Universal Declaration of Human Rights\s*-\s*([^\n\r]+)")
 HEX_RANGE_RE = re.compile(r"^([0-9a-fA-F]+)(?:-([0-9a-fA-F]+))?$")
 
 
@@ -85,8 +84,7 @@ def chapters(epub):
                 continue
             raw = archive.read(name)
             text = text_of(raw.decode("utf-8", errors="replace"))
-            match = CHAPTER_RE.search(text)
-            label = match.group(1).strip() if match else Path(name).stem
+            label = Path(name).stem
             yield label, text
 
 

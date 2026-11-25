@@ -107,10 +107,11 @@ STOCK_UI_DIRS=(usr/resource/litegui usr/resource/layout usr/resource/str usr/res
 # Debug tools inherited from the stock base. A release image has no use for
 # them, and each one costs space in a rootfs that has to fit in flash. Set
 # DEBUG_TOOLS=keep to leave them in place for a debugging build.
+# usr/bin/btmon is deliberately NOT here: the player's Bluetooth log execs it
+# (src/system/bluetooth/btlog.c), so stripping it silently disables HCI logging.
 STOCK_DEBUG_FILES=(
 	usr/bin/strace
 	usr/bin/strace-log-merge
-	usr/bin/btmon
 	usr/bin/iperf3
 	usr/lib/libiperf.so.0.0.0
 )
