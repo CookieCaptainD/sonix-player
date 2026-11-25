@@ -662,7 +662,7 @@ static void build_entry_layer(gui_config_t *cfg) {
 	entry_sign_btn = entry_key(pad, "+/-", NULL, entry_key_cb, '-', 31);
 	entry_ok_btn = entry_key(pad, tr("ok"), NULL, entry_accept_cb, 0, 100);
 	lv_obj_add_style(entry_ok_btn, &theme_style_accent_bg, 0);
-	lv_obj_set_style_text_color(lv_obj_get_child(entry_ok_btn, 0), theme_on_accent(), 0);
+	lv_obj_add_style(lv_obj_get_child(entry_ok_btn, 0), &theme_style_on_accent, 0);
 }
 
 // The number over a slider becomes the way into the keypad: set on a rounded

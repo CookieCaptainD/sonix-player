@@ -17,6 +17,7 @@ lv_style_t theme_style_icon;
 lv_style_t theme_style_switch;		   // switch track, off state
 lv_style_t theme_style_switch_checked; // switch indicator, on state
 lv_style_t theme_style_accent_bg;	   // anything that must follow the accent
+lv_style_t theme_style_on_accent;	   // text/image foreground on that fill
 lv_style_t theme_style_slider_track;   // a slider's unfilled part
 
 // GNOME Adwaita (libadwaita) colours, dark variant: window #242424, cards
@@ -201,6 +202,9 @@ static void apply_palette(void) {
 	lv_style_set_bg_color(&theme_style_switch_checked, active->accent);
 
 	lv_style_set_bg_color(&theme_style_accent_bg, active->accent);
+	lv_color_t on_accent = theme_on_accent();
+	lv_style_set_text_color(&theme_style_on_accent, on_accent);
+	lv_style_set_image_recolor(&theme_style_on_accent, on_accent);
 	lv_style_set_bg_color(&theme_style_slider_track, active->text_secondary);
 }
 
@@ -234,6 +238,8 @@ void theme_init(void) {
 
 	lv_style_init(&theme_style_accent_bg);
 	lv_style_set_bg_opa(&theme_style_accent_bg, LV_OPA_COVER);
+	lv_style_init(&theme_style_on_accent);
+	lv_style_set_image_recolor_opa(&theme_style_on_accent, LV_OPA_COVER);
 	lv_style_init(&theme_style_slider_track);
 	lv_style_set_bg_opa(&theme_style_slider_track, LV_OPA_40);
 	lv_style_set_radius(&theme_style_slider_track, LV_RADIUS_CIRCLE);

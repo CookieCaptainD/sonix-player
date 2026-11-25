@@ -39,6 +39,12 @@ extern lv_style_t theme_style_switch_checked; // image_recolor for monochrome ic
 // does not follow a later change.
 extern lv_style_t theme_style_accent_bg;
 
+// The foreground for text and monochrome glyphs on an accent fill. Add it to
+// the label or image as well as theme_style_accent_bg on its parent: apply_palette()
+// keeps this colour in step with the accent, so a hand-set white from build
+// time cannot be left behind on a pale custom colour.
+extern lv_style_t theme_style_on_accent;
+
 // The unfilled part of a slider's track: the secondary text colour at low
 // opacity, which reads as a quiet groove on both palettes.
 extern lv_style_t theme_style_slider_track;

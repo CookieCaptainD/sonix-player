@@ -115,9 +115,12 @@ static void update_tracks(int hue, int sat, int bright) {
 	sat_grad.stops[0].color = theme_color_hsv((uint16_t)hue, 0, value);
 	sat_grad.stops[1].color = theme_color_hsv((uint16_t)hue, 255, value);
 
+	// picked_color() is hsv(hue, sat, value): 100% brightness is the full
+	// colour, never white, and the stop in between is the half-value colour.
+	// Black -> full colour is that ramp; a white stop points at a colour the
+	// slider cannot produce.
 	bright_grad.stops[0].color = lv_color_black();
 	bright_grad.stops[1].color = theme_color_hsv((uint16_t)hue, percent_to_channel(sat), 255);
-	bright_grad.stops[2].color = lv_color_white();
 
 	// The descriptors are read when the slider is drawn, so the pixels follow
 	// the new stops once the object is invalidated.
@@ -300,10 +303,10 @@ static void build_strip_styles(void) {
 	lv_grad_horizontal_init(&sat_grad);
 	lv_grad_init_stops(&sat_grad, sat_colors, NULL, SAT_FRACS, 2);
 
-	static const uint8_t BRIGHT_FRACS[3] = {0, 128, 255};
-	lv_color_t bright_colors[3] = {lv_color_black(), lv_color_black(), lv_color_white()};
+	static const uint8_t BRIGHT_FRACS[2] = {0, 255};
+	lv_color_t bright_colors[2] = {lv_color_black(), lv_color_black()};
 	lv_grad_horizontal_init(&bright_grad);
-	lv_grad_init_stops(&bright_grad, bright_colors, NULL, BRIGHT_FRACS, 3);
+	lv_grad_init_stops(&bright_grad, bright_colors, NULL, BRIGHT_FRACS, 2);
 
 	lv_style_init(&hue_main_style);
 	lv_style_set_bg_opa(&hue_main_style, LV_OPA_COVER);

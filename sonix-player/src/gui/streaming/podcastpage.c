@@ -2912,7 +2912,7 @@ static void build_listen_row(listen_row_t *row, lv_obj_t *parent) {
 	lv_obj_add_event_cb(row->action, listen_action_cb, LV_EVENT_CLICKED, row);
 	row->action_icon = lv_image_create(row->action);
 	lv_image_set_src(row->action_icon, &icon_play_small);
-	lv_obj_set_style_image_recolor(row->action_icon, theme_on_accent(), 0);
+	lv_obj_add_style(row->action_icon, &theme_style_on_accent, 0);
 	lv_obj_set_style_image_recolor_opa(row->action_icon, LV_OPA_COVER, 0);
 	lv_obj_center(row->action_icon);
 	lv_obj_set_event_bubble(row->action_icon, true);
