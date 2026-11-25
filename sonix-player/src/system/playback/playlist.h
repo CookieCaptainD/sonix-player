@@ -250,8 +250,8 @@ bool playlist_prev(char *out, size_t out_size);
 
 void playlist_set_mode(playback_mode_t mode);
 playback_mode_t playlist_get_mode(void);
-// Advances to the next mode (NORMAL -> REPEAT_ALL -> REPEAT_ONE -> SHUFFLE ->
-// NORMAL) and returns the new mode.
+// Advances to the next mode (NORMAL -> STOP_AFTER -> REPEAT_ALL -> REPEAT_ONE
+// -> SHUFFLE -> SHUFFLE_REPEAT -> NORMAL) and returns the new mode.
 playback_mode_t playlist_cycle_mode(void);
 
 #endif // PLAYLIST_H

@@ -1206,13 +1206,10 @@ bool playlist_advance_auto(char *out, size_t out_size) {
 	if (entry_count == 0)
 		return false;
 
-	// Play this track once, then stop -- regardless of what follows in the queue.
-	// Asked before the shuffle/repeat modes, because it is a deliberate "no next
-	// track" rather than a queue that ran out. An ordered queue is a podcast's
-	// episodes, where this music mode has nothing to say: it plays straight on.
-	if (mode == PLAYBACK_MODE_STOP_AFTER && !ordered_queue) {
-		return false;
-	}
+	// Stop-after is decided by device_state_advance_auto(), not here: it is a
+	// music mode, so an audiobook's folder queue must still be able to step to
+	// its next part. The mode only ever turns playback off; it must not turn a
+	// queue's own advance function off along with it.
 
 	// A queue that carries its own order is played straight through: one step
 	// forward, then stop. Shuffle and repeat mean nothing on a sequence of
@@ -1266,9 +1263,10 @@ bool playlist_peek_auto(char *out, size_t out_size) {
 	if (entry_count == 0 || !out) {
 		return false;
 	}
-	if (mode == PLAYBACK_MODE_STOP_AFTER && !ordered_queue) {
-		return false;
-	}
+	// As with playlist_advance_auto(): the stop-after decision belongs to the
+	// device-state layer, so read-ahead and cover prefetch of an audiobook's
+	// next part keep working in that mode. device_state_read_ahead() already
+	// skips read-ahead for music in stop-after mode.
 	size_t next;
 	if (ordered_queue) {
 		if (pos + 1 >= entry_count) {
