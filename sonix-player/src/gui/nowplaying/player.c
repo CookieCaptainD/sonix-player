@@ -45,6 +45,7 @@
 #include "src/system/device/led.h"
 #include "src/system/playback/playlist.h"
 #include "src/system/streaming/podcast.h"
+#include "src/system/streaming/podcastauto.h"
 #include "src/system/streaming/podcastcache.h"
 #include "src/system/streaming/podcastsubs.h"
 #include "src/system/streaming/podcaststate.h"
@@ -4247,6 +4248,12 @@ static void update_progress(void) {
 		episode_last_status = state.status;
 		podcaststate_note(state.current_file, state.progress_current_secs, state.progress_total_secs,
 						  episode_changed);
+		// An episode marked heard near the end keeps its file until the
+		// decoder has actually stopped: deleting it earlier risks unlinking
+		// a file the card still has open.
+		if (episode_changed && state.status == AUDIO_STATUS_STOPPED) {
+			podcastauto_on_stopped(state.current_file);
+		}
 	}
 
 	// "Remember track". The decision, and the writing, live in device_state.c:

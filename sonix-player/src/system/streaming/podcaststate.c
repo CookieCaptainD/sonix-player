@@ -859,6 +859,12 @@ void podcaststate_set_played_episode(const podcast_episode_t *episode, const cha
 	pthread_mutex_unlock(&current_lock);
 	writer_drain();
 	write_now(key, &s);
+	// A feed page has no file to name in its menu: resolve it from the row we
+	// just wrote so a kept download is deleted there too, like the player and
+	// the downloaded-files page do.
+	if (played && s.path[0] && podcastdl_owns(s.path)) {
+		podcastauto_on_played(s.path, episode->feed_id);
+	}
 }
 
 // ---------------------------------------------------------------------------

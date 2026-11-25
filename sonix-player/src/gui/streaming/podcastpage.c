@@ -2131,11 +2131,10 @@ static void row_menu_cb(lv_event_t *e) {
 		return;
 	}
 
-	// Two one-entry tables instead of one label picked with a ternary: the tool
-	// that collects the strings to translate reads popover_item_t INITIALISERS,
-	// not assignments.
+	// Tables rather than a label picked with a ternary: the tool that collects
+	// the strings to translate reads popover_item_t INITIALISERS, not
+	// assignments.
 	static const popover_item_t FOLLOW[] = {{"podcast_follow", follow_cb, NULL}};
-	static const popover_item_t UNFOLLOW[] = {{"podcast_unfollow", unfollow_cb, NULL}};
 	// Two entries for a podcast already followed: its own options are what
 	// issue #74 asks for, and they sit above the unfollow action.
 	static const popover_item_t FOLLOWED_MENU[] = {
@@ -4089,13 +4088,18 @@ static void queue_watch_cb(lv_timer_t *timer) {
 
 	// Issue #74: the sweep starts when the radio comes up, on the edge rather
 	// than every second. The Wi-Fi transfer owns the card while it is on, so
-	// nothing is written under it.
+	// nothing is written under it. If it was already on at the radio edge,
+	// turning it back off is itself an edge that starts the sweep; the sweep
+	// also watches the flag itself in case it is switched on mid-run.
 	static bool auto_wifi_was_up;
+	static bool auto_transfer_was_on;
 	bool wifi_up = network_up();
-	if (wifi_up && !auto_wifi_was_up && !wifitransfer_get_enabled()) {
+	bool transfer_on = wifitransfer_get_enabled();
+	if (wifi_up && !transfer_on && (!auto_wifi_was_up || auto_transfer_was_on)) {
 		podcastauto_sync();
 	}
 	auto_wifi_was_up = wifi_up;
+	auto_transfer_was_on = transfer_on;
 }
 
 void podcastpage_init(gui_config_t *cfg) {

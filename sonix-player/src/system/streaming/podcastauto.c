@@ -11,7 +11,9 @@
 
 #include "src/system/core/config.h"
 #include "src/system/core/utils.h"
+#include "src/system/net/wifitransfer.h"
 #include "src/system/streaming/podcast.h"
+#include "src/system/streaming/podcastcache.h"
 #include "src/system/streaming/podcastdl.h"
 #include "src/system/streaming/podcaststate.h"
 #include "src/system/streaming/podcastsubs.h"
@@ -81,8 +83,9 @@ void podcastauto_delete_file(const char *path) {
 	if (!path || !path[0] || !podcastdl_owns(path)) {
 		return;
 	}
-	// The state row stays: an episode of the catalogue keeps its place in
-	// "Continue listening" and its heard mark when its file goes away.
+	// The state row stays: an episode of the catalogue keeps its heard mark
+	// and its place on the podcast page when its file goes away. A heard row
+	// is not in "Continue listening" (that list takes unplayed positions).
 	char side[900];
 	remove(path);
 	snprintf(side, sizeof(side), "%s.tags", path);
@@ -95,14 +98,61 @@ void podcastauto_delete_file(const char *path) {
 	printf("podcastauto: removed %s\n", path);
 }
 
+// An episode is marked heard podcaststate_margin() seconds (30 by default)
+// before its end, so deleting there would unlink a file the decoder still has
+// open. Park such a delete and let podcastauto_on_stopped() release it from
+// player.c when that episode really stops.
+static pthread_mutex_t pending_lock = PTHREAD_MUTEX_INITIALIZER;
+static char pending_path[512];
+static long long pending_feed;
+
+static bool playing_now(const char *path) {
+	podcaststate_t state;
+	return podcaststate_get(path, &state) && state.touched == PODCASTSTATE_TOUCHED_NOW;
+}
+
 void podcastauto_on_played(const char *path, long long feed_id) {
 	if (!path || !path[0] || feed_id <= 0 || !podcastdl_owns(path)) {
 		return;
 	}
 	podcastauto_opts_t opts;
 	podcastauto_get(feed_id, &opts);
+	if (!opts.delete_played) {
+		return;
+	}
+	if (playing_now(path)) {
+		pthread_mutex_lock(&pending_lock);
+		snprintf(pending_path, sizeof(pending_path), "%s", path);
+		pending_feed = feed_id;
+		pthread_mutex_unlock(&pending_lock);
+		return;
+	}
+	podcastauto_delete_file(path);
+}
+
+void podcastauto_on_stopped(const char *path) {
+	pthread_mutex_lock(&pending_lock);
+	if (!pending_path[0]) {
+		pthread_mutex_unlock(&pending_lock);
+		return;
+	}
+	// An empty path means playback ended; a different one means another
+	// episode took over, so the parked delete waits for its own stop.
+	if (path && path[0] && strcmp(pending_path, path) != 0) {
+		pthread_mutex_unlock(&pending_lock);
+		return;
+	}
+	char to_delete[sizeof(pending_path)];
+	snprintf(to_delete, sizeof(to_delete), "%s", pending_path);
+	long long feed = pending_feed;
+	pending_path[0] = '\0';
+	pending_feed = 0;
+	pthread_mutex_unlock(&pending_lock);
+
+	podcastauto_opts_t opts;
+	podcastauto_get(feed, &opts);
 	if (opts.delete_played) {
-		podcastauto_delete_file(path);
+		podcastauto_delete_file(to_delete);
 	}
 }
 
@@ -113,17 +163,11 @@ void podcastauto_on_played(const char *path, long long feed_id) {
 static pthread_mutex_t sync_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool syncing;
 
-bool podcastauto_syncing(void) {
-	pthread_mutex_lock(&sync_lock);
-	bool running = syncing;
-	pthread_mutex_unlock(&sync_lock);
-	return running;
-}
-
 typedef struct {
 	char *path;
 	bool played;
 	long long touched;
+	bool owned; // Sonix put it there: a state row or an episode-id sidecar
 } kept_t;
 
 typedef struct {
@@ -159,6 +203,9 @@ static void kept_add(kept_list_t *list, const char *path) {
 	list->items[list->count].path = copy;
 	list->items[list->count].played = false;
 	list->items[list->count].touched = 0;
+	// Only files Sonix itself saved may be trimmed. A sidecar with an episode
+	// id is one; a file copied in by hand is not, even inside this folder.
+	list->items[list->count].owned = podcastcache_episode_id(path) > 0;
 	list->count++;
 }
 
@@ -199,16 +246,33 @@ static void kept_cb(const podcaststate_t *state, void *user) {
 		if (strcmp(list->items[i].path, state->path) == 0) {
 			list->items[i].played = state->played;
 			list->items[i].touched = state->touched;
+			list->items[i].owned = true;
 			return;
 		}
 	}
 }
 
+static void kept_drop_unowned(kept_list_t *list) {
+	int kept = 0;
+	for (int i = 0; i < list->count; i++) {
+		if (!list->items[i].owned) {
+			free(list->items[i].path);
+			list->items[i].path = NULL;
+			continue;
+		}
+		if (kept != i) {
+			list->items[kept] = list->items[i];
+		}
+		kept++;
+	}
+	list->count = kept;
+}
+
 static int kept_cmp(const void *a, const void *b) {
 	const kept_t *x = a;
 	const kept_t *y = b;
-	// Heard episodes go first; among those, the oldest; a file with no state
-	// (copied in by hand) goes last, since nothing says it is safe to drop.
+	// Heard episodes go first; among those, the oldest. Files without a state
+	// row have already been dropped as hand-copied and never reach here.
 	if (x->played != y->played) {
 		return x->played ? -1 : 1;
 	}
@@ -219,14 +283,23 @@ static int kept_cmp(const void *a, const void *b) {
 }
 
 static void kept_trim(kept_list_t *list, int limit) {
-	if (limit <= 0 || list->count <= limit) {
+	if (list->count <= 0) {
+		return;
+	}
+	// A negative limit means "leave that many fewer than there are": -1 frees
+	// one slot at the cap so the sweep can bring in a new episode.
+	int target = limit < 0 ? list->count + limit : limit;
+	if (target < 0) {
+		target = 0;
+	}
+	if (list->count <= target) {
 		return;
 	}
 	// The episode playing now carries PODCASTSTATE_TOUCHED_NOW. Removing that
 	// file under the decoder is not worth the risk, so it is left for later.
 	qsort(list->items, (size_t)list->count, sizeof(*list->items), kept_cmp);
 	int removed = 0;
-	for (int i = 0; i < list->count && list->count - removed > limit; i++) {
+	for (int i = 0; i < list->count && list->count - removed > target; i++) {
 		kept_t *item = &list->items[i];
 		if (item->touched == PODCASTSTATE_TOUCHED_NOW) {
 			continue;
@@ -249,8 +322,15 @@ static void kept_trim(kept_list_t *list, int limit) {
 	list->count = kept;
 }
 
+static bool dl_idle(void) {
+	// podcastdl has one global slot. A finished job whose result the GUI queue
+	// has not acknowledged yet is still the GUI's: starting over it would
+	// replace DONE with RUNNING and steal its completion toast.
+	return podcastdl_state(NULL, NULL) == PODCASTDL_IDLE;
+}
+
 static void wait_for_download(void) {
-	for (int i = 0; i < AUTO_BUSY_TRIES && podcastdl_busy(); i++) {
+	for (int i = 0; i < AUTO_BUSY_TRIES && !dl_idle(); i++) {
 		usleep(AUTO_BUSY_WAIT_MS * 1000);
 	}
 }
@@ -274,32 +354,82 @@ static void feed_folder(long long feed_id, char *out, size_t size, char *title, 
 	snprintf(out, size, "%s/%s", podcastdl_root(), name);
 }
 
-static void sync_feed(const podcast_feed_t *feed) {
+// The options are gathered on the GUI thread before the sweep thread starts:
+// config_store has no lock and must not be read while a switch writes it.
+typedef struct {
+	long long feed_id;
 	podcastauto_opts_t opts;
-	podcastauto_get(feed->id, &opts);
-	if (!opts.enabled) {
+	char author[PODCAST_AUTHOR_MAX];
+	char image[PODCAST_URL_MAX];
+} auto_job_t;
+
+typedef struct {
+	auto_job_t *jobs;
+	int count;
+} auto_jobs_t;
+
+static void sync_feed(const auto_job_t *job) {
+	const podcastauto_opts_t *opts = &job->opts;
+	if (!opts->enabled || wifitransfer_get_enabled()) {
 		return;
 	}
 
 	char folder[700];
 	char title[PODCAST_TITLE_MAX];
-	feed_folder(feed->id, folder, sizeof(folder), title, sizeof(title));
+	feed_folder(job->feed_id, folder, sizeof(folder), title, sizeof(title));
 
 	kept_list_t kept = {0};
 	kept_read_folder(folder, &kept);
 	podcaststate_in_folder(folder, kept_cb, &kept);
-	kept_trim(&kept, opts.limit);
-
-	int slots = opts.limit > 0 ? opts.limit - kept.count : PODCAST_AUTO_MAX_PER_SYNC;
-	if (slots <= 0) {
+	kept_drop_unowned(&kept);
+	if (wifitransfer_get_enabled()) {
 		kept_free(&kept);
 		return;
 	}
 
 	podcast_episode_t episodes[AUTO_EPISODES];
-	int n = podcast_episodes(feed->id, episodes, AUTO_EPISODES);
-	int added = 0;
-	for (int i = 0; i < n && added < slots && added < PODCAST_AUTO_MAX_PER_SYNC; i++) {
+	int n = podcast_episodes(job->feed_id, episodes, AUTO_EPISODES);
+	bool have_new = false;
+	for (int i = 0; i < n; i++) {
+		const podcast_episode_t *e = &episodes[i];
+		podcaststate_t state;
+		if (!e->enclosure[0] || podcastdl_exists(e, title)) {
+			continue;
+		}
+		if (podcaststate_get_episode(e->id, &state) && state.played) {
+			continue;
+		}
+		have_new = true;
+		break;
+	}
+
+	int slots = opts->limit > 0 ? opts->limit - kept.count : PODCAST_AUTO_MAX_PER_SYNC;
+	if (have_new && opts->limit > 0 && slots <= 0) {
+		// At the cap, make one slot for the new episode: kept_cmp() puts a
+		// heard one first, otherwise the oldest download goes. No eviction
+		// happens when there is nothing new to put in its place.
+		kept_trim(&kept, -1);
+		slots = opts->limit - kept.count;
+	}
+	if (slots <= 0) {
+		kept_free(&kept);
+		return;
+	}
+	if (slots > PODCAST_AUTO_MAX_PER_SYNC) {
+		slots = PODCAST_AUTO_MAX_PER_SYNC;
+	}
+	if (wifitransfer_get_enabled()) {
+		kept_free(&kept);
+		return;
+	}
+
+	int attempted = 0;
+	for (int i = 0; i < n && attempted < slots && attempted < PODCAST_AUTO_MAX_PER_SYNC; i++) {
+		// The transfer owns the card and the network while it is on: give up
+		// the sweep at once, even if it was switched on after the last check.
+		if (wifitransfer_get_enabled()) {
+			break;
+		}
 		const podcast_episode_t *e = &episodes[i];
 		if (!e->enclosure[0] || podcastdl_exists(e, title)) {
 			continue;
@@ -309,38 +439,52 @@ static void sync_feed(const podcast_feed_t *feed) {
 			continue;
 		}
 		wait_for_download();
-		if (podcastdl_busy()) {
-			break; // somebody else is downloading; leave the radio to them
+		if (wifitransfer_get_enabled()) {
+			break;
 		}
-		if (!podcastdl_start(e, title, feed->author, feed->image)) {
+		if (!dl_idle()) {
+			break; // somebody else owns the slot; leave the radio to them
+		}
+		bool started = podcastdl_start(e, title, job->author, job->image);
+		attempted++; // every try counts, successful or not
+		long long job_id = started ? podcastdl_job() : 0;
+		if (!job_id) {
 			continue;
 		}
 		wait_for_download();
-		podcastdl_state_t result = podcastdl_state(NULL, NULL);
+		podcastdl_state_t result = PODCASTDL_IDLE;
+		if (podcastdl_job() != job_id) {
+			continue; // a different owner used the slot; do not ack its result
+		}
+		result = podcastdl_state(NULL, NULL);
 		podcastdl_acknowledge();
-		if (result == PODCASTDL_DONE) {
-			added++;
-			if (opts.limit > 0) {
-				kept_free(&kept);
-				memset(&kept, 0, sizeof(kept));
-				kept_read_folder(folder, &kept);
-				podcaststate_in_folder(folder, kept_cb, &kept);
-				kept_trim(&kept, opts.limit);
-				slots = opts.limit - kept.count;
+		if (result != PODCASTDL_DONE) {
+			continue;
+		}
+		if (opts->limit > 0) {
+			kept_free(&kept);
+			memset(&kept, 0, sizeof(kept));
+			kept_read_folder(folder, &kept);
+			podcaststate_in_folder(folder, kept_cb, &kept);
+			kept_drop_unowned(&kept);
+			if (wifitransfer_get_enabled()) {
+				break;
 			}
+			kept_trim(&kept, opts->limit);
+			slots = opts->limit - kept.count;
 		}
 	}
 	kept_free(&kept);
 }
 
 static void *sync_main(void *arg) {
-	(void)arg;
 	thread_be_background("podcast auto");
-	podcast_feed_t feeds[PODCASTSUBS_MAX];
-	int n = podcastsubs_list(feeds, PODCASTSUBS_MAX);
-	for (int i = 0; i < n; i++) {
-		sync_feed(&feeds[i]);
+	auto_jobs_t *jobs = arg;
+	for (int i = 0; i < jobs->count; i++) {
+		sync_feed(&jobs->jobs[i]);
 	}
+	free(jobs->jobs);
+	free(jobs);
 	pthread_mutex_lock(&sync_lock);
 	syncing = false;
 	pthread_mutex_unlock(&sync_lock);
@@ -356,12 +500,39 @@ void podcastauto_sync(void) {
 	syncing = true;
 	pthread_mutex_unlock(&sync_lock);
 
+	podcast_feed_t feeds[PODCASTSUBS_MAX];
+	int n = podcastsubs_list(feeds, PODCASTSUBS_MAX);
+	auto_jobs_t *jobs = calloc(1, sizeof(*jobs));
+	if (!jobs) {
+		pthread_mutex_lock(&sync_lock);
+		syncing = false;
+		pthread_mutex_unlock(&sync_lock);
+		return;
+	}
+	jobs->jobs = calloc((size_t)(n > 0 ? n : 1), sizeof(*jobs->jobs));
+	if (!jobs->jobs) {
+		free(jobs);
+		pthread_mutex_lock(&sync_lock);
+		syncing = false;
+		pthread_mutex_unlock(&sync_lock);
+		return;
+	}
+	for (int i = 0; i < n; i++) {
+		jobs->jobs[i].feed_id = feeds[i].id;
+		podcastauto_get(feeds[i].id, &jobs->jobs[i].opts);
+		snprintf(jobs->jobs[i].author, sizeof(jobs->jobs[i].author), "%s", feeds[i].author);
+		snprintf(jobs->jobs[i].image, sizeof(jobs->jobs[i].image), "%s", feeds[i].image);
+		jobs->count++;
+	}
+
 	pthread_t thread;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	pthread_attr_setstacksize(&attr, 512 * 1024);
-	if (pthread_create(&thread, &attr, sync_main, NULL) != 0) {
+	if (pthread_create(&thread, &attr, sync_main, jobs) != 0) {
+		free(jobs->jobs);
+		free(jobs);
 		pthread_mutex_lock(&sync_lock);
 		syncing = false;
 		pthread_mutex_unlock(&sync_lock);

@@ -1386,13 +1386,12 @@ static void mark_cb(void *user) {
 	} else {
 		podcaststate_set_played(e->path, heard_now);
 	}
-	if (heard_now && e->path[0]) {
-		// A kept episode may ask to go as soon as it is marked heard, and
-		// "Show podcast" from a downloaded file may be the page we are on.
-		long long auto_feed = p->feed ? open_feed.id : 0;
-		if (auto_feed <= 0) {
-			podcastcache_feed_id(e->path, &auto_feed);
-		}
+	if (heard_now && e->path && e->path[0]) {
+		// A kept episode on the downloaded-files page may ask to go as soon
+		// as it is marked heard. A feed-page episode has no path here (its
+		// row is handled inside podcaststate_set_played_episode() above).
+		long long auto_feed = 0;
+		podcastcache_feed_id(e->path, &auto_feed);
 		podcastauto_on_played(e->path, auto_feed);
 	}
 	e->played = heard_now;

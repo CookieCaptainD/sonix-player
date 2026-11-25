@@ -30,16 +30,20 @@ void podcastauto_set(long long feed_id, const podcastauto_opts_t *opts);
 // Called when the network becomes available. Does nothing when a sweep is
 // already running, and returns immediately.
 void podcastauto_sync(void);
-bool podcastauto_syncing(void);
 
 // Called when an episode has just been marked as heard, from both the player
 // and the "Mark as heard" menu. Deletes its file only when its podcast asked
 // for it and the file is one Sonix put in the Podcast folder. Files copied by
-// hand and episodes in the temporary cache are left alone.
+// hand and episodes in the temporary cache are left alone. A file that is
+// still playing is deleted on the following stop instead.
 void podcastauto_on_played(const char *path, long long feed_id);
 
+// Called when playback of an episode stops. Releases a delete parked by
+// podcastauto_on_played() so no file is unlinked under a live decoder.
+void podcastauto_on_stopped(const char *path);
+
 // Removes one kept episode (the file and its sidecars), keeping its heard
-// state so "Continue listening" and the podcast page still know about it.
+// state for the "Heard" filter and for streaming from the podcast page.
 void podcastauto_delete_file(const char *path);
 
 #endif /* PODCASTAUTO_H */
