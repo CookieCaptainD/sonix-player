@@ -47,6 +47,7 @@ static int rom_count;
 // result is stale and gets dropped instead of overwriting the newer one.
 static uint32_t scan_generation;
 static bool scanning;
+static bool page_visible;
 
 #define COVER_SIZE 72
 
@@ -59,7 +60,6 @@ typedef struct {
 	char cover_path[GBROM_PATH_MAX];
 	cover_image_t cover;
 	bool has_cover;
-	bool cover_set;
 } rom_row_t;
 
 static rom_row_t *rows;
@@ -142,8 +142,10 @@ static bool find_rom_cover(const gbrom_t *rom, char *out, size_t out_size) {
 
 	const char *base = strrchr(rom->path, '/');
 	base = base ? base + 1 : rom->path;
-	char stem[GBROM_NAME_MAX];
-	snprintf(stem, sizeof(stem), "%s", base);
+	char stem[GBROM_PATH_MAX];
+	if (snprintf(stem, sizeof(stem), "%s", base) >= (int)sizeof(stem)) {
+		return false;
+	}
 	char *dot = strrchr(stem, '.');
 	if (dot) {
 		*dot = '\0';
@@ -154,11 +156,15 @@ static bool find_rom_cover(const gbrom_t *rom, char *out, size_t out_size) {
 
 	static const char *const exts[] = {"png", "jpg", "jpeg", "PNG", "JPG", "JPEG"};
 	for (size_t i = 0; i < sizeof(exts) / sizeof(exts[0]); i++) {
-		snprintf(out, out_size, "%s/Cover Art/%s.%s", dir, stem, exts[i]);
+		int n = snprintf(out, out_size, "%s/Cover Art/%s.%s", dir, stem, exts[i]);
+		if (n < 0 || (size_t)n >= out_size) {
+			continue;
+		}
 		if (path_is_file(out)) {
 			return true;
 		}
 	}
+	out[0] = '\0';
 
 	// Case-insensitive fallback for the folder/file name on filesystems where the
 	// exact spelling differs.
@@ -179,8 +185,10 @@ static bool find_rom_cover(const gbrom_t *rom, char *out, size_t out_size) {
 		return false;
 	}
 
-	char cdir[GBROM_PATH_MAX + 32];
-	snprintf(cdir, sizeof(cdir), "%s/%s", dir, cover_dir_name);
+	char cdir[GBROM_PATH_MAX + 256 + 2];
+	if (snprintf(cdir, sizeof(cdir), "%s/%s", dir, cover_dir_name) >= (int)sizeof(cdir)) {
+		return false;
+	}
 	d = opendir(cdir);
 	if (!d) {
 		return false;
@@ -199,12 +207,15 @@ static bool find_rom_cover(const gbrom_t *rom, char *out, size_t out_size) {
 		}
 		size_t nlen = (size_t)(edot - de->d_name);
 		if (nlen == strlen(stem) && strncasecmp(de->d_name, stem, nlen) == 0) {
-			snprintf(out, out_size, "%s/%s", cdir, de->d_name);
-			closedir(d);
-			return path_is_file(out);
+			int n = snprintf(out, out_size, "%s/%s", cdir, de->d_name);
+			if (n >= 0 && (size_t)n < out_size && path_is_file(out)) {
+				closedir(d);
+				return true;
+			}
 		}
 	}
 	closedir(d);
+	out[0] = '\0';
 	return false;
 }
 
@@ -235,7 +246,6 @@ static void cover_ready_cb(void *user) {
 			}
 			row->cover = res->cover;
 			row->has_cover = true;
-			row->cover_set = true;
 			lv_image_set_src(row->img, &row->cover.dsc);
 			lv_obj_set_hidden(row->img, false);
 			lv_obj_set_hidden(row->placeholder, true);
@@ -377,10 +387,9 @@ static lv_obj_t *make_row(int view_index, int rom_index) {
 	rows[view_index].placeholder = ph;
 	rows[view_index].label = label;
 	rows[view_index].has_cover = false;
-	rows[view_index].cover_set = false;
 	memset(&rows[view_index].cover, 0, sizeof(rows[view_index].cover));
-	rows[view_index].cover_path[0] = '\0';
-	find_rom_cover(rom, rows[view_index].cover_path, sizeof(rows[view_index].cover_path));
+	snprintf(rows[view_index].cover_path, sizeof(rows[view_index].cover_path),
+			 "%s", rom->cover_path);
 
 	return btn;
 }
@@ -413,6 +422,11 @@ static void rebuild_rows(void) {
 
 	if (shown > 0) {
 		rows = calloc((size_t)shown, sizeof(*rows));
+		if (!rows) {
+			lv_label_set_text(status_label, tr("gearboy_search_failed"));
+			lv_obj_set_hidden(status_label, false);
+			return;
+		}
 		row_count = shown;
 		int vi = 0;
 		for (int i = 0; i < rom_count; i++) {
@@ -422,7 +436,9 @@ static void rebuild_rows(void) {
 			}
 		}
 		lv_obj_set_hidden(status_label, true);
-		start_cover_load();
+		if (page_visible) {
+			start_cover_load();
+		}
 		return;
 	}
 
@@ -498,6 +514,15 @@ static void *scan_thread(void *arg) {
 		count = 0;
 	}
 
+	// Cover discovery stats and reads directories. Do it here, off the UI
+	// thread, so switching views or finishing a scan cannot stall the page.
+	for (int i = 0; i < count; i++) {
+		list[i].cover_path[0] = '\0';
+		if (!find_rom_cover(&list[i], list[i].cover_path, sizeof(list[i].cover_path))) {
+			list[i].cover_path[0] = '\0';
+		}
+	}
+
 	scan_result_t *res = malloc(sizeof(*res));
 	if (!res) {
 		free(list);
@@ -532,6 +557,7 @@ static void start_scan(void) {
 
 static void screen_loaded_cb(lv_event_t *e) {
 	(void)e;
+	page_visible = true;
 	refresh_view_buttons();
 	lv_obj_scroll_to_y(list_box, 0, LV_ANIM_OFF);
 	// Rescan on every entry: the card may have been removed, reinserted or
@@ -541,6 +567,7 @@ static void screen_loaded_cb(lv_event_t *e) {
 
 static void screen_unloaded_cb(lv_event_t *e) {
 	(void)e;
+	page_visible = false;
 	stop_covers();
 }
 
