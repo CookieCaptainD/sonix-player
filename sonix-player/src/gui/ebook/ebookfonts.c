@@ -211,26 +211,17 @@ static void fallbacks_open(int size) {
 			}
 			bold_tail = bold_choice;
 			if (bold_dup) {
-				// Track the duplicate for cleanup by hanging it off the unused
-				// slot of this script when possible, else delete via the chain
-				// walk at close time is not enough because we only stored reg/bld.
-				// Store duplicate in script_bold when bld was NULL, else in
-				// script_regular when reg was NULL (the opposite slot is free).
+				// Track the duplicate for cleanup by hanging it off this
+				// script's unused slot; fallbacks_close() deletes the slots.
+				// With !bld the free slot is bold, with !reg it is regular.
 				if (!bld) {
 					script_bold[i] = bold_dup;
 				} else if (!reg) {
+					// reg_choice == bold_choice requires !reg || !bld: each
+					// open_font_path() call allocates a fresh lv_font_t, so with
+					// both faces present the two choices are distinct and the
+					// "both slots occupied" case cannot arise.
 					script_regular[i] = bold_dup;
-				} else {
-					// Both original slots occupied (should not happen when
-					// reg_choice == bold_choice), but keep it deletable: prefer
-					// attaching as tail-owned only is unsafe. Fall back: put in
-					// script_bold slot? no slot free; close will leak in this
-					// impossible case, so delete duplicate and skip bold chain.
-					lv_freetype_font_delete(bold_dup);
-					if (bold_tail == bold_dup) {
-						// unreachable given logic
-					}
-					bold_choice = NULL;
 				}
 			}
 		}
