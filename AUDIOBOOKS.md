@@ -19,8 +19,8 @@ Audiobooks/
 ```
 
 - Only `Audiobooks` is scanned, up to 12 levels below it. A folder is read up
-  to 4096 entries (files and subfolders together); anything deeper or past
-  that cap is not added to the index.
+  to 4096 files and up to 4096 subfolders; anything deeper or past either cap
+  is not added to the index.
 - `Author/Series` is used when the tags do not carry the author and series.
   The first folder below `Audiobooks` is the author, the second is the series.
 - A book without a series can sit directly under the author:
@@ -32,8 +32,11 @@ Audiobooks/
 
 ### One file with chapter marks
 
-An `.m4b`, `.m4a`, `.mp4`, `.mp3`, `.opus`, `.ogg` or `.flac` file with chapter
-marks inside it is a book on its own, whatever else is in the folder.
+In an ordinary book or author folder, an `.m4b`, `.m4a`, `.mp4`, `.mp3`,
+`.opus`, `.ogg` or `.flac` file with chapter marks inside it is a book on its
+own, whatever else is in the folder. Disc subfolders are different: they are
+read only for the parts of the book above them, so keep them to unmarked files.
+A chaptered file placed in `CD 1` / `Disc 1` is not indexed as its own book.
 
 ### A folder of files
 
