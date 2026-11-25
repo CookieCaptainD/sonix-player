@@ -64,32 +64,41 @@ static const char *sd_devboot_flag_path(void) {
 	return SD_DEVBOOT_FLAG;
 }
 
+// function checks if the devboot flag exists
+//
+// returns `true` if it exists, `false` otherwise
 static bool sd_devboot_enabled(void) {
 	FILE *f = fopen(sd_devboot_flag_path(), "r");
 	if (!f) {
 		return false;
 	}
+
 	fclose(f);
 	return true;
 }
 
+// sets the devboot flag
+//
+// either creates the flag file (to enable), or deletes it (to disable)
 static void sd_devboot_set(bool on) {
 	const char *path = sd_devboot_flag_path();
 	if (on) {
+		// create the flag file (its presence is the flag. its content does not matter)
 		FILE *f = fopen(path, "w");
 		if (f) {
-			fputs("1\n", f);
 			fclose(f);
 		} else {
 			fprintf(stderr, "devoptions: cannot write %s\n", path);
 		}
-		return;
-	}
-	if (remove(path) != 0 && errno != ENOENT) {
-		fprintf(stderr, "devoptions: cannot remove %s\n", path);
+	} else {
+		// delete the flag file
+		if (remove(path) != 0 && errno != ENOENT) {
+			fprintf(stderr, "devoptions: cannot remove %s\n", path);
+		}
 	}
 }
 
+// updates the UI toggle for devboot
 static void update_sd_devboot_row(void) {
 	if (!sd_devboot_switch) {
 		return;
@@ -222,7 +231,7 @@ static void adb_poll_cb(lv_timer_t *timer) {
 static void screen_loaded_cb(lv_event_t *e) {
 	(void)e;
 	update_adb_row();
-	update_sd_devboot_row(); // the flag may have been changed from a shell
+	update_sd_devboot_row(); // deal with potential desync (maybe the flag was changed through ADB)
 	update_log_row();
 	update_bt_log_row(); // the card may have come or gone since
 	lv_timer_resume(adb_poll_timer);
@@ -238,10 +247,10 @@ void devoptions_init(gui_config_t *cfg) {
 
 	settingsrow_toggle(container, "devoptions_adb", &adb_switch, adb_toggled_cb);
 
-	// Arms the boot script: a sonix_player binary on the card is copied to
-	// /tmp and run instead of the firmware one. This file is the only thing
-	// the launcher needs to check; turning the switch off removes it, so a
-	// bad binary can never leave the device stuck on the card build.
+	// Setting that arms the boot script: a sonix_player binary on the card is
+	// copied to /tmp and run instead of the firmware one. This file is the only
+	// thing the launcher needs to check; turning the switch off removes it, so
+	// a bad binary can never leave the device stuck on the card build.
 	settingsrow_toggle(container, "devoptions_sd_devboot", &sd_devboot_switch, sd_devboot_toggled_cb);
 	add_note(container, "devoptions_sd_devboot_note");
 	update_sd_devboot_row();

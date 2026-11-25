@@ -233,26 +233,32 @@ sitting in memory for the whole session.
 
 ### Persistent dev build from microSD
 
-Unlock Developer options first: in About, tap **Build number** five times. Then
-switch on **Run dev build from microSD** in Settings > Developer options. The
-switch writes the flag file `/usr/data/copy-from-sd0` on the writable partition;
-switching it off removes the file. Copy a binary to the root of a FAT32
-microSD card named `sonix_player` and reboot.
+The purpose is for speeding up development, by avoiding the need to constantly
+repack and reinstall firmwares in order to test each change (while allowing
+the change to persist past reboots).
 
 With the switch on, every boot mounts the card, copies that file to
 `/tmp/sonix_player`, unmounts the card, and runs the copy through
 `sonix_launch` instead of the firmware binary. A patched build stays in place
 across reboots, and a completely custom one can be tried without flashing.
 
-With the switch off, the card is not mounted at all. With no `sonix_player`
-file on the card, the firmware binary runs as usual. Remove or rename the file
-to revert - no reflash and no recovery mode needed. Switching the setting off
-also reverts; turning Developer options off disarms the override as well, even
-if the flag file is still present.
+#### To enable it:
+Unlock Developer options first (in About, tap **Build number** five times).
+Then switch on **Run dev build from microSD** in Settings > Developer options.
+The switch creates the flag file `/usr/data/copy-from-sd0`; switching it off
+removes the file. Copy a binary to the root of a FAT32 microSD card named
+`sonix_player` and reboot.
 
-Any binary is accepted; nothing inspects its size or format. If one fails to
-run, remove the file from the card and the device boots normally again. Works
-on both the R1 and the R3 Pro II.
+With the switch off, the card is not mounted at all. With no `sonix_player`
+file on the card, the firmware binary runs as usual. Switching the setting off
+reverts back to the installed `sonix_player`; turning Developer options off
+disarms the override as well, even if the flag file is still present. Youg can
+also remove or rename the file to revert - no reflash and no recovery mode
+needed.
+
+Any binary named `sonix_player` at the root of the SD card is accepted; nothing
+inspects its size or format. If one fails to run, remove the file from the card
+and the device boots normally again. Works on both the R1 and the R3 Pro II.
 
 
 ## Creating the firmware image
@@ -266,7 +272,6 @@ sonix-packer/
 ├── r1_original.upt          the stock firmware of the R1, from HiBy
 ├── sonix_player             the binary from `make target`
 ├── sonix_launch             also from `make target`; optional
-├── sonix_devboot.sh         SD-card override helper, installed by the packer
 ├── kernel/                  xImage-R3PII and xImage-R1; optional
 └── assets/
     ├── R3PII/               the overlay for the R3 Pro II
