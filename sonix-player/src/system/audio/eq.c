@@ -1287,8 +1287,8 @@ typedef struct {
 } biquad_t;
 
 // The shapes a biquad can take. The first three serve MSEB and the graphic EQ;
-// the last two come with the parametric and have no gain -- a low-pass does not
-// boost anything, it only cuts.
+// the last two come with the parametric and ignore their gain field. Their Q
+// can still resonate at the corner and boost -- see pass_filter_peak_db().
 enum { F_PEAK, F_LOWSHELF, F_HIGHSHELF, F_LOWPASS, F_HIGHPASS };
 
 // From the UI's filter shape to the engine's. Two separate enums on purpose:
@@ -1460,6 +1460,23 @@ static double headroom_db(double max_boost, double manual) {
 	double covered = manual < 0.0 ? -manual : 0.0;
 	double more = max_boost - covered;
 	return manual - (more > 0.0 ? more : 0.0);
+}
+
+// A low-pass or high-pass ignores its gain field, but the RBJ form resonates
+// at its corner when Q > 1/sqrt(2): the peak magnitude is
+//
+//     Q^2 / sqrt(Q^2 - 1/4)
+//
+// (Q=1 -> +1.25 dB, Q=2 -> +6.30 dB, Q=10 -> +20.01 dB), and the PEQ page
+// allows Q up to 10.00. Report it as a boost so the same headroom and clip
+// guard cover it. At or below Butterworth there is no peak above unity.
+static double pass_filter_peak_db(double q) {
+	if (q <= 0.7071067811865476) {
+		return 0.0;
+	}
+	double q2 = q * q;
+	double peak = 20.0 * log10(q2 / sqrt(q2 - 0.25));
+	return peak > 0.0 ? peak : 0.0;
 }
 
 static void slot_update(int slot, int type, int freq, double gain_db, double q, int rate, bool rate_changed) {
@@ -1888,11 +1905,20 @@ static void filters_rebuild(int rate) {
 		double gain = live ? (double)b->gain_tenths / 10.0 : 0.0;
 		int freq = (live || filter_uses_gain(type)) ? b->freq : 0;
 
-		slot_update(slot, type, freq, gain, (double)b->q_cent / 100.0, rate, rate_changed);
+		double q = (double)b->q_cent / 100.0;
+		slot_update(slot, type, freq, gain, q, rate, rate_changed);
 		if (chain_active[slot]) {
 			active++;
 			if (gain > max_boost) {
 				max_boost = gain;
+			}
+			// No gain field to measure on a pass filter: its resonance is
+			// the boost that has to fit the headroom.
+			if (!filter_uses_gain(type)) {
+				double peak = pass_filter_peak_db(q);
+				if (peak > max_boost) {
+					max_boost = peak;
+				}
 			}
 		}
 	}
@@ -2011,10 +2037,14 @@ int eq_auto_headroom_tenths(void) {
 	if (peq_enabled) {
 		for (int i = 0; i < PEQ_BANDS; i++) {
 			const peq_band_t *b = &peq_bands[i];
-			if (!b->on || !filter_uses_gain(peq_filter_type(b->type))) {
+			if (!b->on) {
 				continue;
 			}
-			double gain = (double)b->gain_tenths / 10.0;
+			int type = peq_filter_type(b->type);
+			// The engine counts the resonance of a pass filter as a boost;
+			// the page must report the same headroom.
+			double gain = filter_uses_gain(type) ? (double)b->gain_tenths / 10.0
+												 : pass_filter_peak_db((double)b->q_cent / 100.0);
 			if (gain > max_boost) {
 				max_boost = gain;
 			}
@@ -2292,6 +2322,12 @@ static bool process_prepare(int frame_count, int channels, int sample_rate) {
 #define EQ_CLIP_ROOM (EQ_CLIP_FS - EQ_CLIP_KNEE)
 
 static inline float soft_clip_sample(float x) {
+	// NaN satisfies neither comparison below and would reach the integer
+	// conversion unchanged, which is undefined behaviour. Silence it;
+	// infinities still take the normal path and land on +/- full scale.
+	if (x != x) {
+		return 0.0f;
+	}
 	float a = x < 0.0f ? -x : x;
 	if (a <= EQ_CLIP_KNEE) {
 		return x;
@@ -2324,11 +2360,16 @@ void eq_process(short *frames, int frame_count, int channels, int sample_rate) {
 		chain_run_pass(n, channels, step);
 		for (int i = 0; i < samples; i++) {
 			float x = pass_buf[i];
+			// Do this even when the guard is off: a NaN matches neither clamp
+			// below and would make the (short) conversion undefined.
+			if (x != x) {
+				x = 0.0f;
+			}
 			if (guard) {
 				x = soft_clip_sample(x);
 			}
-			// The hard clamp stays as a safety net for the non-boosting path
-			// and for anything the soft clip is handed that is not finite.
+			// The hard clamp keeps the non-boosting path in range and catches
+			// infinities; NaN was made zero above.
 			if (x > 32767.0f) {
 				x = 32767.0f;
 			} else if (x < -32768.0f) {
@@ -2366,6 +2407,11 @@ void eq_process_s32(int32_t *frames, int frame_count, int channels, int sample_r
 		chain_run_pass(n, channels, step);
 		for (int i = 0; i < samples; i++) {
 			float x = pass_buf[i];
+			// Same NaN guard as the 16-bit path: the conversion below must
+			// never see a non-finite value.
+			if (x != x) {
+				x = 0.0f;
+			}
 			if (guard) {
 				x = soft_clip_sample(x);
 			}

@@ -90,12 +90,14 @@ static short in_buf[SIGNAL_FRAMES];
 static short out_buf[SIGNAL_FRAMES];
 static int32_t s32_buf[SIGNAL_FRAMES];
 
-static void make_sine(double amplitude) {
+static void make_sine_at(double freq, double amplitude) {
 	for (int i = 0; i < SIGNAL_FRAMES; i++) {
-		double s = amplitude * 32767.0 * sin(2.0 * M_PI * TEST_FREQ * (double)i / (double)TEST_RATE);
+		double s = amplitude * 32767.0 * sin(2.0 * M_PI * freq * (double)i / (double)TEST_RATE);
 		in_buf[i] = (short)lrint(s);
 	}
 }
+
+static void make_sine(double amplitude) { make_sine_at(TEST_FREQ, amplitude); }
 
 static int peak_abs(const short *buf, int count, int from) {
 	int peak = 0;
@@ -232,6 +234,9 @@ static void test_soft_clip(void) {
 	check(fabsf(soft_clip_sample(-10.0f * fs)) <= fs, "soft clip: bounded at -10 FS");
 	checkf(soft_clip_sample(fs) > t && soft_clip_sample(fs) < fs, "soft clip: full scale compresses to %.1f",
 		   (double)soft_clip_sample(fs));
+	check(soft_clip_sample(NAN) == 0.0f, "soft clip: NaN maps to silence, not NaN");
+	check(soft_clip_sample(INFINITY) == fs, "soft clip: +Inf maps to full scale");
+	check(soft_clip_sample(-INFINITY) == -fs, "soft clip: -Inf maps to full scale");
 }
 
 static void test_stock_search(void) {
@@ -561,6 +566,41 @@ static void test_bypass(void) {
 	check(memcmp(a, b, sizeof(a)) == 0, "bypass: MSEB/EQ/PEQ off leaves the buffer bit-exact");
 }
 
+static void test_resonant_peq(void) {
+	// A low-pass ignores its gain field, but at Q=10.00 the RBJ form resonates
+	// at the corner by +20 dB. With every other stage flat that peak used to
+	// bypass the guard entirely and flat-top at the hard clamp.
+	mseb_set_enabled(false);
+	eq_set_enabled(false);
+	peq_set_enabled(true);
+	peq_set_preamp(0);
+	for (int i = 0; i < PEQ_BANDS; i++) {
+		peq_band_t b = {false, PEQ_TYPE_PEAK, 1000, 0, PEQ_Q_DEFAULT};
+		peq_set_band(i, &b);
+	}
+	peq_band_t lp = {true, PEQ_TYPE_LOWPASS, 1000, 0, 1000}; // Q = 10.00
+	peq_set_band(0, &lp);
+	filters_rebuild(TEST_RATE);
+
+	checkf(clip_guard, "resonant PEQ: a Q=10.00 low-pass turns the clip guard on (pregain %.4f)",
+		   (double)pregain_target);
+	checkf(pregain_target < 0.2, "resonant PEQ: headroom covers the +20 dB resonance (pregain %.4f)",
+		   (double)pregain_target);
+
+	make_sine_at(1000.0, 1.0);
+	memcpy(out_buf, in_buf, sizeof(in_buf));
+	eq_process(out_buf, SIGNAL_FRAMES, 1, TEST_RATE);
+
+	float pre = eq_chain_peak(in_buf, SIGNAL_FRAMES, 1, TEST_RATE, WARM_FRAMES);
+	checkf(pre > 0.95f * 32767.0f, "resonant PEQ: shaper input %.1f LSB is above the knee", (double)pre);
+	int peak = peak_abs(out_buf, SIGNAL_FRAMES, WARM_FRAMES);
+	checkf(peak < 32767, "resonant PEQ: peak %d LSB stays below the hard clamp", peak);
+	checkf(limit_hits(out_buf, SIGNAL_FRAMES) == 0, "resonant PEQ: no samples at the 16-bit limit");
+
+	peq_reset();
+	peq_set_enabled(false);
+}
+
 int main(void) {
 	test_soft_clip();
 	test_stock_search();
@@ -578,6 +618,7 @@ int main(void) {
 	test_glide_guard();
 	test_flat_enabled();
 	test_bypass();
+	test_resonant_peq();
 
 	printf("\n%d checks, %d failure%s\n", checks, failures, failures == 1 ? "" : "s");
 	return failures == 0 ? 0 : 1;
