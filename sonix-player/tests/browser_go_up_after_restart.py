@@ -4,6 +4,10 @@ para a pasta pai deve restaurar o scroll do pai, nao voltar ao topo.
 
 Sessao 1: scroll do pai ate 500, entrar na filha como um toque faria.
 Sessao 2: reiniciar (o estado abre a filha) e voltar uma pasta.
+
+As sessoes 3 e 4 repetem o caso com a listagem da filha atrasada: o reinicio
+acontece antes de ela ser adotada, quando so o estado escrito na navegacao
+existe. A pilha gravada nesse instante deve ser a da pasta que se sai.
 """
 
 import argparse
@@ -79,9 +83,14 @@ def main():
     with tempfile.TemporaryDirectory(prefix="sonix-goup-") as tmp:
         root = Path(tmp)
         card = root / "card"
-        artist = card / "Music" / "Artist"
+        music = card / "Music"
+        artist = music / "Artist"
         album = artist / "Album"
         album.mkdir(parents=True)
+        # Music tem de ter linhas suficientes para que um scroll de 500 seja
+        # possivel: e assim que se distingue "topo" de "scroll do Artista".
+        for i in range(40):
+            (music / ("track-%02d.mp3" % i)).write_bytes(b"")
         for i in range(40):
             (artist / ("track-%02d.mp3" % i)).write_bytes(b"")
         for i in range(3):
@@ -135,6 +144,52 @@ def main():
         print("sessao 2: pasta=%s scroll=%d pilha=%s" % (folder, scroll, stack))
         if scroll != EXPECTED_PARENT_SCROLL:
             print("FALHA: esperado scroll do pai=%d, obtido %d" % (EXPECTED_PARENT_SCROLL, scroll), file=sys.stderr)
+            return 1
+
+        # --- Sessao 3: entrar na filha, mas reiniciar antes da listagem ---
+        # A leitura da filha e atrasada de proposito. O estado deixado no
+        # cartao e entao o que a navegacao escreveu, e nao o que adopt_listing()
+        # sobrescreveria depois: e esse que um desligamento abrupto apanha.
+        Path(state).unlink(missing_ok=True)
+        p3 = run_host(host, {
+            **base,
+            "SONIX_BROWSER_OPEN_DIR": str(artist),
+            "SONIX_BROWSER_SCROLL": str(EXPECTED_PARENT_SCROLL),
+            "SONIX_BROWSER_OPEN_CHILD": str(album),
+            "SONIX_BROWSER_DELAY_PATH": str(album),
+            "SONIX_BROWSER_READ_DELAY_MS": "6000",
+        }, str(root / "session3.log"))
+        try:
+            folder, scroll, stack_len, stack = wait_for(
+                state, lambda v: v[0] == str(artist) and v[1] == EXPECTED_PARENT_SCROLL,
+                str(root / "session3.log")
+            )
+        finally:
+            stop(p3)
+
+        print("sessao 3: pasta=%s scroll=%d pilha=%s" % (folder, scroll, stack))
+        if stack_len != 0:
+            print("FALHA: o scroll do Artista entrou na sua propria pilha: %s" % stack, file=sys.stderr)
+            return 1
+
+        # --- Sessao 4: reboot desse estado e voltar uma pasta ---
+        # A pilha gravada na sessao 3 nao tem antepassados: "para cima" abre o
+        # topo de Music. Com a ordem antiga o scroll 500 era gravado na pilha e
+        # Music abria a essa altura.
+        p4 = run_host(host, {
+            **base,
+            "SONIX_BROWSER_GO_UP_MS": "1500",
+        }, str(root / "session4.log"))
+        try:
+            folder, scroll, stack_len, stack = wait_for(
+                state, lambda v: v[0] == str(music), str(root / "session4.log")
+            )
+        finally:
+            stop(p4)
+
+        print("sessao 4: pasta=%s scroll=%d pilha=%s" % (folder, scroll, stack))
+        if scroll != 0:
+            print("FALHA: esperado topo de Music, obtido scroll=%d" % scroll, file=sys.stderr)
             return 1
 
     print("browser_go_up_after_restart: ok")

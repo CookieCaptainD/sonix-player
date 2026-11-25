@@ -15,6 +15,9 @@
 #include "lvgl/lvgl.h"
 
 #include <pthread.h>
+#ifdef HOST_BUILD
+#include <unistd.h>
+#endif
 
 #include "src/gui/nowplaying/cover.h"
 #include "src/gui/nowplaying/coverloader.h"
@@ -965,12 +968,15 @@ static void entry_clicked_cb(lv_event_t *e) {
 	snprintf(full_path, sizeof(full_path), "%s/%s", current_path, entry_file((size_t)index));
 
 	if (shown.entries[index].is_dir) {
+		// Save this folder before the stack grows: the scroll written to the
+		// state file is the one being left, and the ancestor stack written
+		// alongside it must be the one that leads back from here.
+		browser_user_navigation();
 		// Remember where this level was scrolled to for the way back up.
 		if (scroll_stack_len < SCROLL_STACK_DEPTH) {
 			scroll_stack[scroll_stack_len++] = lv_obj_get_scroll_y(file_list);
 		}
 		pending_scroll = -1;
-		browser_user_navigation();
 		browser_open_dir(full_path);
 	} else {
 		player_play_file(full_path);
@@ -1093,11 +1099,13 @@ void browser_test_open_child(const char *path) {
 	if (!path || !path[0]) {
 		return;
 	}
+	// Same ordering as a real tap: write the folder being left with its own
+	// ancestor stack, then push this level's scroll for the way back up.
+	browser_user_navigation();
 	if (scroll_stack_len < SCROLL_STACK_DEPTH) {
 		scroll_stack[scroll_stack_len++] = lv_obj_get_scroll_y(file_list);
 	}
 	pending_scroll = -1;
-	browser_user_navigation();
 	browser_open_dir(path);
 }
 #endif
@@ -1194,10 +1202,14 @@ bool browser_go_up(void) {
 		parent[sizeof(parent) - 1] = '\0';
 	}
 
+	// Save before the pop: the state file must pair this folder with the
+	// ancestor stack that leads back from it, not with the shortened stack of
+	// the folder being opened.
+	browser_user_navigation();
+
 	// Going up: restore where this level was left, if it was remembered.
 	pending_scroll = scroll_stack_len > 0 ? scroll_stack[--scroll_stack_len] : -1;
 
-	browser_user_navigation();
 	browser_open_dir(parent);
 	return true;
 }
@@ -1441,6 +1453,16 @@ static bool list_directory(const char *path, listing_t *out, cue_sheet_t *sheets
 // released, so nothing on the UI side waits for it. `seq` identifies which
 // request this answers.
 static void read_directory(const char *path, uint32_t seq) {
+#ifdef HOST_BUILD
+	// Simulate a slow card for one folder, so a headless test can reboot a
+	// navigation before the destination listing is adopted -- the window a
+	// real power-off hits. Naming the folder keeps earlier listings quick.
+	const char *delay_path = getenv("SONIX_BROWSER_DELAY_PATH");
+	const char *delay_ms = getenv("SONIX_BROWSER_READ_DELAY_MS");
+	if (delay_path && delay_path[0] && delay_ms && delay_ms[0] && strcmp(path, delay_path) == 0) {
+		usleep((useconds_t)(atoi(delay_ms) * 1000));
+	}
+#endif
 	bool ok = list_directory(path, &staging, cue_sheets, cue_claims);
 
 	// Whatever the previous folder's artwork left behind goes back to the
