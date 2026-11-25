@@ -484,18 +484,13 @@ static void *play_worker(void *arg) {
 	job->count = collections_track_paths(job->id, &job->paths);
 
 	// gui_post refuses when its queue is full, and a dropped result would
-	// leave the busy card up over a job that has finished. As the playlist
-	// import worker does: wait and try again, and give the paths back if the
-	// queue never clears.
-	for (int tries = 0; tries < 50; tries++) {
-		if (gui_post(play_done_cb, job)) {
-			return NULL;
-		}
+	// leave the busy card up over a job that has finished. As the collection
+	// add worker does: wait for the queue to take it. Giving up here would
+	// strand play_running and the busy veil with no callback to clear them,
+	// so this is the one thing that must not be dropped.
+	while (!gui_post(play_done_cb, job)) {
 		usleep(100000);
 	}
-	fprintf(stderr, "collectionpage: gui_post stayed full, play result dropped\n");
-	collections_paths_free(job->paths, job->count);
-	free(job);
 	return NULL;
 }
 
