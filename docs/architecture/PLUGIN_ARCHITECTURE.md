@@ -46,12 +46,15 @@ C/LVGL with a vendored toolchain and no Lua today.
    `SD/.sonix/extensions/<id>/manifest.ini` with `id`, `name`, `version`,
    `api_min`, `kind=ui|service|native`, `entry`. In Stage 1 `kind` only selects
    which built-in hook is used; it does not authorise loading external code.
-2. Registration hooks at stable places that already exist: Settings rows,
-   More-page tiles, Now Playing menu entries and a service tick callback. The
-   tick runs on a bounded worker thread and hands results to the GUI through
-   the existing queued `gui_post` path; blocking HTTP or file work must not run
-   on the `lv_timer_handler()` loop in `sonix-player/src/main.c` (PR #95 needs
-   this because `http_get()` blocks). No hook is invoked unless a manifest is
+2. Registration hooks at stable places that already exist: Settings rows
+   (`sonix-player/src/gui/settings/`), More-page tiles
+   (`sonix-player/src/gui/shell/morepage.h`) and Now Playing menu entries
+   (`sonix-player/src/gui/nowplaying/`). The service tick is different: it is a
+   new hook Stage 1 must introduce, not an existing integration point. It runs
+   on a bounded worker thread and hands results to the GUI through the existing
+   queued `gui_post` path; blocking HTTP or file work must not run on the
+   `lv_timer_handler()` loop in `sonix-player/src/main.c` (PR #95 needs this
+   because `http_get()` blocks). No hook is invoked unless a manifest is
    present and enabled.
 3. An enable/disable list persisted in the existing config store, with a
    System page listing discovered extensions and their API versions.
@@ -69,7 +72,12 @@ C/LVGL with a vendored toolchain and no Lua today.
 Stage 1 covers compiled-in extensions gated by manifests: no external Lua or
 native `.so` code is loaded or executed until Stage 2 defines the runtime and
 ABI. PR #95's Phase 2 sync client is therefore a compiled-in service using
-these hooks, not a dynamically loaded plugin.
+these hooks, not a dynamically loaded plugin. Because it is part of the
+firmware image, changing it requires a firmware rebuild and reflash; manifests
+only gate and configure it, they do not download or load new code. For the same
+reason PR #95 §5.2's "load failure disables only this extension" describes
+Stage 1 manifest/config validation and failure containment, not a code loader:
+a real load step arrives in Stage 2.
 
 ### Stage 2 — safe runtime
 
@@ -82,9 +90,17 @@ also what would turn a `kind=native` manifest into a loadable extension.
 ### Stage 3 — distribution
 
 A catalog and on-device store, signature/checksum verification, and separate
-updates so optional features do not require a firmware reflash. Reuse the
-in-tree SHA-256 OTA verification (`sonix-player/src/system/device/ota.c` and
-`sonix-player/src/system/core/sha256.c`) instead of inventing a second path.
+updates without a firmware reflash — for **Stage 2 loadable extensions only**.
+Stage 1 extensions are compiled into the firmware image and cannot be updated
+from a catalog: changing one requires a firmware rebuild and reflash. PR #95's
+Phase 2 sync client is such a compiled-in Stage 1 service, so its Phase 3 plan
+to "update the player's sync client without a reflash" is not achievable as
+written: that phase must either move the client to a Stage 2 runtime extension
+or drop the no-reflash promise.
+
+The catalog reuses the in-tree SHA-256 OTA verification in
+`sonix-player/src/system/device/ota.c` and
+`sonix-player/src/system/core/sha256.c` instead of inventing a second path.
 `tools/validate_upt.py` is not in this tree; on the unmerged V1/integration
 branches it verifies an MD5 chunk chain and is not a security guarantee, so it
 must not be reused as extension integrity (aligned with PR #95 Phase 3).
