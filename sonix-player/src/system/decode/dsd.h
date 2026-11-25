@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "wavpackdec.h"
+
 // DSD: .dsf and .dff, up to DSD256.
 //
 // DSD is not samples, it is a one-bit stream at a few megahertz -- 2.8224 MHz
@@ -42,6 +44,13 @@ dsd_file_t *dsd_open_sacd(const char *path);
 // or the DSD rate is not one of the three this stage times. The raw bytes come
 // from libwavpack, not from a container read here.
 dsd_file_t *dsd_open_wavpack(const char *path);
+
+// As above, but takes ownership of a WavPack context the caller already
+// opened to decide between the PCM and DSD paths. Handing it over avoids
+// opening the same file again; the context is closed on failure too, so the
+// caller must not close it after this call.
+dsd_file_t *dsd_open_wavpack_owned(wavpackdec_t *wv);
+
 void dsd_close(dsd_file_t *d);
 
 int dsd_channels(const dsd_file_t *d);

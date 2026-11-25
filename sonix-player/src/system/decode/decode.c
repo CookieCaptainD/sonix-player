@@ -2234,9 +2234,10 @@ static decoder_t *decoder_open_file(const char *filepath, decode_format_t format
 			return NULL;
 		}
 		if (wavpackdec_is_dsd(wv)) {
-			wavpackdec_close(wv);
+			// The probe already opened the file; hand that context over
+			// instead of opening (and reading) the same .wv/.wvc twice.
 			dec->format = DECODE_FORMAT_DSD;
-			dec->impl.dsd = dsd_open_wavpack(filepath);
+			dec->impl.dsd = dsd_open_wavpack_owned(wv);
 			if (!dec->impl.dsd) {
 				free(dec);
 				return NULL;

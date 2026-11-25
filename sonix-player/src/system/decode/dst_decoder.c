@@ -293,7 +293,7 @@ int dst_decoder_init(dst_decoder_t **decoder, int channel_count, int sample_rate
     *decoder = NULL;
 
     if (channel_count <= 0 || channel_count > DST_MAX_CHANNELS) {
-        fprintf(stderr, "Channel count %d", channel_count);
+        fprintf(stderr, "dst: unsupported channel count %d\n", channel_count);
         return -1;
     }
 

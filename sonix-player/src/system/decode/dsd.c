@@ -614,9 +614,11 @@ dsd_file_t *dsd_open_sacd(const char *path) {
 	return d;
 }
 
-dsd_file_t *dsd_open_wavpack(const char *path) {
-	wavpackdec_t *wv = wavpackdec_open(path);
-	if (!wv || !wavpackdec_is_dsd(wv)) {
+dsd_file_t *dsd_open_wavpack_owned(wavpackdec_t *wv) {
+	if (!wv) {
+		return NULL;
+	}
+	if (!wavpackdec_is_dsd(wv)) {
 		wavpackdec_close(wv);
 		return NULL;
 	}
@@ -627,7 +629,7 @@ dsd_file_t *dsd_open_wavpack(const char *path) {
 	uint64_t bytes = wavpackdec_total_frames(wv); // one sample is one byte at DSD64 and up
 	if (channels < 1 || channels > MAX_CHANNELS || bytes == 0 ||
 		(multiple != 64 && multiple != 128 && multiple != 256)) {
-		fprintf(stderr, "dsd: %s is DSD at %u Hz with %d ch, not DSD64/128/256\n", path, rate, channels);
+		fprintf(stderr, "dsd: .wv is DSD at %u Hz with %d ch, not DSD64/128/256\n", rate, channels);
 		wavpackdec_close(wv);
 		return NULL;
 	}
@@ -670,6 +672,10 @@ dsd_file_t *dsd_open_wavpack(const char *path) {
 
 	printf("dsd: wv DSD%d %u Hz %d ch -> DoP %d Hz\n", d->multiple, d->rate, d->channels, d->out_rate);
 	return d;
+}
+
+dsd_file_t *dsd_open_wavpack(const char *path) {
+	return dsd_open_wavpack_owned(wavpackdec_open(path));
 }
 
 dsd_file_t *dsd_open(const char *path) {

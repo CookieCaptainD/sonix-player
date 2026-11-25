@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -516,10 +517,15 @@ sacd_iso_t *sacd_iso_open(const char *path) {
 		return NULL;
 	}
 
-	// A virtual track path carries the image's name before the suffix.
-	char base[1024];
-	sacd_split_path(path, base, sizeof(base));
-	const char *real = base[0] ? base : path;
+	// A virtual track path carries the image's name before the suffix. Only
+	// copy when there is a suffix to strip: a plain image path must not be
+	// shortened to fit a temporary buffer.
+	const char *real = path;
+	char base[PATH_MAX];
+	if (sacd_split_path(path, NULL, 0) > 0) {
+		sacd_split_path(path, base, sizeof(base));
+		real = base;
+	}
 
 	int fd = open(real, O_RDONLY);
 	if (fd < 0) {
@@ -1098,9 +1104,12 @@ bool sacd_is_iso(const char *path) {
 	if (!path) {
 		return false;
 	}
-	char base[1024];
-	sacd_split_path(path, base, sizeof(base));
-	const char *name = base[0] ? base : path;
+	const char *name = path;
+	char base[PATH_MAX];
+	if (sacd_split_path(path, NULL, 0) > 0) {
+		sacd_split_path(path, base, sizeof(base));
+		name = base;
+	}
 	size_t len = strlen(name);
 	return len > 4 && strcasecmp(name + len - 4, ".iso") == 0;
 }
