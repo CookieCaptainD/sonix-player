@@ -40,35 +40,54 @@ C/LVGL with a vendored toolchain and no Lua today.
 
 ## Proposed staging for Sonix
 
-### Stage 1 — extension points in the core (small, reviewable)
+### Stage 1 — extension points in the core (small, reviewable; compiled-in only)
 
 1. A manifest format for optional features:
    `SD/.sonix/extensions/<id>/manifest.ini` with `id`, `name`, `version`,
-   `api_min`, `kind=ui|service|native`, `entry`.
+   `api_min`, `kind=ui|service|native`, `entry`. In Stage 1 `kind` only selects
+   which built-in hook is used; it does not authorise loading external code.
 2. Registration hooks at stable places that already exist: Settings rows,
-   More-page tiles, Now Playing menu entries and a service tick callback.
-   No plugin code runs unless a manifest is present and enabled.
+   More-page tiles, Now Playing menu entries and a service tick callback. The
+   tick runs on a bounded worker thread and hands results to the GUI through
+   the existing queued `gui_post` path; blocking HTTP or file work must not run
+   on the `lv_timer_handler()` loop in `sonix-player/src/main.c` (PR #95 needs
+   this because `http_get()` blocks). No hook is invoked unless a manifest is
+   present and enabled.
 3. An enable/disable list persisted in the existing config store, with a
    System page listing discovered extensions and their API versions.
 4. Capability gating: an extension declares required device capabilities
-   (`wifi`, `touch`, `dac`, `compact_panel`) and is hidden on devices that do
-   not provide them. This keeps R1/R3 Pro II/V1 layouts appropriate.
-5. Failure containment: a plugin that fails to load is reported and disabled;
-   it cannot block playback or OTA.
+   (`wifi`, `touch`, `dac`, plus `compact_panel` only where a compact/V1 model
+   exists) and is hidden on devices that do not provide them. Capability
+   discovery is Stage 1 work: this base's device table
+   (`sonix-player/src/system/device/sysinfo.c`) knows only R1 and R3 Pro II,
+   so V1/compact-panel gating depends on PR #24's three-device model landing
+   first. With that dependency met, each device gets appropriate layouts.
+5. Failure containment: an extension whose manifest fails validation is
+   reported and disabled; a service that blocks or overruns its budget cannot
+   block playback or OTA.
+
+Stage 1 covers compiled-in extensions gated by manifests: no external Lua or
+native `.so` code is loaded or executed until Stage 2 defines the runtime and
+ABI. PR #95's Phase 2 sync client is therefore a compiled-in service using
+these hooks, not a dynamically loaded plugin.
 
 ### Stage 2 — safe runtime
 
 Evaluate Lua (as Compás does) versus a restricted native `.so`/fixed-ABI
 plugin. Requirements: bounded memory and CPU on the X1600, sandboxed file and
 network access, no direct framebuffer or MTD access, and a versioned API that
-rejects incompatible plugins instead of crashing.
+rejects incompatible plugins instead of crashing. The Stage 2 ABI decision is
+also what would turn a `kind=native` manifest into a loadable extension.
 
 ### Stage 3 — distribution
 
 A catalog and on-device store, signature/checksum verification, and separate
-updates so optional features do not require a firmware reflash. This is where
-the existing OTA integrity work (`tools/validate_upt.py`, SHA-256 asset digests)
-should be reused.
+updates so optional features do not require a firmware reflash. Reuse the
+in-tree SHA-256 OTA verification (`sonix-player/src/system/device/ota.c` and
+`sonix-player/src/system/core/sha256.c`) instead of inventing a second path.
+`tools/validate_upt.py` is not in this tree; on the unmerged V1/integration
+branches it verifies an MD5 chunk chain and is not a security guarantee, so it
+must not be reused as extension integrity (aligned with PR #95 Phase 3).
 
 ## Relationship to the V1-fork features
 
