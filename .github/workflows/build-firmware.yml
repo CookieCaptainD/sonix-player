@@ -19,6 +19,9 @@ on:
       - tools/validate_upt.py
       - sonix-packer/**
       - sonix-player/Makefile
+      - sonix-player/src/**
+      - sonix-player/tests/**
+      - tools/test_axpcharge.c
       - .github/workflows/build-firmware.yml
       - docs/firmware/STOCK_SHA256.sha256
 
@@ -71,6 +74,17 @@ jobs:
         run: |
           set -euo pipefail
           make -n r1 r3proii v1 all validate
+
+      - name: Decoder and charge-state tests
+        run: |
+          set -euo pipefail
+          # libwavpack-dev installs wavpack.pc on the default pkg-config path
+          # and the wavpack CLI is needed to transcode the test fixtures, so
+          # no PKG_CONFIG_PATH override is required here.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwavpack-dev wavpack
+          make -C sonix-player test-axpcharge
+          sh sonix-player/tests/run.sh
 
   firmware:
     name: Build ${{ matrix.device }}
