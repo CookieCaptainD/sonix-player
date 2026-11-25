@@ -6,10 +6,12 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 // The HTTP layer, replaced here so no request leaves the process. The encoder
@@ -20,6 +22,16 @@ static char stub_url[2048];
 static int stub_status = 200;
 static int stub_calls = 0;
 static char stub_last_error[256];
+// Search requests are paced in coverfetch.c; record when the stub sees them so
+// a case can check the spacing the real MusicBrainz API requires.
+static int64_t stub_last_mb_ms = 0;
+static int64_t stub_min_gap_ms = -1;
+
+static int64_t stub_now_ms(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 // Downloads are binary and need an explicit length: a cover can contain NULs
 // and can be far larger than the NUL-terminated JSON search response above.
 static unsigned char *stub_download = NULL;
@@ -57,6 +69,16 @@ bool http_get_ex(const char *url, const char *extra_headers, bool want_error_bod
 	(void)timeout_secs;
 	stub_calls++;
 	snprintf(stub_url, sizeof(stub_url), "%s", url ? url : "");
+	if (url && strstr(url, "musicbrainz.org") != NULL) {
+		int64_t now = stub_now_ms();
+		if (stub_last_mb_ms) {
+			int64_t gap = now - stub_last_mb_ms;
+			if (stub_min_gap_ms < 0 || gap < stub_min_gap_ms) {
+				stub_min_gap_ms = gap;
+			}
+		}
+		stub_last_mb_ms = now;
+	}
 	if (stub_alternate) {
 		*status_out = 200;
 		if (strstr(url, "coverartarchive.org") != NULL) {
@@ -157,6 +179,8 @@ void coverfetch_test_reset(void) {
 	stub_download_mode = false;
 	stub_alternate = false;
 	stub_alt_search = 0;
+	stub_last_mb_ms = 0;
+	stub_min_gap_ms = -1;
 	coverfetch_negative_clear();
 }
 
@@ -180,6 +204,8 @@ void coverfetch_test_set_download(const void *data, size_t len) {
 void coverfetch_test_set_status(int status) { stub_status = status; }
 
 int coverfetch_test_calls(void) { return stub_calls; }
+
+int coverfetch_test_min_request_gap_ms(void) { return (int)stub_min_gap_ms; }
 
 const char *coverfetch_test_url(void) { return stub_url; }
 
@@ -596,12 +622,46 @@ static void case_negative_cache_concurrent_adds(void) {
 		  "negative_cache_concurrent_adds");
 }
 
+// 16. One tag alone is not a valid MusicBrainz query: it must short-circuit
+// just like the no-tags case, with no request sent.
+static void case_partial_tags_short_circuits(void) {
+	coverfetch_test_reset();
+	coverfetch_record_t *records = (coverfetch_record_t *)1;
+	int count = -1;
+	coverfetch_result_t r = coverfetch_search("Abbey Road", "", "Come Together", &records, &count);
+	bool album_only = r == COVERFETCH_NO_TAGS && coverfetch_test_calls() == 0 && records == NULL && count == 0;
+
+	coverfetch_test_reset();
+	records = (coverfetch_record_t *)1;
+	count = -1;
+	r = coverfetch_search("", "The Beatles", "Come Together", &records, &count);
+	bool artist_only = r == COVERFETCH_NO_TAGS && coverfetch_test_calls() == 0 && records == NULL && count == 0;
+	CHECK(album_only && artist_only, "partial_tags_short_circuits");
+}
+
+// 17. Consecutive searches, including a batch's loop, leave at least a second
+// between MusicBrainz requests -- the API's per-IP rate limit.
+static void case_mb_requests_are_paced(void) {
+	coverfetch_test_reset();
+	coverfetch_test_set_body(MB_BODY);
+	for (int i = 0; i < 3; i++) {
+		char album[32];
+		snprintf(album, sizeof(album), "Paced %d", i);
+		coverfetch_record_t *records = NULL;
+		int count = 0;
+		coverfetch_search(album, "Artist", "", &records, &count);
+		coverfetch_free(records, count);
+	}
+	CHECK(coverfetch_test_calls() == 3 && coverfetch_test_min_request_gap_ms() >= 1000, "mb_requests_are_paced");
+}
+
 int main(void) {
 	save_dir_setup();
 	case_query_encodes_album_and_artist();
 	case_four_xx_not_retried();
 	case_five_xx_retries_thrice();
 	case_no_tags_short_circuits();
+	case_partial_tags_short_circuits();
 	case_negative_cache_skips_request();
 	case_malformed_json_is_network();
 	case_search_frees_records();
@@ -613,6 +673,7 @@ int main(void) {
 	batch_cancel_stops_and_keeps_saved();
 	batch_overlap_is_refused();
 	case_negative_cache_concurrent_adds();
+	case_mb_requests_are_paced();
 
 	char path[600];
 	save_target(path, sizeof(path), "");

@@ -14,7 +14,7 @@
 typedef enum {
 	COVERFETCH_OK,			 // at least one release with a cover
 	COVERFETCH_NOT_FOUND,	 // nothing for these tags, or a cached miss
-	COVERFETCH_NO_TAGS,		 // no album and no artist to search with
+	COVERFETCH_NO_TAGS,		 // no album or no artist to search with
 	COVERFETCH_NETWORK,		 // no answer, or not one that could be read
 	COVERFETCH_CANCELLED,	 // a batch was cancelled
 } coverfetch_result_t;
@@ -81,7 +81,10 @@ int coverfetch_batch_missing(void);
 // Runs the jobs on a detached background thread, posting progress through cb
 // after each one. The jobs are copied, so the caller's array may go away as
 // soon as this returns. One request at a time, shared with the other callers.
-void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user);
+// Returns false, without starting a worker, when the jobs are empty, memory
+// allocation fails, another batch is still winding down, or the thread cannot
+// be created: the caller should not show progress in that case.
+bool coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user);
 
 // Asks a running batch to stop before its next job. Safe to call from the
 // progress callback. A cancel reaches only that run; starting another batch

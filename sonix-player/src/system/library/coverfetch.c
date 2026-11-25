@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "src/system/core/json.h"
@@ -43,9 +44,38 @@
 #define COVERFETCH_PART_FORMAT ".coverfetch.%ld.%lu.part"
 #define COVERFETCH_MAX_RESULTS 5
 #define COVERFETCH_MAX_KEYS 256
+// MusicBrainz allows on average one request per second per source IP and
+// answers excess traffic with 503. Leave a little margin over a second.
+#define COVERFETCH_MB_INTERVAL_MS 1100
 
 // One request at a time across every caller, held for the whole attempt loop.
 static pthread_mutex_t http_lock = PTHREAD_MUTEX_INITIALIZER;
+// Guarded by http_lock. Last MusicBrainz request, in CLOCK_MONOTONIC ms; 0
+// before the first. Only searches are paced -- CAA image downloads go through
+// save_impl() and are a different host.
+static int64_t mb_last_ms = 0;
+
+static int64_t mono_ms(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// Sleep out the remainder of the interval since the last MusicBrainz request.
+// Called under http_lock immediately before each attempt, so retry pauses count
+// towards the spacing too.
+static void mb_pace(void) {
+	int64_t now = mono_ms();
+	if (mb_last_ms) {
+		int64_t wait = (int64_t)COVERFETCH_MB_INTERVAL_MS - (now - mb_last_ms);
+		if (wait > 0) {
+			struct timespec nap = {wait / 1000, (long)(wait % 1000) * 1000000L};
+			nanosleep(&nap, NULL);
+			now = mono_ms();
+		}
+	}
+	mb_last_ms = now;
+}
 // Guarded by http_lock, already taken for the request. Only the name is
 // serialised; the file write itself still happens after the unlock.
 static unsigned long save_seq = 0;
@@ -179,6 +209,7 @@ static coverfetch_record_t *records_alloc(int n) {
 static bool request(const char *url, char **body, int *status) {
 	for (int attempt = 1; attempt <= COVERFETCH_ATTEMPTS; attempt++) {
 		*status = 0;
+		mb_pace();
 		if (http_get_ex(url, NULL, false, body, NULL, COVERFETCH_MAX_BYTES, COVERFETCH_TIMEOUT_SECS, status)) {
 			return true;
 		}
@@ -209,7 +240,10 @@ static coverfetch_result_t search_impl(const char *album, const char *artist, co
 	*records = NULL;
 	*count = 0;
 
-	if ((!album || !album[0]) && (!artist || !artist[0])) {
+	// The query needs both clauses: with only one of them it is not a valid
+	// Lucene query, and the UI already promises a useful answer only when both
+	// tags are present.
+	if ((!album || !album[0]) || (!artist || !artist[0])) {
 		return COVERFETCH_NO_TAGS;
 	}
 
@@ -603,19 +637,19 @@ static void *batch_worker(void *arg) {
 	return NULL;
 }
 
-void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user) {
+bool coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_progress_cb cb, void *user) {
 	if (!jobs || count <= 0) {
-		return;
+		return false;
 	}
 
 	batch_ctx_t *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
-		return;
+		return false;
 	}
 	ctx->jobs = calloc((size_t)count, sizeof(*ctx->jobs));
 	if (!ctx->jobs) {
 		free(ctx);
-		return;
+		return false;
 	}
 	memcpy(ctx->jobs, jobs, (size_t)count * sizeof(*jobs));
 	ctx->count = count;
@@ -629,7 +663,7 @@ void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_pr
 		pthread_mutex_unlock(&batch_lock);
 		free(ctx->jobs);
 		free(ctx);
-		return;
+		return false;
 	}
 	batch_current = ctx;
 	pthread_mutex_unlock(&batch_lock);
@@ -649,8 +683,9 @@ void coverfetch_batch_run(const coverfetch_job_t *jobs, int count, coverfetch_pr
 		pthread_mutex_unlock(&batch_lock);
 		free(ctx->jobs);
 		free(ctx);
-		return;
+		return false;
 	}
 	pthread_detach(thread);
 #endif
+	return true;
 }

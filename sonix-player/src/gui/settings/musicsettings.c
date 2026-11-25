@@ -1586,7 +1586,7 @@ static bool batch_album_cb(const char *name, const char *path, const char *artis
 	return true;
 }
 
-static int batch_collect_jobs(coverfetch_job_t *jobs, int max, bool retry_only) {
+static int batch_collect_jobs(coverfetch_job_t *jobs, int max) {
 	batch_candidate_t *rows = calloc((size_t)max, sizeof(*rows));
 	if (!rows) {
 		return 0;
@@ -1601,13 +1601,6 @@ static int batch_collect_jobs(coverfetch_job_t *jobs, int max, bool retry_only) 
 	for (int i = 0; i < walk.count; i++) {
 		char artist[256] = "";
 		library_album_artist(rows[i].album, artist, sizeof(artist));
-		if (retry_only) {
-			char key[640];
-			coverfetch_key(key, sizeof(key), rows[i].album, artist);
-			if (!coverfetch_negative_has(key)) {
-				continue;
-			}
-		}
 		coverfetch_job_t *job = &jobs[count++];
 		snprintf(job->album, sizeof(job->album), "%s", rows[i].album);
 		snprintf(job->artist, sizeof(job->artist), "%s", artist);
@@ -1629,7 +1622,13 @@ static void batch_finish(void) {
 	}
 	char message[200];
 	snprintf(message, sizeof(message), tr("coverfetch_batch_summary"), batch_progress.found, batch_progress.not_found);
-	confirm_show("coverfetch_batch_title", message, "coverfetch_batch_retry", batch_retry_cb, NULL);
+	// Nothing to retry on a clean run: give a plain acknowledgement instead of
+	// an offer to start the same work over again.
+	if (batch_progress.not_found == 0) {
+		confirm_notice("coverfetch_batch_title", message);
+	} else {
+		confirm_show("coverfetch_batch_title", message, "coverfetch_batch_retry", batch_retry_cb, NULL);
+	}
 }
 
 static void batch_progress_post(void *user) {
@@ -1697,9 +1696,11 @@ static void batch_start(bool retry_only) {
 		toast_error("coverfetch_find_failed");
 		return;
 	}
-	int count = batch_collect_jobs(jobs, max, retry_only);
-	// A retry needs the keys cleared after collection, so the worker really
-	// asks again about the albums that came back empty last time.
+	// Every album still without artwork is a candidate. A retry must include
+	// the ones whose download failed or whose request timed out as well as the
+	// cached "not found" ones: the summary counts all of them as misses.
+	int count = batch_collect_jobs(jobs, max);
+	// Clearing after collection forces a fresh search for each retry candidate.
 	if (retry_only) {
 		coverfetch_negative_clear();
 	}
@@ -1717,11 +1718,23 @@ static void batch_start(bool retry_only) {
 	lv_label_set_text(batch_progress_label, text);
 	lv_obj_set_hidden(batch_progress_veil, false);
 	lv_obj_move_foreground(batch_progress_veil);
+	// Set up first: the worker can post its first step before the call returns,
+	// and a post seen before the flag is up would be dropped.
 	batch_active = true;
 
 	// coverfetch_batch_run() copies the jobs, so this array can go now.
-	coverfetch_batch_run(jobs, count, batch_progress_cb, NULL);
+	bool started = coverfetch_batch_run(jobs, count, batch_progress_cb, NULL);
 	free(jobs);
+	if (!started) {
+		// Refused or failed to start: no worker will post anything, so don't
+		// leave a progress card stuck at zero with no way to clear it.
+		batch_active = false;
+		if (batch_progress_veil) {
+			lv_obj_set_hidden(batch_progress_veil, true);
+		}
+		toast_error("coverfetch_find_failed");
+		return;
+	}
 }
 
 static void batch_count_then_start(void *user) {

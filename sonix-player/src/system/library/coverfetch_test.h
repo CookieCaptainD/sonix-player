@@ -17,6 +17,10 @@ void coverfetch_test_set_status(int status);
 int coverfetch_test_calls(void);
 const char *coverfetch_test_url(void);
 
+// Smallest gap, in ms, between two MusicBrainz search requests since reset;
+// -1 when fewer than two were made. Used to check the 1 req/s pacing.
+int coverfetch_test_min_request_gap_ms(void);
+
 // A binary download body with an explicit length, for coverfetch_save().
 void coverfetch_test_set_download(const void *data, size_t len);
 

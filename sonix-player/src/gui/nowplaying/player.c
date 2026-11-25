@@ -2403,11 +2403,30 @@ static void coverfetch_find_pick_cb(void *user) {
 
 // Up to five choices in the popover the player already uses for a choice
 // between alternatives: each row is a release, named by its cover's source.
+// The save attached to a row is owned here, not by the popover: only the picked
+// row's action consumes one, so the close hook frees whatever is left over
+// when the list is dismissed or replaced.
+#define COVERFIND_CHOICES_MAX 5
+static coverfetch_find_save_t *coverfind_choice_saves[COVERFIND_CHOICES_MAX];
+static int coverfind_choice_count;
+
+static void coverfind_choices_release(int picked) {
+	for (int i = 0; i < coverfind_choice_count; i++) {
+		if (i != picked) {
+			free(coverfind_choice_saves[i]);
+		}
+		coverfind_choice_saves[i] = NULL;
+	}
+	coverfind_choice_count = 0;
+}
+
 static void coverfetch_find_choices(const coverfetch_find_job_t *job) {
-	enum { CHOICES = 5 };
-	popover_item_t items[CHOICES] = {0};
+	popover_item_t items[COVERFIND_CHOICES_MAX] = {0};
 	int shown = 0;
-	for (int i = 0; i < job->count && shown < CHOICES; i++) {
+	// Closing first runs the previous list's hook, releasing its saves, and
+	// hides the old rows so no stale user pointer can be tapped.
+	popover_close();
+	for (int i = 0; i < job->count && shown < COVERFIND_CHOICES_MAX; i++) {
 		coverfetch_find_save_t *save = calloc(1, sizeof(*save));
 		if (!save) {
 			break;
@@ -2417,13 +2436,16 @@ static void coverfetch_find_choices(const coverfetch_find_job_t *job) {
 		items[shown].label = save->record.source;
 		items[shown].action = coverfetch_find_pick_cb;
 		items[shown].user = save;
+		coverfind_choice_saves[shown] = save;
 		shown++;
 	}
 	if (!shown) {
 		toast_error("coverfetch_find_failed");
 		return;
 	}
+	coverfind_choice_count = shown;
 	popover_show(coverfind_btn, items, shown);
+	popover_set_close_hook(coverfind_choices_release);
 }
 
 static void coverfetch_find_fetched(void *user) {
@@ -2507,8 +2529,9 @@ static void coverfetch_find_wifi_tick_cb(lv_timer_t *t) {
 	(void)t;
 	device_state_t state;
 	device_state_get(&state);
-	// Another track, or Wi-Fi switched off again: the search is no longer wanted.
-	if (!wifi_get_enabled() || strcmp(state.current_file, coverfetch_find_wifi_path) != 0) {
+	// Another track, Wi-Fi switched off again, or the player left: the search
+	// is no longer wanted. Its answer would be discarded on arrival anyway.
+	if (!sheet_open || !wifi_get_enabled() || strcmp(state.current_file, coverfetch_find_wifi_path) != 0) {
 		coverfetch_find_wifi_wait_end();
 		toast_busy_end();
 		return;
@@ -5281,6 +5304,12 @@ static void sheet_hidden_anim_ready_cb(lv_anim_t *a) {
 void player_sheet_close(bool animate) {
 	bool was_open = sheet_open;
 	sheet_open = false;
+	// A cover search waiting for Wi-Fi belongs to this sheet: leaving drops it
+	// rather than starting a search whose result would then be discarded.
+	if (coverfetch_find_wifi_timer) {
+		coverfetch_find_wifi_wait_end();
+		toast_busy_end();
+	}
 	smooth_timer_sync();
 	back_btn_player_mode(false);
 	lyrics_screen_hold_update();
