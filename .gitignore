@@ -40,6 +40,12 @@ sonix-packer/r3proii_original.upt
 sonix-packer/r1_original.upt
 sonix-packer/sonix_launch
 
+# Python bytecode from the fixture generators, and tool-generated planning
+# documents: neither belongs in source control.
+__pycache__/
+*.pyc
+docs/superpowers/
+
 # --- three-device firmware builds ---
 # Per-device staging trees and their images/reports. No firmware image is
 # ever committed; stock inputs are proprietary and are copied locally only.

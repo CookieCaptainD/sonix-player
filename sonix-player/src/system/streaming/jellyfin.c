@@ -763,8 +763,9 @@ static bool jf_http_call(const char *method, const char *url, const char *auth_h
 	req.body_len = body ? strlen(body) : 0;
 	req.content_type = body ? "application/json" : NULL;
 	req.allow_empty_body = allow_empty;
-	// The unified http client always refuses HTTPS->HTTP redirects and sends
-	// identity encoding; both are the safe defaults for an authenticated API.
+	// The unified http client refuses HTTPS->HTTP redirects and drops auth
+	// headers when a redirect leaves the original authority; identity encoding
+	// is requested for every API response.
 
 	int timeout_secs = (timeout_ms > 0) ? ((timeout_ms + 999) / 1000) : (JELLYFIN_HTTP_TIMEOUT_MS / 1000);
 	if (timeout_secs < 1)
@@ -1779,7 +1780,8 @@ static int fetch_items_page(const char *url, const char *auth_hdr, jellyfin_item
 
 	int arr_len = json_len(&doc, items_arr);
 	int out_count = 0;
-	for (int i = 0; i < arr_len && out_count < limit; i++) {
+	int matched = 0;
+	for (int i = 0; i < arr_len; i++) {
 		int elem = json_at(&doc, items_arr, i);
 		if (elem < 0 || doc.toks[elem].type != JSON_OBJECT)
 			continue;
@@ -1791,15 +1793,27 @@ static int fetch_items_page(const char *url, const char *auth_hdr, jellyfin_item
 				continue;
 		}
 
+		// Keep counting past the caller's limit: the Views endpoint is not
+		// paged by the server, so this count is what tells us whether the
+		// filtered list has another page for the GUI to request.
+		int position = matched++;
+		if (filter_music_views && position < offset)
+			continue;
+		if (out_count >= limit)
+			continue;
+
 		if (parse_jellyfin_item(&doc, elem, default_kind, &entries[out_count]))
 			out_count++;
 	}
 
-	if (more && !filter_music_views) {
-		if (total_records >= 0)
+	if (more) {
+		if (filter_music_views) {
+			*more = matched > offset + limit;
+		} else if (total_records >= 0) {
 			*more = ((long)offset + (long)arr_len) < total_records;
-		else
+		} else {
 			*more = (arr_len >= limit);
+		}
 	}
 
 	json_free(&doc);
@@ -1840,10 +1854,13 @@ int jellyfin_browse(jellyfin_browse_t browse, const char *id_or_query, int offse
 
 	switch (browse) {
 	case JELLYFIN_BROWSE_LIBRARIES:
+		// /Views returns the user's libraries in one response; page locally
+		// over the music ones so the GUI's "load more" can reach them all.
 		n = snprintf(url, sizeof(url), "%s/Users/%s/Views", server, user_id);
 		if (n <= 0 || (size_t)n >= sizeof(url))
 			goto bad_url;
-		return fetch_items_page(url, auth_hdr, JELLYFIN_ITEM_FOLDER, true, 0, entries, limit, more, error, error_size);
+		return fetch_items_page(url, auth_hdr, JELLYFIN_ITEM_FOLDER, true, offset, entries, limit, more, error,
+								error_size);
 
 	case JELLYFIN_BROWSE_FOLDERS:
 		if (lib_id[0]) {

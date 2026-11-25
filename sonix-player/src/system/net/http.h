@@ -173,9 +173,10 @@ bool http_stream_open(http_stream_t *st, const char *url, int timeout_secs);
 // The ported Jellyfin cache needs to send an auth header on a stream and to
 // observe the socket while it is being opened, so cancellation can shut it
 // down. This is a narrow, backward-compatible extension of http_stream_open():
-// with no options it behaves exactly as before. TLS verification stays strict
-// (no_https_downgrade is accepted but ignored) and extra headers are sent only
-// on the first hop, never on a redirect.
+// with no options it behaves exactly as before. TLS verification stays strict,
+// extra headers are sent only on the first hop, never on a redirect. With
+// no_https_downgrade set, an absolute redirect from https:// to http:// is
+// refused.
 typedef bool (*http_socket_cb)(void *user, int fd);
 
 typedef struct {

@@ -234,10 +234,12 @@ static void settings_refresh(void) {
 	// Read back rather than remembered here: the setting is [network]
 	// tls_verify, which the developer options or an edited config file can also
 	// have changed, and the switch has to agree with what is in force.
-	if (tls_verify_mode() == TLS_VERIFY_RELAXED) {
-		lv_obj_add_state(relaxed_switch, LV_STATE_CHECKED);
-	} else {
-		lv_obj_remove_state(relaxed_switch, LV_STATE_CHECKED);
+	if (relaxed_switch) {
+		if (tls_verify_mode() == TLS_VERIFY_RELAXED) {
+			lv_obj_add_state(relaxed_switch, LV_STATE_CHECKED);
+		} else {
+			lv_obj_remove_state(relaxed_switch, LV_STATE_CHECKED);
+		}
 	}
 	quality_refresh();
 }
@@ -272,13 +274,14 @@ static void remember_cb(lv_event_t *e) {
 
 // The certificate switch is the one control on this page that is not about this
 // server: it is [network] tls_verify, which every https:// the player opens
-// reads, radio stations included. Written and applied at once -- the reason
-// somebody is looking at it is a connection that just failed with a certificate
-// error, and a setting that only worked after a restart would be of no use.
+// reads, radio stations included. The row is only built when this build can
+// actually relax verification; strict-only builds hide it instead.
 static void certificates_cb(lv_event_t *e) {
 	(void)e;
 	bool relaxed = lv_obj_has_state(relaxed_switch, LV_STATE_CHECKED);
 	tls_set_verify_mode(relaxed ? TLS_VERIFY_RELAXED : TLS_VERIFY_STRICT);
+	// Show the mode that actually took effect, not the position of the switch.
+	settings_refresh();
 }
 
 static void edit_cb(lv_event_t *e) {
@@ -667,9 +670,11 @@ static void build_settings(void) {
 	settingsrow_add(container, "password", NULL, edit_cb, (void *)(intptr_t)2);
 	settingsrow_toggle(container, "subsonic_remember", &remember_switch, remember_cb);
 	// Straight under the account, because it is what a self-hosted server needs
-	// before any of the above can work over https://.
-	settingsrow_toggle(container, "subsonic_allow_self_signed", &relaxed_switch, certificates_cb);
-	add_note(container, "subsonic_allow_self_signed_note");
+	// before any of the above can work over https://. This build verifies
+	// certificates strictly, so hide the control rather than offer a switch
+	// that is silently ignored and reads back STRICT on the next visit.
+	if (tls_relaxed_supported())
+		settingsrow_toggle(container, "subsonic_allow_self_signed", &relaxed_switch, certificates_cb);
 	row = settingsrow_action(container, "subsonic_connect_save", connect_cb, NULL);
 	settingsrow_add_icon(row, &icon_check, THEME_SEMANTIC_GREEN);
 	lv_obj_t *pills;

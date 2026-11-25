@@ -425,18 +425,22 @@ static void queue_persist(void) {
 
 void device_state_queue_changed(void) { queue_persist(); }
 
-// One per streaming service plus headroom: four is already twice as many as
-// exist.
-#define PREPARE_CB_MAX 4
+// One per streaming service (Qobuz, Tidal, podcasts, Jellyfin, SoundCloud,
+// Subsonic) plus headroom for plugin candidates enabled by SONIX_V1_STREAMING.
+#define PREPARE_CB_MAX 8
 static device_state_prepare_cb prepare_cbs[PREPARE_CB_MAX];
 static int prepare_cb_count;
 
 void device_state_add_prepare_cb(device_state_prepare_cb cb) {
-	if (!cb || prepare_cb_count >= PREPARE_CB_MAX) {
+	if (!cb)
+		return;
+	if (prepare_cb_count >= PREPARE_CB_MAX) {
+		fprintf(stderr, "device_state: prepare callback table full (%d), ignoring registration\n",
+				PREPARE_CB_MAX);
 		return;
 	}
 	// Registering twice would mean preparing the same track twice. The cost is
-	// one walk over four entries, once at start-up.
+	// one walk over a handful of entries, once at start-up.
 	for (int i = 0; i < prepare_cb_count; i++) {
 		if (prepare_cbs[i] == cb) {
 			return;

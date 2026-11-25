@@ -1915,6 +1915,8 @@ static void self_signed_switch_cb(lv_event_t *e) {
 	lv_obj_t *sw = lv_event_get_target(e);
 	bool relaxed = lv_obj_has_state(sw, LV_STATE_CHECKED);
 	tls_set_verify_mode(relaxed ? TLS_VERIFY_RELAXED : TLS_VERIFY_STRICT);
+	// The setter may refuse the change; show the mode actually in force.
+	refresh_settings_ui();
 }
 
 static void report_switch_cb(lv_event_t *e) {
@@ -2562,7 +2564,10 @@ static void build_settings_screen(gui_config_t *cfg) {
 	add_stacked_value_row(list, "password", &pass_value, edit_pass_cb);
 
 	settingsrow_toggle(list, "jellyfin_remember", &remember_switch, remember_switch_cb);
-	settingsrow_toggle(list, "jellyfin_allow_self_signed", &self_signed_switch, self_signed_switch_cb);
+	// This build verifies certificates strictly. Do not offer a switch that
+	// cannot change anything and would read back STRICT on every visit.
+	if (tls_relaxed_supported())
+		settingsrow_toggle(list, "jellyfin_allow_self_signed", &self_signed_switch, self_signed_switch_cb);
 
 	settingsrow_action(list, "jellyfin_connect_save", connect_save_cb, NULL);
 	add_stacked_value_row(list, "jellyfin_library", &library_value, pick_library_cb);

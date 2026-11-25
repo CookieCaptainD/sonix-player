@@ -375,6 +375,8 @@ void tls_set_verify_mode(tls_verify_t mode) {
 	(void)mode;
 }
 
+bool tls_relaxed_supported(void) { return false; }
+
 tls_conn_t *tls_client(int fd, const char *hostname, char *err, size_t err_size) {
 	if (err && err_size) {
 		err[0] = '\0';

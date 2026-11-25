@@ -845,13 +845,30 @@ bool http_request(const char *url, const http_req_t *req, char **out, size_t *ou
 		// A relative Location keeps the scheme and authority it came from; an
 		// absolute one may switch between http and https, and plenty of hosts
 		// answer port 80 with nothing but a redirect to their https self.
+		// Validate the next hop before contacting it: authenticated API calls
+		// must never be downgraded from https to cleartext, and credentials
+		// in extra_headers must not follow a redirect to another authority.
+		char next[2600];
 		if (location[0] == '/') {
 			char base[512];
 			snprintf(base, sizeof(base), "%s://%s:%d", u.secure ? "https" : "http", u.host, u.port);
-			snprintf(current, sizeof(current), "%s%s", base, location);
+			snprintf(next, sizeof(next), "%s%s", base, location);
 		} else {
-			snprintf(current, sizeof(current), "%s", location);
+			snprintf(next, sizeof(next), "%s", location);
 		}
+		url_t next_u;
+		if (!url_parse(next, &next_u)) {
+			set_last_error(tr("http_bad_address"), next);
+			return false;
+		}
+		if (u.secure && !next_u.secure) {
+			set_last_error("https to http redirect refused: %s", next);
+			return false;
+		}
+		if (u.secure != next_u.secure || strcasecmp(u.host, next_u.host) != 0 || u.port != next_u.port) {
+			hop_req.extra_headers = NULL;
+		}
+		snprintf(current, sizeof(current), "%s", next);
 	}
 	return false;
 }
@@ -1005,17 +1022,30 @@ bool http_stream_open_ex(http_stream_t *st, const char *url, int timeout_secs,
 			return false;
 		}
 
+		// Relative targets keep the scheme and authority of the hop that
+		// answered; absolute ones are followed verbatim. Refuse an https ->
+		// http downgrade when the caller asked for it (Jellyfin streams do).
+		url_t u;
+		if (!url_parse(current, &u)) {
+			return false;
+		}
+		char next[2600];
 		if (location[0] == '/') {
-			url_t u;
-			if (!url_parse(current, &u)) {
-				return false;
-			}
 			char base[512];
 			snprintf(base, sizeof(base), "%s://%s:%d", u.secure ? "https" : "http", u.host, u.port);
-			snprintf(current, sizeof(current), "%s%s", base, location);
+			snprintf(next, sizeof(next), "%s%s", base, location);
 		} else {
-			snprintf(current, sizeof(current), "%s", location);
+			snprintf(next, sizeof(next), "%s", location);
 		}
+		url_t next_u;
+		if (!url_parse(next, &next_u)) {
+			return false;
+		}
+		if (u.secure && !next_u.secure && opts && opts->no_https_downgrade) {
+			set_last_error("https to http redirect refused: %s", next);
+			return false;
+		}
+		snprintf(current, sizeof(current), "%s", next);
 	}
 	return false;
 }

@@ -72,6 +72,11 @@ typedef enum {
 tls_verify_t tls_verify_mode(void);
 void tls_set_verify_mode(tls_verify_t mode);
 
+// False on builds where the setter is a no-op. Setting pages use this to hide
+// a "relaxed certificate" control that could not take effect, instead of
+// offering a switch that silently does nothing.
+bool tls_relaxed_supported(void);
+
 tls_conn_t *tls_client(int fd, const char *hostname, char *err, size_t err_size);
 
 // Same shapes as recv()/send(): >0 bytes moved, 0 for a clean end of stream,
