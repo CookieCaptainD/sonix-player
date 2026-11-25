@@ -47,7 +47,13 @@ static int strip_h;
 // What the strip falls back to when there is no artwork to size it from, and
 // the height it always has over a picture from the folder -- there the block
 // is built to order rather than borrowed, so there is nothing to measure.
-#define DEFAULT_STRIP_H 290
+#define DEFAULT_STRIP_H 250
+// The date needs the extra room. Users who switch it off, and users with no
+// clock set, keep the original strip and all those pixels of artwork.
+#define DATE_STRIP_H 290
+
+static bool date_layout(void) { return show_date && clock_is_set(); }
+static int height_for_date(void) { return date_layout() ? DATE_STRIP_H : DEFAULT_STRIP_H; }
 
 // ---------------------------------------------------------------------------
 // Pictures from the card
@@ -153,7 +159,7 @@ static void request_next(void) {
 	}
 	snprintf(next_file, sizeof(next_file), "%s", chosen);
 	next_pending = true;
-	coverloader_request_screensaver(next_file, screen_w, screen_h, screen_w, DEFAULT_STRIP_H);
+	coverloader_request_screensaver(next_file, screen_w, screen_h, screen_w, height_for_date());
 }
 
 // Takes delivery of a finished decode, if there is one. Cheap and non-blocking:
@@ -219,11 +225,57 @@ void screensaver_set_show_date(bool on) {
 	config_set_bool("screen", "screensaver_show_date", on);
 	config_save();
 	refresh_date();
+	if (clock_label) {
+		lv_obj_set_style_pad_top(clock_label, date_layout() ? 2 : 6, 0);
+	}
+
+	// The Images strip is built at a fixed height, so a toggle while the
+	// screensaver is down throws the old one away and asks for one at the
+	// height the new setting calls for. Releasing the pixels is only safe
+	// while they are not on screen; if it is up, the next hide/show redoes
+	// both the geometry and the picture.
+	if (screensaver_is_visible()) {
+		return;
+	}
+	drop_next();
+	drop_image();
+	if (source == SCREENSAVER_SOURCE_IMAGES) {
+		request_next();
+	}
 }
 
 // ---------------------------------------------------------------------------
 // what it shows
 // ---------------------------------------------------------------------------
+
+// The order and separators of the date are the language's, not C's. The
+// translated value is a strftime pattern in which %M means the month name
+// translated by this interface; the rest of the pattern is strftime's. A
+// language with no such key keeps the pattern this feature first shipped with.
+static void format_date(char *out, size_t size, const struct tm *tm_now) {
+	static const char *const MONTHS[12] = {"podcast_january", "podcast_february", "podcast_march",
+										   "podcast_april", "podcast_may", "podcast_june",
+										   "podcast_july", "podcast_august", "podcast_september",
+										   "podcast_october", "podcast_november", "podcast_december"};
+	const char *fmt = tr("screensaver_date_format");
+	if (strcmp(fmt, "screensaver_date_format") == 0) {
+		fmt = "%d %M %Y";
+	}
+	const char *token = strstr(fmt, "%M");
+	if (!token) {
+		strftime(out, size, fmt, tm_now);
+		return;
+	}
+
+	char pattern[64];
+	size_t head = (size_t)(token - fmt);
+	if (head >= sizeof(pattern)) {
+		head = sizeof(pattern) - 1;
+	}
+	memcpy(pattern, fmt, head);
+	snprintf(pattern + head, sizeof(pattern) - head, "%s%s", tr(MONTHS[tm_now->tm_mon % 12]), token + 2);
+	strftime(out, size, pattern, tm_now);
+}
 
 static void refresh_date(void) {
 	if (!date_label) {
@@ -235,10 +287,6 @@ static void refresh_date(void) {
 		return;
 	}
 
-	static const char *const MONTHS[12] = {"podcast_january", "podcast_february", "podcast_march",
-										   "podcast_april", "podcast_may", "podcast_june",
-										   "podcast_july", "podcast_august", "podcast_september",
-										   "podcast_october", "podcast_november", "podcast_december"};
 	time_t now = time(NULL);
 	struct tm tm_now;
 	if (!localtime_r(&now, &tm_now)) {
@@ -247,7 +295,7 @@ static void refresh_date(void) {
 		return;
 	}
 	char buf[64];
-	snprintf(buf, sizeof(buf), "%d %s %d", tm_now.tm_mday, tr(MONTHS[tm_now.tm_mon % 12]), tm_now.tm_year + 1900);
+	format_date(buf, sizeof(buf), &tm_now);
 	lv_label_set_text(date_label, buf);
 	lv_obj_set_hidden(date_label, false);
 }
@@ -318,7 +366,7 @@ static void promote_next(void) {
 
 // Draws whatever is currently held. Nothing is decoded here.
 static void draw_from_folder(void) {
-	set_strip_height(DEFAULT_STRIP_H);
+	set_strip_height(height_for_date());
 
 	if (image_pic.pixels) {
 		lv_image_set_src(cover_img, &image_pic.dsc);
@@ -402,7 +450,7 @@ static void refresh_content(void) {
 	// picture instead.
 	int strip_from_backdrop = backdrop ? (int)backdrop->header.h : 0;
 	set_strip_height(strip_from_backdrop > 0 && strip_from_backdrop < screen_h ? strip_from_backdrop
-																			  : DEFAULT_STRIP_H);
+																			  : height_for_date());
 
 	const lv_image_dsc_t *cover = shown_cover;
 	if (cover) {
@@ -622,7 +670,6 @@ static void drag_cb(lv_event_t *e) {
 void screensaver_init(gui_config_t *cfg) {
 	screen_w = cfg->screen_width;
 	screen_h = cfg->screen_height;
-	strip_h = DEFAULT_STRIP_H;
 
 	screensaver_set_card_root(cfg->sd_root_path);
 	enabled = config_get_bool("screen", "screensaver", false);
@@ -630,6 +677,7 @@ void screensaver_init(gui_config_t *cfg) {
 	source = config_get_int("screen", "screensaver_source", SCREENSAVER_SOURCE_ALBUM) == SCREENSAVER_SOURCE_IMAGES
 				 ? SCREENSAVER_SOURCE_IMAGES
 				 : SCREENSAVER_SOURCE_ALBUM;
+	strip_h = height_for_date();
 	cover_box_h = screen_h - strip_h;
 
 	saver = lv_obj_create(lv_layer_top());
@@ -719,7 +767,7 @@ void screensaver_init(gui_config_t *cfg) {
 	// The time, in the largest figures the screen has.
 	clock_label = clocklabel_create(info_strip, &font_ui_72, 72, &font_ui_32, 32);
 	lv_obj_set_style_text_color(clock_label, lv_color_white(), 0);
-	lv_obj_set_style_pad_top(clock_label, 2, 0);
+	lv_obj_set_style_pad_top(clock_label, date_layout() ? 2 : 6, 0);
 
 	refresh_date();
 
