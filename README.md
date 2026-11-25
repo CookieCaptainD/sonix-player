@@ -359,11 +359,18 @@ stock `sa_sound_hbc3000.ko` (see step 5).
 
 ### Build
 
+
+First, to set up, you'll want to copy over the `sonix_player` and
+`sonix_launcher` binaries from the `sonix-player/` directory into the 
+`sonix-packer/` directory. That means the packer script will see them and
+package them into the firmware it will build.
+
+To build the Sonix firmware, make sure you're in the `sonix-packer/` directory.
+
 ```bash
 ./sonix_firmware_packer.sh
 ```
-
-`--strip-debug-tools` also takes out the stock debugging tools nothing in the
+- `--strip-debug-tools` also takes out the stock debugging tools nothing in the
 image uses (strace, the Bluetooth test tools, the D-Bus, GLib and ALSA command
 line tools, the flash and UBI maintenance tools and the libraries only they
 link): about 4.5 MB on each model, at the cost of those tools over adb. The
