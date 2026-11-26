@@ -417,7 +417,8 @@ static bool read_declared_name(const char *name, char *out, size_t size);
 // The library already defines the order a list should have: accents fold to
 // their base letter and scripts group together. Reuse it instead of keeping a
 // second collation here. Equal keys fall back to the raw name so that two
-// spellings of one language do not swap places between directory reads.
+// spellings of one language do not swap places between directory reads. The
+// collation also drops leading articles, following the music setting.
 static int name_order(const void *a, const void *b) {
 	const char *x = *(const char *const *)a;
 	const char *y = *(const char *const *)b;
