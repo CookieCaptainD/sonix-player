@@ -570,16 +570,40 @@ static void volume_async_cb(void *user_data) {
 // level themselves, so across the bridge like the key above.
 void gui_notify_volume(int percent) { gui_post(volume_async_cb, (void *)(intptr_t)percent); }
 
+// The question belongs to the output that was active when it was asked. The
+// routing watcher can change the output while the dialog is open, and confirm.c
+// holds only one pending callback, so carry the output with the target instead
+// of looking it up again when OK is pressed.
+typedef struct {
+	volume_output_t out;
+	int target;
+} above_limit_confirm_t;
+
+static above_limit_confirm_t key_above_limit_confirm;
+
 static void allow_above_limit_ok_cb(void *user) {
-	int target = (int)(intptr_t)user;
-	volume_output_t out = volume_profile_output();
-	volume_limit_set_override_above(out, true);
-	set_volume_percent(target);
+	const above_limit_confirm_t *ctx = user;
+	// A permission for the prompted output is not one for whichever output is
+	// active now, and line out's fixed level cannot be raised at all.
+	if (volume_profile_output() != ctx->out || lineout_is_active()) {
+		return;
+	}
+	int ceiling = volume_limit_configured_ceiling(ctx->out);
+	if (volume_limit_enabled() && ceiling < 100 && ctx->target > ceiling) {
+		volume_limit_set_override_above(ctx->out, true);
+	}
+	set_volume_percent(ctx->target);
 	gui_notify_volume(get_volume_percent());
 }
 
 static void volume_above_limit_async_cb(void *user_data) {
 	int target = (int)(intptr_t)user_data;
+	// With line out on the level is a fixed index that set_volume_percent()
+	// refuses to move: a prompt would grant a permission for a no-op, and the
+	// override would still be live after line out is switched off.
+	if (lineout_is_active()) {
+		return;
+	}
 	volume_output_t out = volume_profile_output();
 	int cfg_ceiling = volume_limit_configured_ceiling(out);
 	if (!(volume_limit_enabled() && cfg_ceiling < 100 && target > cfg_ceiling)) {
@@ -589,8 +613,10 @@ static void volume_above_limit_async_cb(void *user_data) {
 	set_volume_percent(cfg_ceiling);
 	volume_overlay_show(get_volume_percent());
 	topbar_refresh_volume(get_volume_percent());
+	key_above_limit_confirm.out = out;
+	key_above_limit_confirm.target = target;
 	confirm_show("volume_limit_confirm_title", "volume_limit_confirm_note", "allow", allow_above_limit_ok_cb,
-				 (void *)(intptr_t)target);
+				 &key_above_limit_confirm);
 }
 
 void gui_request_volume_above_limit(int target_percent) {

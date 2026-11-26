@@ -107,11 +107,30 @@ static void refresh_overlay_to_current(void) {
 	lv_timer_resume(hide_timer);
 }
 
+// As with the volume keys, the prompt is for the output that was active when
+// the slider was dragged, not for whatever the routing watcher has picked by
+// the time OK is pressed.
+typedef struct {
+	volume_output_t out;
+	int target;
+} above_limit_confirm_t;
+
+static above_limit_confirm_t slider_above_limit_confirm;
+
 static void allow_above_limit_ok(void *user) {
-	int percent = (int)(intptr_t)user;
-	volume_output_t out = volume_profile_output();
-	volume_limit_set_override_above(out, true);
-	set_volume_percent(percent);
+	const above_limit_confirm_t *ctx = user;
+	if (volume_profile_output() != ctx->out || lineout_is_active()) {
+		// The question no longer applies to this output; show the level of the
+		// one actually in force rather than changing it on the strength of a
+		// stale confirmation.
+		refresh_overlay_to_current();
+		return;
+	}
+	int ceiling = volume_limit_configured_ceiling(ctx->out);
+	if (volume_limit_enabled() && ceiling < 100 && ctx->target > ceiling) {
+		volume_limit_set_override_above(ctx->out, true);
+	}
+	set_volume_percent(ctx->target);
 	refresh_overlay_to_current();
 }
 
@@ -124,14 +143,19 @@ static void slider_changed_cb(lv_event_t *e) {
 
 	volume_output_t out = volume_profile_output();
 	int cfg_ceiling = volume_limit_configured_ceiling(out);
+	// Line out is a fixed index: set_volume_percent() ignores the drag, so
+	// asking here would only hand out an override for a change that never
+	// happened (and one that would stay live after line out is turned off).
 	if (volume_limit_enabled() && cfg_ceiling < 100 && percent > cfg_ceiling &&
-		!volume_limit_override_active(out)) {
+		!volume_limit_override_active(out) && !lineout_is_active()) {
 		// Hold at the limit until the user explicitly confirms going above it.
 		lv_slider_set_value(overlay_slider, cfg_ceiling, LV_ANIM_OFF);
 		set_volume_percent(cfg_ceiling);
 		refresh_overlay_to_current();
+		slider_above_limit_confirm.out = out;
+		slider_above_limit_confirm.target = percent;
 		confirm_show("volume_limit_confirm_title", "volume_limit_confirm_note", "allow", allow_above_limit_ok,
-					 (void *)(intptr_t)percent);
+					 &slider_above_limit_confirm);
 		return;
 	}
 

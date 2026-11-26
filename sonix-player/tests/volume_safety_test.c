@@ -125,10 +125,29 @@ static void test_lineout_index_untouched(void) {
 	CHECK(volume_profile_level(false) == 20);
 }
 
+// An attempted raise while line out is on cannot move the fixed index, so the
+// confirmation gate is skipped. No above-limit permission is involved, and
+// none may be left behind for after the mode is switched off.
+static void test_lineout_raise_needs_no_override(void) {
+	reset_state();
+	lineout_set(true);
+	CHECK(!volume_limit_override_active(VOLUME_OUTPUT_PHONES));
+
+	set_volume_percent(80); // what a raise above the 60% limit would ask for
+	CHECK(get_volume_percent() == 100);
+	CHECK(volume_profile_level(false) == 20);
+	CHECK(!volume_limit_override_active(VOLUME_OUTPUT_PHONES));
+
+	lineout_set(false);
+	CHECK(get_volume_percent() == 20);
+	CHECK(!volume_limit_override_active(VOLUME_OUTPUT_PHONES));
+}
+
 int main(void) {
 	test_clamp_without_override();
 	test_confirmed_raise_survives_start();
 	test_lineout_index_untouched();
+	test_lineout_raise_needs_no_override();
 
 	if (failures) {
 		fprintf(stderr, "%d check(s) failed\n", failures);

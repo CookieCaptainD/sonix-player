@@ -1267,8 +1267,11 @@ static void apply_volume_step(int code) {
 
 	volume_output_t out = volume_profile_output();
 	int cfg_ceiling = volume_limit_configured_ceiling(out);
+	// Line out holds a fixed index, so a raise there cannot move the hardware:
+	// prompting would grant an override for a no-op that would still be live
+	// after line out is switched off.
 	if (delta > 0 && volume_limit_enabled() && cfg_ceiling < 100 && target > cfg_ceiling &&
-		!volume_limit_override_active(out)) {
+		!volume_limit_override_active(out) && !lineout_is_active()) {
 		// Explicit confirmation required before allowing the volume above the
 		// configured safety limit.
 		gui_request_volume_above_limit(target);
