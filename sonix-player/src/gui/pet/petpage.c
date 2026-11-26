@@ -20,6 +20,12 @@
 #include "src/system/device/power.h"
 #include "petcompat.h"
 
+// A long gap between two timer ticks is the panel having been dark, not a slow
+// frame: the run is held until a touch rather than finished on a score nobody
+// saw. This is the games framework's rule too (games.h:16-24, GAME_STALL_US in
+// games.h and the check in games.c's tick_cb).
+#define PET_GAME_STALL_MS 250
+
 lv_obj_t *petpage_screen;
 
 // ---------------------------------------------------------------------------
@@ -234,6 +240,8 @@ static lv_obj_t *tap_score_label;
 static lv_obj_t *tap_hint_label;
 static lv_timer_t *tap_timer;
 static uint32_t tap_start_ms;
+static uint32_t tap_last_ms; // last tick, to spot a gap while the panel was dark
+static bool tap_held;        // run held after such a gap; the next tap resumes it
 static uint32_t tap_beat_ms;
 static int tap_next_beat;
 static int tap_points;
@@ -1954,6 +1962,7 @@ static void tap_close(void) {
 	if (tap_sheet) {
 		lv_obj_set_hidden(tap_sheet, true);
 	}
+	tap_held = false;
 	tap_visible = false;
 }
 
@@ -1979,6 +1988,21 @@ static void tap_tick_cb(lv_timer_t *timer) {
 	if (!tap_visible) {
 		return;
 	}
+
+	// The timer is paused in standby, so its first tick after a wake reports the
+	// whole dark gap. Hold the run rather than let the elapsed time below finish
+	// it unseen; the next tap resumes it from where it stopped.
+	uint32_t gap = lv_tick_elaps(tap_last_ms);
+	if (gap > PET_GAME_STALL_MS) {
+		tap_held = true;
+		if (tap_timer) {
+			lv_timer_pause(tap_timer);
+		}
+		// Keep tap_last_ms at the last good tick: the resume tap uses it to
+		// move the game clock on by the whole time the run was away.
+		return;
+	}
+	tap_last_ms = lv_tick_get();
 
 	int32_t elapsed = (int32_t)lv_tick_elaps(tap_start_ms);
 
@@ -2015,6 +2039,18 @@ static void tap_tick_cb(lv_timer_t *timer) {
 static void tap_press_cb(lv_event_t *e) {
 	(void)e;
 	if (!tap_visible) {
+		return;
+	}
+	if (tap_held) {
+		// First touch after the gap: resume the held run, moving its clock on by
+		// the time it was stopped so this tap is not spent on a beat. The next
+		// tick then reports only the time since the resume.
+		tap_start_ms += lv_tick_elaps(tap_last_ms);
+		tap_last_ms = lv_tick_get();
+		tap_held = false;
+		if (tap_timer) {
+			lv_timer_resume(tap_timer);
+		}
 		return;
 	}
 
@@ -2077,8 +2113,13 @@ static void tap_open(void) {
 	tap_visible = true;
 
 	tap_start_ms = lv_tick_get();
+	tap_last_ms = tap_start_ms;
+	tap_held = false;
 	if (!tap_timer) {
 		tap_timer = lv_timer_create(tap_tick_cb, TAP_TIMER_MS, NULL);
+		if (tap_timer) {
+			power_pause_in_standby(tap_timer);
+		}
 	}
 }
 
@@ -2233,6 +2274,8 @@ static int treat_pass;
 static int treat_hits;
 static bool treat_hit_this;
 static int32_t treat_start_ms;
+static uint32_t treat_last_ms; // last tick, to spot a gap while the panel was dark
+static bool treat_held;        // run held after such a gap; the next tap resumes it
 
 #define TREAT_NOTES 6      // notes to hit in one game: about nine seconds
 #define TREAT_PASS_MS 1400 // how long one note takes to cross the lane
@@ -2298,6 +2341,7 @@ static void treat_close(void) {
 	if (treat_sheet) {
 		lv_obj_set_hidden(treat_sheet, true);
 	}
+	treat_held = false;
 	treat_visible = false;
 }
 
@@ -2323,6 +2367,20 @@ static void treat_tick_cb(lv_timer_t *timer) {
 	if (!treat_visible) {
 		return;
 	}
+	// As in the tap game, the first tick after standby carries the whole dark
+	// gap. Hold the run here so the pass count below cannot reach TREAT_NOTES
+	// and pay notes on a screen nobody is watching.
+	uint32_t gap = lv_tick_elaps(treat_last_ms);
+	if (gap > PET_GAME_STALL_MS) {
+		treat_held = true;
+		if (treat_timer) {
+			lv_timer_pause(treat_timer);
+		}
+		// Keep treat_last_ms at the last good tick, so the resume tap moves
+		// the game clock on by the whole time the run was away.
+		return;
+	}
+	treat_last_ms = lv_tick_get();
 	const int32_t elapsed = (int32_t)lv_tick_elaps(treat_start_ms);
 	const int pass = elapsed / TREAT_PASS_MS;
 	if (pass != treat_pass) {
@@ -2340,7 +2398,21 @@ static void treat_tick_cb(lv_timer_t *timer) {
 
 static void treat_press_cb(lv_event_t *e) {
 	(void)e;
-	if (!treat_visible || treat_hit_this) {
+	if (!treat_visible) {
+		return;
+	}
+	if (treat_held) {
+		// First touch after the gap: let the run go on from where it stopped,
+		// without spending the dark time or scoring this tap.
+		treat_start_ms += (int32_t)lv_tick_elaps(treat_last_ms);
+		treat_last_ms = lv_tick_get();
+		treat_held = false;
+		if (treat_timer) {
+			lv_timer_resume(treat_timer);
+		}
+		return;
+	}
+	if (treat_hit_this) {
 		return;
 	}
 	const int centre = lv_obj_get_x(treat_note) + 8;
@@ -2372,8 +2444,13 @@ static void treat_open_cb(lv_event_t *e) {
 	lv_obj_move_foreground(treat_sheet);
 	treat_visible = true;
 	treat_start_ms = lv_tick_get();
+	treat_last_ms = (uint32_t)treat_start_ms;
+	treat_held = false;
 	if (!treat_timer) {
 		treat_timer = lv_timer_create(treat_tick_cb, TREAT_TIMER_MS, NULL);
+		if (treat_timer) {
+			power_pause_in_standby(treat_timer);
+		}
 	}
 }
 
