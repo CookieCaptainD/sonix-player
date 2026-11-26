@@ -36,6 +36,7 @@
 #include "src/system/net/wifi.h"
 #include "src/system/net/wifitransfer.h"
 #include "src/system/lastfm/lastfm.h"
+#include "src/system/listenbrainz/listenbrainz.h"
 #include "src/system/bluetooth/bluetooth.h"
 #include "src/system/bluetooth/btreceiver.h"
 #include "src/system/core/config.h"
@@ -642,7 +643,7 @@ static bool wifi_in_use(void) {
 		   wifitransfer_get_enabled() || qobuzcache_downloading_id() > 0 ||
 		   qobuzcache_network_wanted() || tidalcache_downloading_id() > 0 || tidalcache_network_wanted() ||
 		   podcastcache_downloading_id() > 0 || podcastcache_network_wanted() || podcastdl_busy() ||
-		   lastfm_network_wanted() || coverfetch_busy() || // a cover batch or search is on the network
+		   lastfm_network_wanted() || listenbrainz_network_wanted() || coverfetch_busy() || // a scrobble or cover batch is on the network
 		   ota_busy();
 }
 
