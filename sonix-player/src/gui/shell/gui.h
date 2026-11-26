@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "lvgl/lvgl.h"
+#include "src/system/audio/alsa-controls.h"
 
 typedef struct {
 	const uint32_t screen_width;
@@ -112,8 +113,9 @@ void gui_notify_key(gui_key_t key);
 void gui_notify_volume(int percent);
 
 // Ask the user to explicitly confirm raising the volume above the configured
-// safety limit to `target_percent`. Runs on the UI thread.
-void gui_request_volume_above_limit(int target_percent);
+// safety limit on `out` to `target_percent`. The output is the one captured at
+// key-press time; the dialog runs on the UI thread later.
+void gui_request_volume_above_limit(volume_output_t out, int target_percent);
 
 // The power key was held down.
 void gui_notify_power_menu(void);

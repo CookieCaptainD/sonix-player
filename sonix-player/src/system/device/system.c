@@ -1274,7 +1274,7 @@ static void apply_volume_step(int code) {
 		!volume_limit_override_active(out) && !lineout_is_active()) {
 		// Explicit confirmation required before allowing the volume above the
 		// configured safety limit.
-		gui_request_volume_above_limit(target);
+		gui_request_volume_above_limit(out, target);
 		return;
 	}
 

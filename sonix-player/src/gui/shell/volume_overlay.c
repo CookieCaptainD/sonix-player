@@ -107,12 +107,14 @@ static void refresh_overlay_to_current(void) {
 	lv_timer_resume(hide_timer);
 }
 
-// As with the volume keys, the prompt is for the output that was active when
-// the slider was dragged, not for whatever the routing watcher has picked by
-// the time OK is pressed.
+// As with the volume keys, the prompt is for the output and the configured
+// ceiling that were in force when the slider was dragged, not for whatever the
+// routing watcher or the settings page has changed by the time OK is pressed.
 typedef struct {
 	volume_output_t out;
 	int target;
+	bool limit_on;
+	int ceiling;
 } above_limit_confirm_t;
 
 static above_limit_confirm_t slider_above_limit_confirm;
@@ -126,8 +128,15 @@ static void allow_above_limit_ok(void *user) {
 		refresh_overlay_to_current();
 		return;
 	}
+	// A changed limit revokes the override and clamps the level, so consent
+	// given under the old ceiling cannot grant one under the new ceiling.
+	bool limit_on = volume_limit_enabled();
 	int ceiling = volume_limit_configured_ceiling(ctx->out);
-	if (volume_limit_enabled() && ceiling < 100 && ctx->target > ceiling) {
+	if (limit_on != ctx->limit_on || ceiling != ctx->ceiling) {
+		refresh_overlay_to_current();
+		return;
+	}
+	if (limit_on && ceiling < 100 && ctx->target > ceiling) {
 		volume_limit_set_override_above(ctx->out, true);
 	}
 	set_volume_percent(ctx->target);
@@ -142,11 +151,12 @@ static void slider_changed_cb(lv_event_t *e) {
 	int percent = (int)lv_slider_get_value(overlay_slider);
 
 	volume_output_t out = volume_profile_output();
+	bool limit_on = volume_limit_enabled();
 	int cfg_ceiling = volume_limit_configured_ceiling(out);
 	// Line out is a fixed index: set_volume_percent() ignores the drag, so
 	// asking here would only hand out an override for a change that never
 	// happened (and one that would stay live after line out is turned off).
-	if (volume_limit_enabled() && cfg_ceiling < 100 && percent > cfg_ceiling &&
+	if (limit_on && cfg_ceiling < 100 && percent > cfg_ceiling &&
 		!volume_limit_override_active(out) && !lineout_is_active()) {
 		// Hold at the limit until the user explicitly confirms going above it.
 		lv_slider_set_value(overlay_slider, cfg_ceiling, LV_ANIM_OFF);
@@ -154,6 +164,8 @@ static void slider_changed_cb(lv_event_t *e) {
 		refresh_overlay_to_current();
 		slider_above_limit_confirm.out = out;
 		slider_above_limit_confirm.target = percent;
+		slider_above_limit_confirm.limit_on = limit_on;
+		slider_above_limit_confirm.ceiling = cfg_ceiling;
 		confirm_show("volume_limit_confirm_title", "volume_limit_confirm_note", "allow", allow_above_limit_ok,
 					 &slider_above_limit_confirm);
 		return;
