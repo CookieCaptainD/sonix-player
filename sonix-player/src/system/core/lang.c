@@ -45,7 +45,7 @@ typedef struct {
 } table_t;
 
 static table_t live;
-static char current[LANG_NAME_MAX_BYTES] = "Italiano";
+static char current[LANG_NAME_MAX_BYTES] = LANG_FIRST_BOOT;
 static char dir_path[256] = LANG_DIR;
 
 // ---------------------------------------------------------------------------
@@ -100,14 +100,20 @@ static bool arena_put(table_t *t, const char *s, uint32_t *out) {
 
 static void table_add(table_t *t, const char *key, const char *value) {
 	// An empty translation means "not done yet", not "show nothing".
-	if (t->count >= MAX_ENTRIES || !key[0] || !value[0]) {
-		fprintf(stderr, "lang: Number of translation entries above limit (%d), skipping...\n", MAX_LANGUAGES);
+	if (t->count >= MAX_ENTRIES) {
+		fprintf(stderr, "lang: Number of translation entries above limit (%d), skipping...\n", MAX_ENTRIES);
+		return;
+	}
+
+	if (!key[0] || !value[0]) {
+		fprintf(stderr, "lang: failed to add translation entry because either key or value was empty\n");
+		fprintf(stderr, "lang: skipping (\"%s\": \"%s\"), empty %s\n", key, value, key[0] ? "value" : "key");
 		return;
 	}
 
 	uint32_t k, v;
 	if (!arena_put(t, key, &k) || !arena_put(t, value, &v)) {
-		fprintf(stderr, "lang: failed to add translation entry (%s: %s)\n", key, value);
+		fprintf(stderr, "lang: failed to add translation entry (\"%s\": \"%s\")\n", key, value);
 		return;
 	}
 
@@ -389,7 +395,7 @@ void lang_init(const char *dir) {
 			path_for(path, sizeof(path), LANG_FIRST_BOOT);
 			if (load_file(&live, path)) {
 				snprintf(current, sizeof(current), LANG_FIRST_BOOT);
-				printf("lang: falling back to Italiano, %d texts\n", live.count);
+				printf("lang: falling back to %s, %d texts\n", LANG_FIRST_BOOT, live.count);
 			}
 		}
 	}
@@ -601,9 +607,8 @@ bool lang_set(const char *name) {
 	char path[512];
 	path_for(path, sizeof(path), name);
 	if (!load_file(&next, path)) {
-		// With tags in the source there is no free language: Italian is a file
-		// too, and an unreadable file is a failure for any language, since an
-		// empty table would show bare tags.
+		// With tags in the source there is no free language: The default is also a
+		// .ini file, so final fallback is to just display the raw keys.
 		table_reset(&next);
 		free(next.arena);
 		fprintf(stderr, "lang: %s not readable\n", path);

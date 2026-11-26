@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// TODO: the language system has changed somewhat since this comment was written. it should be updated to reflect that
+// NOTE: (for todo) it *is* possible for UI to show raw keys, in the case where no language .ini files are present
+// NOTE: (for todo) the way that keys are written has changed. some are italian but most are english
 // The interface in more than one language.
 //
 // The stock firmware keeps a folder per language under /usr/resource/str, each
@@ -27,17 +30,12 @@
 //     Alimentazione = Power
 //     %d brani = %d tracks
 //
-// The key is the Italian text as it is written in the source. That is a
-// deliberate choice over invented ids like `settings.power`:
+// The key is the text as it is written in the source (probably italian or
+// English). That is a deliberate choice over invented ids like `sound.volume`
 //
 //   * nothing can ever show a raw key to the user -- when a line is missing,
-//     tr() hands back what it was given, which is correct Italian;
-//   * Italiano.ini is generated from the source itself, so it cannot drift out
-//     of step with the strings that actually exist;
+//     tr() hands back what it was given, which is in LANG_FIRST_BOOT;
 //   * a translator reads the file and sees sentences, not identifiers.
-//
-// The cost is that two Italian words that happen to be spelled the same must
-// take the same translation. Nothing in this interface needs otherwise.
 
 #include "src/system/core/respath.h"
 
@@ -45,8 +43,7 @@
 
 // The language used on first boot, until someone chooses: the welcome screen,
 // the language list and the date and time come out in it. The matching file
-// must exist in the directory above; without it the interface stays on the
-// source's Italian.
+// must exist in the directory above;
 #define LANG_FIRST_BOOT "English"
 
 // This sets the size of the array that holds the languages.
@@ -59,10 +56,9 @@
 // more than 1 byte)
 #define LANG_NAME_MAX_BYTES 64
 
-// Reads the language named in the settings (or Italiano) out of `dir`. A
-// missing directory or file is not an error: every tr() then returns its
-// argument and the interface is in Italian, exactly as if this module did not
-// exist.
+// Reads the language named in the settings (or LANG_FIRST_BOOT) out of `dir`. A
+// missing directory or file is not an error. LANG_FIRST_BOOT is used as a
+// fallback
 void lang_init(const char *dir);
 
 // The translation of `text`, or `text` itself when there is none. The returned
