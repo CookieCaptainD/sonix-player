@@ -273,6 +273,9 @@ static void write_tags(const job_t *job) {
 	fprintf(f, "feed_image=%s\n", job->image);
 	fprintf(f, "cover_url=%s\n", e->image);
 	fprintf(f, "episode_id=%lld\n", e->id);
+	// podcastauto.c uses this to tell a file we wrote from one the user copied
+	// into the same folder: only marked files may be evicted by the cap.
+	fprintf(f, "downloaded_by=podcastdl\n");
 	bool ok = fclose(f) == 0;
 	if (!ok || rename(tmp, tags) != 0) {
 		remove(tmp);

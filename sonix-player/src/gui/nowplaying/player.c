@@ -4108,6 +4108,10 @@ static void handle_track_finished(void) {
 	// for, which is what makes this the cheaper half of the audiobook's version.
 	char path[512];
 	audio_get_current_file(path, sizeof(path));
+	// Release a delete parked when this episode was marked heard near its end.
+	// Auto-advance starts the next file before update_progress() can see a
+	// STOPPED edge for this one, so waiting for that edge would leak the file.
+	podcastauto_on_stopped(path);
 	if (podcast_stop_at_episode_end() && podcastcache_is_episode(path)) {
 		fprintf(stderr, "player: end of the episode; not starting the next\n");
 		refresh_now_playing();
@@ -4309,6 +4313,14 @@ static bool live_step(int step) {
 	return true;
 }
 
+// A manual next/prev leaves the current file too. Release a parked delete for
+// it here rather than waiting for a STOPPED edge that auto-advance never shows.
+static void release_parked_podcast_delete(void) {
+	char path[512];
+	audio_get_current_file(path, sizeof(path));
+	podcastauto_on_stopped(path);
+}
+
 void player_screen_prev(void) {
 	if (live_step(-1)) {
 		return;
@@ -4332,10 +4344,13 @@ void player_screen_prev(void) {
 	// back.
 	if (state.progress_current_secs > 3.0) {
 		device_state_seek(0); // far enough in -> restart current track
-	} else if (device_state_prev(NULL, 0)) {
-		refresh_now_playing(); // near the start -> go to previous track
 	} else {
-		device_state_seek(0); // no queue -> just restart
+		release_parked_podcast_delete(); // leaving this file for the previous one
+		if (device_state_prev(NULL, 0)) {
+			refresh_now_playing(); // near the start -> go to previous track
+		} else {
+			device_state_seek(0); // no queue -> just restart
+		}
 	}
 
 	update_progress();
@@ -4355,6 +4370,7 @@ void player_screen_next(void) {
 		return;
 	}
 
+	release_parked_podcast_delete();
 	if (device_state_next(NULL, 0)) {
 		refresh_now_playing();
 	}
@@ -4407,6 +4423,7 @@ void player_key_next(void) {
 		return;
 	}
 
+	release_parked_podcast_delete();
 	if (device_state_next(NULL, 0)) {
 		refresh_now_playing();
 	}
@@ -4440,10 +4457,13 @@ void player_key_prev(void) {
 
 	if (state.progress_current_secs > 3.0) {
 		device_state_seek(0);
-	} else if (device_state_prev(NULL, 0)) {
-		refresh_now_playing();
 	} else {
-		device_state_seek(0);
+		release_parked_podcast_delete();
+		if (device_state_prev(NULL, 0)) {
+			refresh_now_playing();
+		} else {
+			device_state_seek(0);
+		}
 	}
 	update_progress();
 }

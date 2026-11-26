@@ -79,8 +79,16 @@ void podcastauto_set(long long feed_id, const podcastauto_opts_t *opts) {
 // deleting a kept episode
 // ---------------------------------------------------------------------------
 
+// podcastdl marks the sidecar of every file it writes. A state row or a copied
+// .tags file is not proof of ownership: a hand-copied episode in the same
+// folder gains both as soon as it is played or copied with its sidecar.
+static bool podcastdl_downloaded(const char *path) {
+	char marker[32];
+	return podcastcache_tag(path, "downloaded_by", marker, sizeof(marker)) && strcmp(marker, "podcastdl") == 0;
+}
+
 void podcastauto_delete_file(const char *path) {
-	if (!path || !path[0] || !podcastdl_owns(path)) {
+	if (!path || !path[0] || !podcastdl_owns(path) || !podcastdl_downloaded(path)) {
 		return;
 	}
 	// The state row stays: an episode of the catalogue keeps its heard mark
@@ -167,7 +175,7 @@ typedef struct {
 	char *path;
 	bool played;
 	long long touched;
-	bool owned; // Sonix put it there: a state row or an episode-id sidecar
+	bool owned; // podcastdl wrote it: its sidecar carries the download marker
 } kept_t;
 
 typedef struct {
@@ -203,9 +211,10 @@ static void kept_add(kept_list_t *list, const char *path) {
 	list->items[list->count].path = copy;
 	list->items[list->count].played = false;
 	list->items[list->count].touched = 0;
-	// Only files Sonix itself saved may be trimmed. A sidecar with an episode
-	// id is one; a file copied in by hand is not, even inside this folder.
-	list->items[list->count].owned = podcastcache_episode_id(path) > 0;
+	// Only files podcastdl actually downloaded may be trimmed. A state row or
+	// an episode-id sidecar is not enough: a hand-copied file gains both once
+	// it is played, so ownership is taken from the downloader's own marker.
+	list->items[list->count].owned = podcastdl_downloaded(path);
 	list->count++;
 }
 
@@ -246,7 +255,7 @@ static void kept_cb(const podcaststate_t *state, void *user) {
 		if (strcmp(list->items[i].path, state->path) == 0) {
 			list->items[i].played = state->played;
 			list->items[i].touched = state->touched;
-			list->items[i].owned = true;
+			// A state row only says the file was played, not who put it here.
 			return;
 		}
 	}
@@ -282,7 +291,9 @@ static int kept_cmp(const void *a, const void *b) {
 	return strcmp(x->path, y->path);
 }
 
-static void kept_trim(kept_list_t *list, int limit) {
+// `protect` is the file a successful download just added: it must not be the
+// one removed to make room for itself.
+static void kept_trim(kept_list_t *list, int limit, const char *protect) {
 	if (list->count <= 0) {
 		return;
 	}
@@ -301,7 +312,7 @@ static void kept_trim(kept_list_t *list, int limit) {
 	int removed = 0;
 	for (int i = 0; i < list->count && list->count - removed > target; i++) {
 		kept_t *item = &list->items[i];
-		if (item->touched == PODCASTSTATE_TOUCHED_NOW) {
+		if (item->touched == PODCASTSTATE_TOUCHED_NOW || (protect && strcmp(item->path, protect) == 0)) {
 			continue;
 		}
 		podcastauto_delete_file(item->path);
@@ -329,8 +340,23 @@ static bool dl_idle(void) {
 	return podcastdl_state(NULL, NULL) == PODCASTDL_IDLE;
 }
 
-static void wait_for_download(void) {
-	for (int i = 0; i < AUTO_BUSY_TRIES && !dl_idle(); i++) {
+// Wait for the single download slot. `ours` means the slot holds this sweep's
+// job: a Wi-Fi transfer switched on mid-download must stop that job at once,
+// not let it keep writing to the card for the rest of a ten-minute wait. The
+// wait ends as soon as our job leaves RUNNING (or the slot goes idle for a
+// foreign job), rather than blindly spending the whole bound.
+static void wait_for_download(bool ours) {
+	for (int i = 0; i < AUTO_BUSY_TRIES; i++) {
+		if (wifitransfer_get_enabled()) {
+			if (ours) {
+				podcastdl_cancel();
+			}
+			break;
+		}
+		podcastdl_state_t state = podcastdl_state(NULL, NULL);
+		if (ours ? state != PODCASTDL_RUNNING : state == PODCASTDL_IDLE) {
+			break;
+		}
 		usleep(AUTO_BUSY_WAIT_MS * 1000);
 	}
 }
@@ -404,12 +430,15 @@ static void sync_feed(const auto_job_t *job) {
 	}
 
 	int slots = opts->limit > 0 ? opts->limit - kept.count : PODCAST_AUTO_MAX_PER_SYNC;
-	if (have_new && opts->limit > 0 && slots <= 0) {
-		// At the cap, make one slot for the new episode: kept_cmp() puts a
-		// heard one first, otherwise the oldest download goes. No eviction
-		// happens when there is nothing new to put in its place.
-		kept_trim(&kept, -1);
-		slots = opts->limit - kept.count;
+	if (opts->limit > 0 && slots <= 0) {
+		if (!have_new) {
+			kept_free(&kept);
+			return;
+		}
+		// At the cap, try one slot for the new episode. The old file is not
+		// removed until a download has actually succeeded: the trim after the
+		// download is the cap enforcer, so an abandoned attempt loses nothing.
+		slots = 1;
 	}
 	if (slots <= 0) {
 		kept_free(&kept);
@@ -438,7 +467,7 @@ static void sync_feed(const auto_job_t *job) {
 		if (podcaststate_get_episode(e->id, &state) && state.played) {
 			continue;
 		}
-		wait_for_download();
+		wait_for_download(false);
 		if (wifitransfer_get_enabled()) {
 			break;
 		}
@@ -451,13 +480,17 @@ static void sync_feed(const auto_job_t *job) {
 		if (!job_id) {
 			continue;
 		}
-		wait_for_download();
+		// wait_for_download() cancels our job if the transfer comes on here.
+		wait_for_download(true);
 		podcastdl_state_t result = PODCASTDL_IDLE;
 		if (podcastdl_job() != job_id) {
 			continue; // a different owner used the slot; do not ack its result
 		}
 		result = podcastdl_state(NULL, NULL);
 		podcastdl_acknowledge();
+		if (wifitransfer_get_enabled()) {
+			break; // cancelled, but the slot has been returned to IDLE
+		}
 		if (result != PODCASTDL_DONE) {
 			continue;
 		}
@@ -470,7 +503,9 @@ static void sync_feed(const auto_job_t *job) {
 			if (wifitransfer_get_enabled()) {
 				break;
 			}
-			kept_trim(&kept, opts->limit);
+			char fresh[900];
+			bool have_fresh = podcastdl_path(e, title, fresh, sizeof(fresh));
+			kept_trim(&kept, opts->limit, have_fresh ? fresh : NULL);
 			slots = opts->limit - kept.count;
 		}
 	}
