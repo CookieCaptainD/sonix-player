@@ -838,6 +838,11 @@ static void consider_candidate(const char *folder, const char *file_name, enum P
 		if (st.st_mtime <= out[i].modified) {
 			return;
 		}
+		// The name must follow the winning file: playlists_import() derives
+		// the playlist name from the path, so keeping the first copy's name
+		// would leave `name` and `exists` describing a file that is not the
+		// one imported (and would misstate the overwrite warning).
+		copy_capped(out[i].name, sizeof(out[i].name), name);
 		copy_capped(out[i].path, sizeof(out[i].path), full);
 		out[i].playlist_location = playlist_location;
 		out[i].modified = st.st_mtime;
