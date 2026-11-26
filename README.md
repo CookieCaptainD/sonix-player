@@ -304,7 +304,7 @@ assets/R3PII/                           (and assets/R1/, the same shape)
 │           │   ├── streaming-keys.bin   Tidal / Qobuz / Podcast Index keys, sealed - see "Streaming keys" below.
 │           │   ├── system-info.json     required: names the player, and the packer writes to it
 │           │   └── GB*-Database.dat     the Game Boy ROM databases
-│           ├── fonts/               default.otf, bold.otf, then japanese, korean, thai and arabic .otf, each with a -bold;
+│           ├── fonts/               default.otf, bold.otf, then japanese, korean, thai, arabic and hebrew .otf, each with a -bold;
 │           │                        ebook/ holds Bookerly for the EPUB reader
 │           └── gui/                 some of the .png assets the UI loads at runtime (Flappy Bird, the remap pictures,
 │                                    the donation QR codes) - the rest are inside the binary.
@@ -539,7 +539,7 @@ sonix-player/
 ├── sonix-player/                    
 │   ├── assets/                      
 │   │   ├── gui/                     some of the .png assets the UI loads at runtime - the rest are inside the binary.
-│   │   ├── fonts/                   the faces: default, bold, Japanese, Korean (Hangul from Pretendard, OFL), Thai, Arabic
+│   │   ├── fonts/                   the faces: default, bold, Japanese, etc.
 │   │   └── icons/                   237 SVGs and PNGs, baked into src/gui/shell/icons.c
 │   │   
 │   │
