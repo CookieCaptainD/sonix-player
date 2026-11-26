@@ -17,12 +17,15 @@
 #include "src/gui/shell/toast.h"
 #include "src/system/core/lang.h"
 #include "src/system/device/clock.h"
+#include "src/system/device/power.h"
 #include "petcompat.h"
 
-// A long gap between two timer ticks is the panel having been dark, not a slow
-// frame: the run is held until a touch rather than finished on a score nobody
-// saw. This is the games framework's rule too (games.h:16-24, GAME_STALL_US in
-// games.h and the check in games.c's tick_cb).
+// The three page timers live as long as the page and are each registered once
+// with power.c, so they are stopped outright while the panel is dark. A long
+// gap between two ticks of a running timer is therefore something else (a
+// suspend), and the run is held until a touch rather than finished on a score
+// nobody saw. This is the games framework's rule too (games.h:16-24 and the
+// check in games.c's tick_cb).
 #define PET_GAME_STALL_MS 250
 
 lv_obj_t *petpage_screen;
@@ -1949,14 +1952,25 @@ static void advance_frame(void) {
 #define TAP_TRAVEL_MS 1100 // how long a note takes to fall the lane
 #define TAP_LANE_H 150
 
+// Regression guards for the beat interval. The old code left tap_beat_ms at
+// zero: all sixteen beats landed at t=0, the run ended in 700 ms with no score
+// and the once-a-day attempt was spent on a game nobody could play. The interval
+// is now armed from PET_RHYTHM_BEAT_MS on every open; these asserts keep that
+// constant at a value that gives separate beats and a full-length run.
+_Static_assert(PET_RHYTHM_BEAT_MS > 2 * PET_RHYTHM_GOOD_MS,
+	       "tap beat interval must exceed the GOOD window");
+_Static_assert(PET_RHYTHM_BEATS * PET_RHYTHM_BEAT_MS + 700 >= 8000,
+	       "a fresh tap run must last long enough to play sixteen beats");
+
 static int tap_score(void) { return tap_points * 100 / (PET_RHYTHM_BEATS * 2); }
 
 static void tap_show_score(void) { lv_label_set_text_fmt(tap_score_label, tr("pet_tap_score"), tap_score()); }
 
 static void tap_close(void) {
 	if (tap_timer) {
-		lv_timer_delete(tap_timer);
-		tap_timer = NULL;
+		// Registered with power.c for the page's lifetime: pause it here,
+		// never delete it, or the registry would keep a freed pointer.
+		lv_timer_pause(tap_timer);
 	}
 	if (tap_sheet) {
 		lv_obj_set_hidden(tap_sheet, true);
@@ -2114,13 +2128,17 @@ static void tap_open(void) {
 	tap_start_ms = lv_tick_get();
 	tap_last_ms = tap_start_ms;
 	tap_held = false;
-	// This timer is deleted on every close and on page unload. Do not register
-	// it with power_pause_in_standby(): that registry never unregisters and
-	// would be left holding a freed pointer. The gap check in tap_tick_cb()
-	// holds the run instead.
+	// Arm the beat interval for every fresh run. Leaving it zero collapsed all
+	// sixteen beats to t=0 and ended the game in under a second with no score.
+	tap_beat_ms = PET_RHYTHM_BEAT_MS;
 	if (!tap_timer) {
 		tap_timer = lv_timer_create(tap_tick_cb, TAP_TIMER_MS, NULL);
+		lv_timer_pause(tap_timer);
+		// One timer for the page's lifetime, registered once: power.c stops
+		// it while the panel is dark, so no beat is paid out unseen.
+		power_pause_in_standby(tap_timer);
 	}
+	lv_timer_resume(tap_timer);
 }
 
 static void tap_open_cb(lv_event_t *e) {
@@ -2335,8 +2353,9 @@ static void box_done_cb(lv_event_t *e) {
 
 static void treat_close(void) {
 	if (treat_timer) {
-		lv_timer_delete(treat_timer);
-		treat_timer = NULL;
+		// Registered with power.c for the page's lifetime: pause, never
+		// delete (see tap_close()).
+		lv_timer_pause(treat_timer);
 	}
 	if (treat_sheet) {
 		lv_obj_set_hidden(treat_sheet, true);
@@ -2445,12 +2464,14 @@ static void treat_open_cb(lv_event_t *e) {
 	treat_start_ms = lv_tick_get();
 	treat_last_ms = (uint32_t)treat_start_ms;
 	treat_held = false;
-	// Deleted on close/finish and on page unload: never give this short-lived
-	// timer to power_pause_in_standby(), whose registry has no removal path.
-	// treat_tick_cb()'s gap check holds the run instead.
 	if (!treat_timer) {
 		treat_timer = lv_timer_create(treat_tick_cb, TREAT_TIMER_MS, NULL);
+		lv_timer_pause(treat_timer);
+		// One timer for the page's lifetime, registered once: power.c stops
+		// it while the panel is dark, so no note is paid out unseen.
+		power_pause_in_standby(treat_timer);
 	}
+	lv_timer_resume(treat_timer);
 }
 
 static void build_treat(void) {
@@ -3353,11 +3374,14 @@ static void screen_loaded_cb(lv_event_t *e) {
 	consume_events();
 	paint();
 	sync_animation();
-	// page_timer is deleted on unload, so it cannot go into power.c's
-	// lifetime-only standby registry either.
 	if (!page_timer) {
 		page_timer = lv_timer_create(page_timer_cb, 1000, NULL);
+		lv_timer_pause(page_timer);
+		// Kept for the page's lifetime and registered once, so it is stopped
+		// while the panel is dark instead of repainting a hidden page.
+		power_pause_in_standby(page_timer);
 	}
+	lv_timer_resume(page_timer);
 }
 
 static void screen_unloaded_cb(lv_event_t *e) {
@@ -3369,8 +3393,9 @@ static void screen_unloaded_cb(lv_event_t *e) {
 	wardrobe_close();
 	box_close(); // also stops the treat timer and hides its sheet
 	if (page_timer) {
-		lv_timer_delete(page_timer);
-		page_timer = NULL;
+		// Registered with power.c for the page's lifetime: pause, never
+		// delete, or the registry would keep a freed pointer.
+		lv_timer_pause(page_timer);
 	}
 	stop_animations();
 	// The last couple of minutes of music are in memory only: put them on the

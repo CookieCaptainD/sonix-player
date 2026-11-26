@@ -20,6 +20,9 @@
 #define PET_RHYTHM_BEATS 16
 #define PET_RHYTHM_PERFECT_MS 120
 #define PET_RHYTHM_GOOD_MS 260
+// 100 BPM. Longer than twice the GOOD window so neighbouring beats never
+// share a judging moment, and long enough that sixteen beats are a real game.
+#define PET_RHYTHM_BEAT_MS 600
 #define PET_VOLUME_FLOOR 10
 
 typedef enum {

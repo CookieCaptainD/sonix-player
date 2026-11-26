@@ -15,7 +15,7 @@
 // playback state is petwatch.c. This file only draws what those two answer.
 //
 // Nothing is built at start-up: petpage_init() remembers the panel, and the
-// first visit draws the page. The page's one-second timer exists only while it
+// first visit draws the page. The page's one-second timer runs only while it
 // is on screen, and the creature's slow breathing runs while the page is up --
 // faster, never fast, while something is playing, when it also steps from side
 // to side. It blinks every few seconds and fidgets now and then.
