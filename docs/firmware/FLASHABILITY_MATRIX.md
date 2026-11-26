@@ -11,11 +11,11 @@ not flashability approval.
 |Target filename|`r1.upt`|`r3proii.upt`|`v1.upt`|
 |Image built by `make <device>`|PASS (`r1.upt` 49,932,288 B)|PASS (image built, but gate REJECTED)|PASS (`v1.upt` 49,539,072 B)|
 |Hardware identity verified on device|SOURCE ONLY|SOURCE ONLY|SOURCE ONLY|
-|Package format verified (ISO 9660, metadata)|PASS (r1.upt parsed)|FAIL (independent review: `ota_compatibility.in` absent)|NOT TESTED (stock 1.3 parsed: required OTA metadata absent)|
-|Device metadata verified|PASS (`HiBy R1` in rootfs)|PASS (independent: `HiBy R3 Pro II` in generated rootfs)|NOT TESTED (stock has no `system-info.json`)|
+|Package format verified (ISO 9660, metadata)|PASS (r1.upt parsed)|FAIL (independent review: `ota_compatibility.in` absent)|PASS (`v1.upt` parsed; ISO 9660 and required OTA metadata present)|
+|Device metadata verified|PASS (`HiBy R1` in rootfs)|PASS (independent: `HiBy R3 Pro II` in generated rootfs)|PASS (`TempoTec V1` in generated rootfs)|
 |Components inspected|PASS (kernel + rootfs, 6 + 89 chunks)|PASS (independent: kernel/rootfs integrity)|PASS (independent: stock kernel/rootfs integrity)|
 |Checksums validated (internal consistency only)|PASS (MD5 chain, manifest, per-component MD5 declared in image)|PASS (independent)|PASS (independent, stock)|
-|Compatibility metadata present|PASS (`hiby_r1_x1600_auto_rf_auto`)|FAIL (marker absent from stock and generated image)|FAIL (stock marker `tempotec_v1_x1600_auto` present; no generated image)|
+|Compatibility metadata present|PASS (`hiby_r1_x1600_auto_rf_auto`)|FAIL (marker absent from stock and generated image)|PASS (`tempotec_v1_x1600_auto`, stock marker preserved in generated image)|
 |Signature requirements understood|SOURCE ONLY (no signature scheme found; vendor requirement unknown)|SOURCE ONLY|SOURCE ONLY|
 |Wrong-device rejection tested|PASS (r1.upt rejected as r3proii and as v1)|PASS (same negative control, independently repeated)|PASS (stock V1 rejected as Sonix firmware)|
 |Corrupted-image rejection tested|PASS (truncated + byte-corrupt rejected)|PASS (independent: truncated and byte-flip rejected)|NOT TESTED|

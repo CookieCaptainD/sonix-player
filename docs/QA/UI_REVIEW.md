@@ -15,9 +15,13 @@ The first genuine screenshot was captured from a prebuilt binary in this session
   which triggers the application's own screenshot path (`main.c:76-86`,
   `screenshot.c:19,99-128`) and writes a PNG from the SDL renderer
   (`main.c:1299-1319`).
-* Result: `docs/QA/screenshots/r1/main.png`, 44,443 bytes, 480×800. The image was
-  opened and inspected: it shows the main tile grid (music, streaming, wireless,
-  audiobooks, more, settings) with status bar.
+* Result of that first capture: a 44,443-byte, 480×800 PNG, opened and
+  inspected; it shows the main tile grid (music, streaming, wireless,
+  audiobooks, more, settings) with status bar. That early capture was later
+  replaced. The committed `docs/QA/screenshots/r1/main.png` is **not** that
+  file: it is 44,892 bytes, 480×800, captured from the freshly rebuilt host
+  simulator described in "Additional captures after the V1 port" and in the
+  Limitations section below.
 
 This is emulator/simulator evidence. It is **not** physical hardware validation
 and **not** firmware screenshot evidence.
@@ -26,10 +30,11 @@ and **not** firmware screenshot evidence.
 
 ![HiBy R1 main screen, host SDL simulator](screenshots/r1/main.png)
 
-**Figure 1.** HiBy R1 main screen, host SDL simulator, 480×800. Captured from the
-project's own screenshot path using a prebuilt simulator binary; exact commit
-unknown. Demonstrates the six-tile home screen and status bar. No claim is made
-about device rendering.
+**Figure 1.** HiBy R1 main screen, host SDL simulator, 480×800 (committed file:
+44,892 B). Captured from the project's own screenshot path using the freshly
+rebuilt simulator binary in this worktree with the R1 `system-info.json`; the
+original 44,443-byte prebuilt-binary capture was replaced. Demonstrates the
+six-tile home screen and status bar. No claim is made about device rendering.
 
 ## Additional captures after the V1 port
 
