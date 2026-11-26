@@ -31,6 +31,7 @@ typedef struct {
 #define T9_LATIN_LOWER ".,?!\'", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
 #define T9_LATIN_UPPER ".,?!\'", "ABC", "DEF", "GHI", "JKL", "MNO", "PQRS", "TUV", "WXYZ"
 
+// TODO: (probably) move keyboard layout definitions into the language .ini files, so that everything is in one place and it's easier to keep it updated/organized
 static const layout_info_t layouts[KB_LAYOUT_COUNT] = {
 	[KB_LAYOUT_ENGLISH] = {"English",
 						   {"qwertyuiop", "asdfghjkl", "zxcvbnm"},
