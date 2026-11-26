@@ -221,8 +221,9 @@ void power_set_standby_enabled(bool enabled);
 void power_set_standby_after(uint32_t seconds);
 
 // How often to wake from standby to check for a freshly plugged cable, in
-// seconds ([power] usb_wake_check_seconds). Only 0 (off), 15, 30 and 60 are
-// accepted; anything else is clamped to 0. The check shares the single RTC
+// seconds ([power] usb_wake_check_seconds). 0 disables the check; other values
+// are rounded by usbwake_normalize_seconds() (20 -> 30, 1 -> 15, 61 -> 60).
+// The check shares the single RTC
 // alarm with the automatic shutdown and the battery check, and only runs while
 // no cable is present.
 void power_set_usb_wake_check(uint32_t seconds);
