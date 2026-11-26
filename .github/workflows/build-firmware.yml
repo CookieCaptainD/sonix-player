@@ -67,10 +67,21 @@ jobs:
           python3 -m pip install --disable-pip-version-check -q pyyaml
           python3 -c 'import yaml,sys; d=yaml.safe_load(open(sys.argv[1])); print("jobs:", ", ".join(d["jobs"]))' .github/workflows/build-firmware.yml
 
-      - name: Makefile dry run
+      - name: Makefile parse check
         run: |
           set -euo pipefail
-          make -n r1 r3proii v1 all validate
+          # Do not dry-run r1/r3proii/v1/all: GNU make still executes recipe
+          # lines containing $(MAKE) under -n. The app target recurses into
+          # sonix-player, whose dependency recipes recurse into FreeType/Opus
+          # before the preceding tar xf recipe has been printed but not run.
+          # Parse the Makefiles instead. -q never runs recipes; exit 1 only
+          # means the default goal is out of date, while >=2 is a parse error.
+          make -n help > /dev/null
+          mkdir -p sonix-player/lvgl  # satisfy the parse-time wildcard, no clone
+          status=0
+          make -C sonix-player -qp > /dev/null 2>&1 || status=$?
+          test "$status" -le 1
+          echo "Makefile parse OK"
 
   firmware:
     name: Build ${{ matrix.device }}
