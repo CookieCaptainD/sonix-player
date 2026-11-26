@@ -32,6 +32,7 @@
 #define AUTO_EPISODES 32 // one page of a feed per sync
 #define AUTO_BUSY_WAIT_MS 250
 #define AUTO_BUSY_TRIES 2400 // ten minutes: an episode is an hour long at most
+#define AUTO_CANCEL_TRIES 40 // ten seconds for a cancelled job to wind down
 
 void podcastauto_get(long long feed_id, podcastauto_opts_t *out) {
 	if (!out) {
@@ -341,24 +342,35 @@ static bool dl_idle(void) {
 }
 
 // Wait for the single download slot. `ours` means the slot holds this sweep's
-// job: a Wi-Fi transfer switched on mid-download must stop that job at once,
-// not let it keep writing to the card for the rest of a ten-minute wait. The
-// wait ends as soon as our job leaves RUNNING (or the slot goes idle for a
-// foreign job), rather than blindly spending the whole bound.
-static void wait_for_download(bool ours) {
+// job `job_id`: a Wi-Fi transfer switched on mid-download must stop that job at
+// once, not let it keep writing to the card for the rest of a ten-minute wait.
+// Cancellation is asynchronous -- download_main() sets PODCASTDL_CANCELLED only
+// when its thread winds up -- so after cancelling we wait briefly for that
+// terminal state. The caller then acknowledges a terminal result; acknowledging
+// a still-RUNNING slot is a no-op that would leave it stuck and stall later
+// sweeps. A foreign slot is never cancelled: it is left to its owner and only
+// waited on until it goes IDLE (or the transfer comes on). Returns the last
+// state seen.
+static podcastdl_state_t wait_for_download(bool ours, long long job_id) {
 	for (int i = 0; i < AUTO_BUSY_TRIES; i++) {
 		if (wifitransfer_get_enabled()) {
-			if (ours) {
+			if (ours && podcastdl_job() == job_id) {
 				podcastdl_cancel();
+				for (int j = 0; j < AUTO_CANCEL_TRIES && podcastdl_job() == job_id &&
+						 podcastdl_state(NULL, NULL) == PODCASTDL_RUNNING;
+					 j++) {
+					usleep(AUTO_BUSY_WAIT_MS * 1000);
+				}
 			}
 			break;
 		}
 		podcastdl_state_t state = podcastdl_state(NULL, NULL);
-		if (ours ? state != PODCASTDL_RUNNING : state == PODCASTDL_IDLE) {
+		if (ours ? (podcastdl_job() != job_id || state != PODCASTDL_RUNNING) : state == PODCASTDL_IDLE) {
 			break;
 		}
 		usleep(AUTO_BUSY_WAIT_MS * 1000);
 	}
+	return podcastdl_state(NULL, NULL);
 }
 
 static void feed_folder(long long feed_id, char *out, size_t size, char *title, size_t title_size) {
@@ -467,7 +479,7 @@ static void sync_feed(const auto_job_t *job) {
 		if (podcaststate_get_episode(e->id, &state) && state.played) {
 			continue;
 		}
-		wait_for_download(false);
+		wait_for_download(false, 0);
 		if (wifitransfer_get_enabled()) {
 			break;
 		}
@@ -480,13 +492,13 @@ static void sync_feed(const auto_job_t *job) {
 		if (!job_id) {
 			continue;
 		}
-		// wait_for_download() cancels our job if the transfer comes on here.
-		wait_for_download(true);
-		podcastdl_state_t result = PODCASTDL_IDLE;
+		// A transfer switched on here cancels our job only while the slot is
+		// still ours, and waits for its terminal state so the acknowledge below
+		// actually returns the slot to IDLE before we break.
+		podcastdl_state_t result = wait_for_download(true, job_id);
 		if (podcastdl_job() != job_id) {
 			continue; // a different owner used the slot; do not ack its result
 		}
-		result = podcastdl_state(NULL, NULL);
 		podcastdl_acknowledge();
 		if (wifitransfer_get_enabled()) {
 			break; // cancelled, but the slot has been returned to IDLE
