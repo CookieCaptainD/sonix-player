@@ -799,7 +799,9 @@ bool http_request(const char *url, const http_req_t *req, char **out, size_t *ou
 	snprintf(current, sizeof(current), "%s", url);
 
 	// The request changes hop by hop: after a redirect that changes the
-	// method, what gets re-sent is a GET with no body.
+	// method, what gets re-sent is a GET with no body. A redirect to another
+	// authority drops the body as well (see below), so a POST's payload is
+	// never replayed there.
 	http_req_t hop_req = *req;
 
 	for (int hop = 0; hop <= HTTP_MAX_REDIRECTS; hop++) {
@@ -846,8 +848,8 @@ bool http_request(const char *url, const http_req_t *req, char **out, size_t *ou
 		// absolute one may switch between http and https, and plenty of hosts
 		// answer port 80 with nothing but a redirect to their https self.
 		// Validate the next hop before contacting it: authenticated API calls
-		// must never be downgraded from https to cleartext, and credentials
-		// in extra_headers must not follow a redirect to another authority.
+		// must never be downgraded from https to cleartext. Neither headers
+		// nor a request body may follow a redirect to another authority.
 		char next[2600];
 		if (location[0] == '/') {
 			char base[512];
@@ -866,7 +868,21 @@ bool http_request(const char *url, const http_req_t *req, char **out, size_t *ou
 			return false;
 		}
 		if (u.secure != next_u.secure || strcasecmp(u.host, next_u.host) != 0 || u.port != next_u.port) {
+			// 307 and 308 keep the method and body verbatim, and jf_authenticate()
+			// puts the user's password in that body. Refuse a non-GET/HEAD
+			// request here rather than replay it against a different origin.
+			// Same-authority redirects keep the method and body unchanged.
+			const char *method = hop_req.method && hop_req.method[0] ? hop_req.method : "GET";
+			if (strcmp(method, "GET") != 0 && strcmp(method, "HEAD") != 0) {
+				set_last_error("cross-origin %d redirect with %s method refused: %s", status, method, next);
+				return false;
+			}
+			// Defence in depth: even a GET that carries a body must not send
+			// it to the new authority. Content-Type belongs to that body.
 			hop_req.extra_headers = NULL;
+			hop_req.body = NULL;
+			hop_req.body_len = 0;
+			hop_req.content_type = NULL;
 		}
 		snprintf(current, sizeof(current), "%s", next);
 	}
