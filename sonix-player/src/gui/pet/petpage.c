@@ -17,7 +17,6 @@
 #include "src/gui/shell/toast.h"
 #include "src/system/core/lang.h"
 #include "src/system/device/clock.h"
-#include "src/system/device/power.h"
 #include "petcompat.h"
 
 // A long gap between two timer ticks is the panel having been dark, not a slow
@@ -1989,9 +1988,9 @@ static void tap_tick_cb(lv_timer_t *timer) {
 		return;
 	}
 
-	// The timer is paused in standby, so its first tick after a wake reports the
-	// whole dark gap. Hold the run rather than let the elapsed time below finish
-	// it unseen; the next tap resumes it from where it stopped.
+	// A long gap between ticks (a suspend, or a timer stalled while the panel
+	// is dark) must not let the elapsed time below finish the run unseen. Hold
+	// it; the next tap resumes it from where it stopped.
 	uint32_t gap = lv_tick_elaps(tap_last_ms);
 	if (gap > PET_GAME_STALL_MS) {
 		tap_held = true;
@@ -2115,11 +2114,12 @@ static void tap_open(void) {
 	tap_start_ms = lv_tick_get();
 	tap_last_ms = tap_start_ms;
 	tap_held = false;
+	// This timer is deleted on every close and on page unload. Do not register
+	// it with power_pause_in_standby(): that registry never unregisters and
+	// would be left holding a freed pointer. The gap check in tap_tick_cb()
+	// holds the run instead.
 	if (!tap_timer) {
 		tap_timer = lv_timer_create(tap_tick_cb, TAP_TIMER_MS, NULL);
-		if (tap_timer) {
-			power_pause_in_standby(tap_timer);
-		}
 	}
 }
 
@@ -2367,9 +2367,8 @@ static void treat_tick_cb(lv_timer_t *timer) {
 	if (!treat_visible) {
 		return;
 	}
-	// As in the tap game, the first tick after standby carries the whole dark
-	// gap. Hold the run here so the pass count below cannot reach TREAT_NOTES
-	// and pay notes on a screen nobody is watching.
+	// As in the tap game, a long gap between ticks must not let the pass count
+	// below reach TREAT_NOTES and pay notes on a screen nobody is watching.
 	uint32_t gap = lv_tick_elaps(treat_last_ms);
 	if (gap > PET_GAME_STALL_MS) {
 		treat_held = true;
@@ -2446,11 +2445,11 @@ static void treat_open_cb(lv_event_t *e) {
 	treat_start_ms = lv_tick_get();
 	treat_last_ms = (uint32_t)treat_start_ms;
 	treat_held = false;
+	// Deleted on close/finish and on page unload: never give this short-lived
+	// timer to power_pause_in_standby(), whose registry has no removal path.
+	// treat_tick_cb()'s gap check holds the run instead.
 	if (!treat_timer) {
 		treat_timer = lv_timer_create(treat_tick_cb, TREAT_TIMER_MS, NULL);
-		if (treat_timer) {
-			power_pause_in_standby(treat_timer);
-		}
 	}
 }
 
@@ -3354,11 +3353,10 @@ static void screen_loaded_cb(lv_event_t *e) {
 	consume_events();
 	paint();
 	sync_animation();
+	// page_timer is deleted on unload, so it cannot go into power.c's
+	// lifetime-only standby registry either.
 	if (!page_timer) {
 		page_timer = lv_timer_create(page_timer_cb, 1000, NULL);
-		if (page_timer) {
-			power_pause_in_standby(page_timer);
-		}
 	}
 }
 
