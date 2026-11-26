@@ -69,9 +69,10 @@ const char *tr(const char *text);
 const char *lang_current(void);
 
 // The languages found in the directory, for the settings page. `names` must
-// hold MAX_LANGUAGES pointers. The function fills them, in alphabetical order
-// by file name, with pointers that stay valid, and returns how many were
-// written.
+// hold MAX_LANGUAGES pointers. The function fills them with pointers that stay
+// valid and returns how many were written. Names come back in the library's
+// list order by file name: case and accents fold, scripts group, and leading
+// articles follow the music setting.
 int lang_list(const char **names);
 
 // A language's name as it is spelled, rather than as its file is named.

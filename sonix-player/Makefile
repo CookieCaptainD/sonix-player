@@ -235,12 +235,11 @@ all: host compile_commands.json
 
 host: $(HOST_BIN) compile_commands.json
 
-# Host check for the language list. The test supplies its own main, so the
-# player's main.o stays out; the few symbols it defines for display and the
-# game boy core are unused by this test and left unresolved at link time.
+# Host check for the language list. The test supplies its own main and stubs
+# the five display helpers that main.c defines, so main.o stays out.
 test-lang-sort: $(HOST_BIN)
 	$(CC) $(HOST_CFLAGS) -c tests/lang_sort_test.c -o build_host/lang_sort_test.o
-	$(HOST_LD) -Wl,--unresolved-symbols=ignore-all -o build_host/lang_sort_test \
+	$(HOST_LD) -o build_host/lang_sort_test \
 		build_host/lang_sort_test.o $(filter-out build_host/main.o,$(HOST_OBJS)) $(HOST_LDFLAGS)
 	build_host/lang_sort_test
 
