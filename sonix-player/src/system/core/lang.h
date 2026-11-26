@@ -72,7 +72,7 @@ const char *lang_current(void);
 // hold MAX_LANGUAGES pointers. The function fills them with pointers that stay
 // valid and returns how many were written. Names come back in the library's
 // list order by file name: case and accents fold, scripts group, and leading
-// articles follow the music setting.
+// articles follow the music setting when the list is built.
 int lang_list(const char **names);
 
 // A language's name as it is spelled, rather than as its file is named.
