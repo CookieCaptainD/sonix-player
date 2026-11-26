@@ -35,6 +35,7 @@
 #include "src/system/net/wifi.h"
 #include "src/system/net/wifitransfer.h"
 #include "src/system/lastfm/lastfm.h"
+#include "src/system/listenbrainz/listenbrainz.h"
 #include "src/system/bluetooth/bluetooth.h"
 #include "src/system/bluetooth/btreceiver.h"
 #include "src/gui/board_profile.h"
@@ -643,7 +644,7 @@ static bool wifi_in_use(void) {
 		   wifitransfer_get_enabled() || qobuzcache_downloading_id() > 0 ||
 		   qobuzcache_network_wanted() || tidalcache_downloading_id() > 0 || tidalcache_network_wanted() ||
 		   podcastcache_downloading_id() > 0 || podcastcache_network_wanted() || podcastdl_busy() ||
-		   lastfm_network_wanted() || ota_busy();
+		   lastfm_network_wanted() || listenbrainz_network_wanted() || ota_busy();
 }
 
 // Pushes the next suspend attempt out by the anti-hammer delay. A radio that has

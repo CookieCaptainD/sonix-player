@@ -5,18 +5,15 @@
 
 #include "src/gui/fonts/fonts.h"
 #include "src/gui/shell/confirm.h"
+#include "src/gui/shell/icons.h"
 #include "src/gui/shell/keyboard.h"
 #include "src/gui/shell/settingsrow.h"
 #include "src/gui/shell/switcher.h"
 #include "src/gui/shell/theme.h"
 #include "src/gui/shell/toast.h"
-#include "src/system/audio/audio.h"
 #include "src/system/core/lang.h"
 #include "src/system/listenbrainz/listenbrainz.h"
-#include "src/system/playback/audiobook.h"
-#include "src/system/playback/device_state.h"
-#include "src/system/streaming/podcastcache.h"
-#include "src/system/streaming/radio.h"
+#include "src/system/net/wifi.h"
 
 #define TICK_MS 1000
 
@@ -31,45 +28,41 @@ static lv_obj_t *login_screen;
 static lv_obj_t *token_field;
 static keyboard_t *login_keyboard;
 
+static unsigned seen_login_serial;
+static bool waiting_for_login;
+
 lv_obj_t *listenbrainzsettings_screen(void) { return page_screen; }
-
-// ---------------------------------------------------------------------------
-// the page
-// ---------------------------------------------------------------------------
-
-// Whether a token is held, for the account row. The status struct carries no
-// token, and the state machine is the only other way to ask.
-static bool token_held(void) {
-	listenbrainz_status_t st;
-	listenbrainz_get_status(&st);
-	return st.state == LISTENBRAINZ_STATE_CONNECTED || st.state == LISTENBRAINZ_STATE_REFUSED;
-}
 
 static void refresh(void) {
 	listenbrainz_status_t st;
 	listenbrainz_get_status(&st);
 
-	if (st.enabled) {
+	if (st.enabled)
 		lv_obj_add_state(enabled_switch, LV_STATE_CHECKED);
-	} else {
+	else
 		lv_obj_remove_state(enabled_switch, LV_STATE_CHECKED);
-	}
 
-	lv_label_set_text(account_value, token_held() ? tr("listenbrainz_signed_in") : tr("listenbrainz_not_signed_in"));
+	lv_label_set_text(account_value, st.user[0] ? st.user : tr("listenbrainz_not_signed_in"));
 
 	const char *status = "";
 	switch (st.state) {
+	case LISTENBRAINZ_STATE_UNAVAILABLE:
+		status = tr("listenbrainz_unavailable");
+		break;
 	case LISTENBRAINZ_STATE_OFF:
-		status = tr("listenbrainz_state_off");
+		status = tr("lastfm_state_off");
 		break;
 	case LISTENBRAINZ_STATE_SIGNED_OUT:
 		status = tr("listenbrainz_not_signed_in");
 		break;
+	case LISTENBRAINZ_STATE_SIGNING_IN:
+		status = tr("lastfm_state_signing_in");
+		break;
 	case LISTENBRAINZ_STATE_CONNECTED:
 		status = tr("connected");
 		break;
-	case LISTENBRAINZ_STATE_TOKEN_EXPIRED:
-		status = tr("listenbrainz_token_expired");
+	case LISTENBRAINZ_STATE_SESSION_EXPIRED:
+		status = tr("listenbrainz_state_session_expired");
 		break;
 	case LISTENBRAINZ_STATE_REFUSED:
 		status = st.detail;
@@ -95,27 +88,32 @@ static void enabled_cb(lv_event_t *e) {
 	listenbrainz_set_enabled(on);
 	listenbrainz_status_t st;
 	listenbrainz_get_status(&st);
-	// Switched on with no usable account behind it: the token is the next
-	// step, whether there never was one or ListenBrainz refused the last.
-	if (on && !token_held() && st.state != LISTENBRAINZ_STATE_OFF) {
+	if (on && !st.user[0] && st.state != LISTENBRAINZ_STATE_SIGNING_IN)
 		open_login();
-	}
 	refresh();
 }
 
-static void do_signout(void *user) {
+static void do_logout(void *user) {
 	(void)user;
-	listenbrainz_signout();
+	listenbrainz_logout();
 	toast_success("signed_out");
 	refresh();
 }
 
 static void account_cb(lv_event_t *e) {
 	(void)e;
-	if (token_held()) {
-		char message[160];
-		snprintf(message, sizeof(message), tr("sign_out_confirm_note"), "ListenBrainz");
-		confirm_show("listenbrainz_sign_out", message, "leave", do_signout, NULL);
+	listenbrainz_status_t st;
+	listenbrainz_get_status(&st);
+	if (st.state == LISTENBRAINZ_STATE_SIGNING_IN)
+		return;
+	if (st.user[0]) {
+		char message[320];
+		// Signing out throws away the listens still waiting to be sent: say so.
+		if (st.queued > 0)
+			snprintf(message, sizeof(message), tr("listenbrainz_sign_out_queued_note"), st.queued);
+		else
+			snprintf(message, sizeof(message), tr("sign_out_confirm_note"), "ListenBrainz");
+		confirm_show("listenbrainz_sign_out", message, "leave", do_logout, NULL);
 		return;
 	}
 	open_login();
@@ -132,14 +130,15 @@ static void build_page(gui_config_t *cfg) {
 
 	settingsrow_toggle(container, "listenbrainz_scrobble", &enabled_switch, enabled_cb);
 	settingsrow_add(container, "listenbrainz_account", &account_value, account_cb, NULL);
-	settingsrow_add(container, "listenbrainz_status", &status_value, NULL, NULL);
-	settingsrow_add(container, "listenbrainz_queued", &queued_value, NULL, NULL);
+	settingsrow_add(container, "lastfm_status", &status_value, NULL, NULL);
+	settingsrow_add(container, "lastfm_queued", &queued_value, NULL, NULL);
 
-	// A message from ListenBrainz can be longer than the room beside the row's
-	// name: one line, cut with an ellipsis.
-	lv_obj_set_style_max_width(status_value, lv_pct(60), 0);
-	lv_obj_set_height(status_value, lv_font_get_line_height(&font_ui_24));
-	lv_label_set_long_mode(status_value, LV_LABEL_LONG_DOT);
+	lv_obj_t *values[] = {account_value, status_value};
+	for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+		lv_label_set_long_mode(values[i], LV_LABEL_LONG_DOT);
+		lv_obj_set_style_max_width(values[i], lv_pct(60), 0);
+		lv_obj_set_height(values[i], lv_font_get_line_height(&font_ui_24));
+	}
 
 	note_label = lv_label_create(container);
 	lv_label_set_long_mode(note_label, LV_LABEL_LONG_WRAP);
@@ -152,43 +151,58 @@ static void build_page(gui_config_t *cfg) {
 	switcher_attach_back_gesture(page_screen);
 }
 
-// ---------------------------------------------------------------------------
-// the token
-// ---------------------------------------------------------------------------
+static void field_focus_cb(lv_event_t *e) {
+	(void)e;
+	keyboard_set_field(login_keyboard, token_field);
+	lv_obj_add_state(token_field, LV_STATE_FOCUSED);
+	keyboard_show_caret(token_field, true);
+}
 
-static void token_accept_cb(lv_event_t *e) {
+static void login_accept_cb(lv_event_t *e) {
 	(void)e;
 	const char *tok = lv_textarea_get_text(token_field);
-	if (!tok || !tok[0]) {
+	if (!tok || !tok[strspn(tok, " \t\r\n")]) {
 		toast_error("listenbrainz_token_required");
 		return;
 	}
-	// Signing in is local: the token is stored and every request from now on
-	// carries it. A token ListenBrainz will not take is found by the first
-	// listen sent with it, not here.
-	listenbrainz_signin(tok);
-	lv_textarea_set_text(token_field, "");
-	if (lv_screen_active() == login_screen) {
-		back_btn_cb(NULL);
+	if (!listenbrainz_available()) {
+		toast_error("listenbrainz_unavailable");
+		return;
 	}
-	toast_success("signed_in");
-	refresh();
+	wifi_status_t wifi;
+	wifi_get_status(&wifi);
+	if (wifi.state != WIFI_STATE_CONNECTED || !wifi.ip[0]) {
+		toast_error("enable_wi_fi_first");
+		return;
+	}
+
+	// Only wait for a result the worker has actually taken on, or the busy
+	// toast would never end.
+	bool taken = listenbrainz_login(tok);
+	lv_textarea_set_text(token_field, "");
+	if (!taken) {
+		toast_error("listenbrainz_wrong_token");
+		return;
+	}
+	waiting_for_login = true;
+	toast_busy("lastfm_state_signing_in");
 }
 
 static lv_obj_t *make_field(lv_obj_t *parent, gui_config_t *cfg, const char *placeholder, int y) {
 	lv_obj_t *field = lv_textarea_create(parent);
 	lv_textarea_set_one_line(field, true);
 	lv_textarea_set_placeholder_text(field, tr(placeholder));
-	lv_obj_set_size(field, cfg->screen_width - 2 * cfg->padding, cfg->screen_width < 320 ? 44 : 62);
+	lv_obj_set_size(field, cfg->screen_width - 2 * cfg->padding, 62);
 	lv_obj_set_scrollbar_mode(field, LV_SCROLLBAR_MODE_OFF);
 	lv_obj_align(field, LV_ALIGN_TOP_LEFT, cfg->padding, y);
 	lv_obj_add_style(field, &theme_style_card, 0);
 	lv_obj_set_style_radius(field, 12, 0);
 	lv_obj_set_style_border_width(field, 0, 0);
 	lv_obj_set_style_shadow_width(field, 0, 0);
-	lv_obj_set_style_pad_all(field, cfg->screen_width < 320 ? 8 : 14, 0);
+	lv_obj_set_style_pad_all(field, 14, 0);
 	lv_obj_set_style_text_font(field, &font_ui_24, 0);
 	keyboard_style_caret(field);
+	lv_obj_add_event_cb(field, field_focus_cb, LV_EVENT_CLICKED, NULL);
 	return field;
 }
 
@@ -204,52 +218,58 @@ static void build_login(gui_config_t *cfg) {
 	lv_obj_t *note = lv_label_create(login_screen);
 	lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
 	lv_obj_set_width(note, cfg->screen_width - 2 * cfg->padding);
-	lv_obj_align(note, LV_ALIGN_TOP_LEFT, cfg->padding, top + (cfg->screen_width < 320 ? 50 : 78));
+	lv_obj_align(note, LV_ALIGN_TOP_LEFT, cfg->padding, top + 78);
 	lv_obj_add_style(note, &theme_style_text_dim, 0);
 	lv_obj_set_style_text_font(note, &font_ui_18, 0);
-	lv_label_set_text(note, tr("listenbrainz_token_note"));
-	lv_obj_set_hidden(note, cfg->screen_width < 320);
+	lv_label_set_text(note, tr("listenbrainz_login_note"));
 
-	login_keyboard = keyboard_create(login_screen, cfg->screen_width, cfg->screen_width < 320 ? 144 : 316, token_field, NULL, "ok", token_accept_cb, NULL);
+	login_keyboard = keyboard_create(login_screen, cfg->screen_width, 316, token_field, NULL, "ok", login_accept_cb, NULL);
 	switcher_attach_back_gesture(login_screen);
 }
 
-// ---------------------------------------------------------------------------
-// the timer: what is playing, and the page while it is on screen
-// ---------------------------------------------------------------------------
+static void login_finished(const listenbrainz_status_t *st) {
+	if (!waiting_for_login)
+		return;
+	waiting_for_login = false;
+	toast_busy_end();
+
+	switch (st->login_result) {
+	case LISTENBRAINZ_LOGIN_OK:
+		if (lv_screen_active() == login_screen)
+			back_btn_cb(NULL);
+		toast_success("signed_in");
+		break;
+	case LISTENBRAINZ_LOGIN_WRONG_CREDENTIALS:
+		toast_error("listenbrainz_wrong_token");
+		break;
+	case LISTENBRAINZ_LOGIN_NO_REPLY:
+		toast_error("listenbrainz_no_reply");
+		break;
+	case LISTENBRAINZ_LOGIN_REFUSED:
+		toast_error(st->detail);
+		break;
+	}
+}
 
 static void tick_cb(lv_timer_t *t) {
 	(void)t;
-	if (listenbrainz_active()) {
-		char file[512];
-		audio_get_current_file(file, sizeof(file));
-
-		listenbrainz_playback_t now = {0};
-		now.file = file;
-		now.playing = audio_get_status() == AUDIO_STATUS_PLAYING;
-		audio_get_progress(&now.position, &now.duration);
-
-		// Tags only once device_state has read them for this very file.
-		const char *tags_file = NULL;
-		const song_metadata_t *m = device_state_loaded_metadata(&tags_file);
-		bool tags = file[0] && tags_file && strcmp(tags_file, file) == 0;
-		now.artist = tags ? (m->artist[0] ? m->artist : m->album_artist) : "";
-		now.title = tags ? m->title : "";
-		now.album = tags ? m->album : "";
-
-		now.skip = radio_is_active() || audiobook_is_playing() || podcastcache_is_episode(file);
-		listenbrainz_note_playback(&now);
+	listenbrainz_status_t st;
+	listenbrainz_get_status(&st);
+	if (st.login_serial != seen_login_serial) {
+		seen_login_serial = st.login_serial;
+		login_finished(&st);
 	}
-
-	if (lv_screen_active() == page_screen) {
+	if (lv_screen_active() == page_screen)
 		refresh();
-	}
 }
 
 void listenbrainzsettings_init(gui_config_t *cfg) {
 	build_page(cfg);
 	build_login(cfg);
 
+	listenbrainz_status_t st;
+	listenbrainz_get_status(&st);
+	seen_login_serial = st.login_serial;
 	refresh();
 
 	lv_timer_create(tick_cb, TICK_MS, NULL);
