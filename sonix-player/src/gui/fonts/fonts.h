@@ -24,7 +24,7 @@
 //
 // The last five each have a -bold file for the bold sizes, optional like
 // bold.otf. fonts_init() opens them once and builds one fallback chain per
-// size: default answers first, Korean, Thai, Arabic and Hebrew fill in what it lacks.
+// size: default answers first, Korean, Thai, etc. fill in what it lacks.
 // In Japanese, Rodin answers the CJK letters ahead of default (see fonts.c).
 // FreeType maps the files -- nothing is decoded up front -- and rendered
 // glyphs live in the shared FTC cache (LV_FREETYPE_CACHE_FT_GLYPH_CNT), so

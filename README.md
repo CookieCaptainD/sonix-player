@@ -497,7 +497,7 @@ sonix-player/
 ├── sonix-player/                    
 │   ├── assets/                      
 │   │   ├── gui/                     some of the .png assets the UI loads at runtime - the rest are inside the binary.
-│   │   ├── fonts/                   the faces: default, bold, Japanese, Korean (Hangul from Pretendard, OFL), Thai, Arabic
+│   │   ├── fonts/                   the faces: default, bold, Japanese, etc.
 │   │   └── icons/                   237 SVGs and PNGs, baked into src/gui/shell/icons.c
 │   │   
 │   │
