@@ -116,10 +116,9 @@ static void update_tracks(int hue, int sat, int bright) {
 	sat_grad.stops[1].color = theme_color_hsv((uint16_t)hue, 255, value);
 
 	// picked_color() is hsv(hue, sat, value): 100% brightness is the full
-	// colour, never white, and the stop in between is the half-value colour.
-	// Black -> full colour is that ramp; a white stop points at a colour the
-	// slider cannot produce.
-	bright_grad.stops[0].color = lv_color_black();
+	// colour, never white. The slider covers 20-100%, so start the ramp at
+	// the 20% value rather than black, which it cannot produce.
+	bright_grad.stops[0].color = theme_color_hsv((uint16_t)hue, percent_to_channel(sat), percent_to_channel(20));
 	bright_grad.stops[1].color = theme_color_hsv((uint16_t)hue, percent_to_channel(sat), 255);
 
 	// The descriptors are read when the slider is drawn, so the pixels follow
