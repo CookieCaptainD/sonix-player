@@ -49,6 +49,16 @@
 // source's Italian.
 #define LANG_FIRST_BOOT "English"
 
+// This sets the size of the array that holds the languages.
+//
+// Languages beyond this number will be lost, so this must be updated
+// occasionally as new languages are added.
+#define MAX_LANGUAGES 32
+
+// Sets the maximum length of a language name in bytes (some characters can be
+// more than 1 byte)
+#define LANG_NAME_MAX_BYTES 64
+
 // Reads the language named in the settings (or Italiano) out of `dir`. A
 // missing directory or file is not an error: every tr() then returns its
 // argument and the interface is in Italian, exactly as if this module did not
@@ -64,7 +74,7 @@ const char *lang_current(void);
 
 // The languages found in the directory, for the settings page. `names` is
 // filled with pointers that stay valid; returns how many were written.
-int lang_list(const char **names, int max);
+int lang_list(const char **names);
 
 // A language's name as it is spelled, rather than as its file is named.
 //
