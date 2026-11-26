@@ -1668,12 +1668,20 @@ static bool seek_headset_step(int code) {
 		return false;
 	}
 
-	// A case hold, or an earlier silent headset hold, can leave a scrub open
-	// when this preview starts. Land it before the first excerpt instead of
-	// letting device_state_seek_hold()'s scrub_cancel_only() drop it. This has
-	// to happen here: the preview ops run with holdpreview's lock held, where
+	// A hold that begins paused keeps the old silent scrub: it accumulates on
+	// every 250 ms repeat and commits once on release. A real seek mid-hold
+	// would move the position without any sound, which is the anti-goal here.
+	bool paused = audio_get_status() == AUDIO_STATUS_PAUSED;
+
+	// A case hold, or an earlier headset hold, can leave a scrub open when a
+	// preview starts. Land it before the first excerpt instead of letting
+	// device_state_seek_hold()'s scrub_cancel_only() drop it, and before
+	// device_state_get() so holdpreview_begin() receives the landed position
+	// rather than the still-open scrub target. Paused holds skip this so their
+	// silent scrub is not turned into a real seek on every repeat. This has to
+	// happen here: the preview ops run with holdpreview's lock held, where
 	// device_state_scrub_commit() would deadlock via holdpreview_cancel().
-	if (device_state_scrub_active(NULL)) {
+	if (!paused && device_state_scrub_active(NULL)) {
 		device_state_scrub_commit();
 	}
 
@@ -1685,9 +1693,7 @@ static bool seek_headset_step(int code) {
 
 	bool forward = seekpolicy_headset_forward(code);
 	double step = seek_seconds(forward);
-	// A hold that begins paused keeps the old silent scrub. A real seek would
-	// move the position without any sound, which is the anti-goal here.
-	if (audio_get_status() == AUDIO_STATUS_PAUSED) {
+	if (paused) {
 		device_state_scrub_by(forward ? step : -step);
 		return device_state_scrub_active(NULL);
 	}
