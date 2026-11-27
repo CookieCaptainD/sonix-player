@@ -319,9 +319,10 @@ player's update to a device that cannot survive it.
 
 ### Streaming keys
 
-Tidal, Qobuz, and Podcast Index need application keys, and they are
-not in this repository: provide your own. They go into the image sealed, so that unpacking
-it does not hand them out as a text file.
+Tidal, Qobuz, Podcast Index and Last.fm need application keys, and they are
+not in this repository: provide your own. For Last.fm, get an API account from
+last.fm/api. They go into the image sealed, so that unpacking it does not hand
+them out as a text file.
 
 1. Copy `sonix-player/streaming-keys.ini.example` to
    `sonix-player/streaming-keys.ini` and fill it in.
