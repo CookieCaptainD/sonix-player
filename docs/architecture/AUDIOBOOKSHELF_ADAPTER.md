@@ -32,17 +32,17 @@ Audiobookshelf authenticates with a user API token in `Authorization: Bearer <to
 | Job | Audiobookshelf endpoint | Use in the sync protocol |
 |---|---|---|
 | List books | `GET /api/libraries/:id/items` | Build `/sync/manifest` entries |
-| Read one book | `GET /api/items/:id?include=progress` | Fill metadata and current progress |
-| Download audio | `GET /api/items/:id/download` | Feed the server side of `GET /sync/file` |
+| Read one book | `GET /api/items/:id?expanded=1&include=progress` | Fill metadata and `userMediaProgress` |
+| Download audio | `GET /api/items/:id/file/:fileId/download` for multi-file items, `GET /api/items/:id/download` only when `isFile` is true | Feed the server side of `GET /sync/file` |
 | Read progress | `GET /api/me/progress/:libraryItemId` | Server-to-player state |
 | Write progress | `PATCH /api/me/progress/:libraryItemId` | Player-to-server state |
 | Batch progress | `PATCH /api/me/progress/batch/update` | Offline sync after reconnect |
 
-The official API docs are marked out of date. The adapter needs a host test against a live Audiobookshelf 2.x server before release.
+`include` has no effect without `expanded=1`. `GET /api/me/progress/:id` returns 404 when the book has no progress yet; first sync treats that as "no progress". The item-level download endpoint returns a ZIP for multi-file items, including cover art and non-audio files. The adapter never feeds that ZIP to `/sync/file`; it downloads each audio file by `fileId`. The official API docs are marked out of date, so a host test against a live Audiobookshelf 2.x server gates the implementation PR.
 
 ## Identity
 
-Audiobookshelf `libraryItemId` becomes `server_id` in `SYNC_IDENTITY`. The identity row records `entity_kind=book` and `provider=audiobookshelf`. Each audio file in the item gets a part identity from its file ID or, when the server exposes no ID, from the audio hash defined in PR #95 §5.7.17. The `idx` field orders parts and carries no identity, as PR #95 requires.
+Audiobookshelf `libraryItemId` becomes `server_id` in `SYNC_IDENTITY`. The identity row records `entity_kind=book` and `provider=audiobookshelf`. Each audio file in the item gets a part identity from its `ino` value, which the per-file download endpoint uses. When `ino` is absent, the adapter falls back to the audio hash from PR #95 §5.7.17. The `idx` field orders parts and carries no identity, as PR #95 requires.
 
 ## Progress mapping
 
@@ -53,15 +53,15 @@ Audiobookshelf `libraryItemId` becomes `server_id` in `SYNC_IDENTITY`. The ident
 | `progress` | progress percentage | 0 to 1 |
 | `isFinished` | finished flag | Maps to `AUDIOBOOK_FINISHED` |
 | `finishedAt` | finished timestamp | Milliseconds since epoch, converted to the player's clock |
-| `lastUpdate` | conflict timestamp | Newer value wins, using the PR #95 `server_time` rule |
+| `lastUpdate` | conflict timestamp | The adapter reads current server progress first; writes carry server-issued time, not the device clock |
 
-Player-to-server sync sends one `PATCH` per changed book. A device that listened offline sends a batch update on reconnect. The adapter treats repeated `PATCH` calls with the same `currentTime` and `lastUpdate` as no-ops.
+Player-to-server sync reads `GET /api/me/progress/:id` first, then sends one `PATCH` per changed book. A device that listened offline sends a batch update on reconnect, after filtering each item against the server value. The adapter skips writes whose `lastUpdate` is older than the server's and reports them through PR #95's conflict record. Repeated writes with the same `currentTime` and `lastUpdate` become no-ops.
 
 Server-to-player sync reads progress and writes it through the audiobook setters in PR #95 §5.7.2, under `audiobookdb.c`'s lock and after draining pending local checkpoints.
 
 ## Conflict handling
 
-Audiobookshelf compares `lastUpdate`. The adapter keeps that rule. A stale local edit loses and the conflict record reports the loss, matching PR #95's position policy. The adapter does not start playback sessions in v1, so it avoids the session/progress divergence that dual writes would create.
+Audiobookshelf's `PATCH` endpoints apply payloads unconditionally. Timestamp comparison lives in the adapter, not in the service. The adapter reads current progress, compares `lastUpdate`, then writes or skips. A stale local edit loses and the conflict record reports the loss, matching PR #95's position policy. The deprecated `POST /api/me/sync-local-progress` is not used. The adapter does not start playback sessions in v1, so it avoids the session/progress divergence that dual writes would create. Audiobookshelf recalculates `isFinished` from `currentTime` and may clear `finishedAt`. The adapter re-reads progress after each write and treats the server value as authoritative. Batch writes return 200 even when individual items fail, so the adapter verifies each item after the batch and reports partial failure instead of treating 200 as success.
 
 ## Phases
 
