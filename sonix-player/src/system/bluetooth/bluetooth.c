@@ -1028,7 +1028,6 @@ static bool ensure_bluetoothd(void) {
 		// second daemon.
 		stop_process("bluetoothd");
 	}
-	}
 
 	// -E (experimental interfaces, which MediaFolder1 needs) and -C are what
 	// the firmware starts bluetoothd with. -d only with the Bluetooth log on:

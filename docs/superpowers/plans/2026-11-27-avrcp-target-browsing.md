@@ -13,7 +13,7 @@ Design: `docs/superpowers/specs/2026-11-27-avrcp-target-browsing-design.md`
 5. Add the BlueZ 5.54 patch: TG handlers, PDU clamps, deferred replies, pending cleanup, browsable feature bit, HiBy vendor preservation.
 6. Add `bluetoothd_fallback.c`. Start the patched daemon unless `/usr/data/disable_bt_browse` exists. Use one 8000 ms deadline. Kill a failed daemon before starting stock.
 7. Add the D-Bus policy rules for R1 and R3PII and repair the XML comments.
-8. Run every harness and the host recipe. Capture real output under `docs/pr-assets/`. Write the PR body with the v1.3.3 comparison.
+8. Run every harness and the host recipe. Add Car Mode, PIN and browsing screenshots under `docs/screenshots/`. Write the PR body with the v1.3.3 comparison.
 
 ## Gates
 
