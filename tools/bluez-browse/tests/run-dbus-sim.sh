@@ -7,9 +7,9 @@ TMPDIR=${TMPDIR:-/home/diogo/Downloads/Hiby/pr-work/tmp}
 BUILD="$TMPDIR/bluez-browse-tests"
 mkdir -p "$BUILD"
 
-CFLAGS="-std=gnu11 -Wall -Wextra -I$ROOT/modules -I$ROOT/tests"
+CFLAGS="-std=gnu11 -Wall -Wextra -pthread -I$ROOT/modules -I$ROOT/tests"
 CFLAGS="$CFLAGS $(pkg-config --cflags glib-2.0 dbus-1)"
-LIBS="$(pkg-config --libs glib-2.0 dbus-1)"
+LIBS="$(pkg-config --libs glib-2.0 dbus-1) -pthread"
 
 cc $CFLAGS -o "$BUILD/test_media_browse" \
 	"$ROOT/tests/test_media_browse.c" "$ROOT/modules/media-browse.c" \

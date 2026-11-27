@@ -900,10 +900,16 @@ static bool ensure_bluetoothd(void) {
 		stop_process("bt-agent");
 	}
 
-	if (process_running("bluetoothd")) {
-		// D-Bus activation or the firmware's own init may have got there first.
-		// There is nothing to choose in that case, only a dead man's wait.
+	if (process_running("bluetoothd") && access(BT_DISABLE_BROWSE_FLAG, F_OK) == 0) {
+		// The user opted out. Whatever daemon is running stays in charge.
 		return daemon_wait(WAIT_BLUETOOTHD_MS, NULL);
+	}
+	if (process_running("bluetoothd")) {
+		// D-Bus activation or firmware init may have started the stock daemon.
+		// The name alone cannot tell which binary it is, so replace it with the
+		// one this session selected. The fallback kills it before starting a
+		// second daemon.
+		stop_process("bluetoothd");
 	}
 
 	// -E (experimental interfaces, which MediaFolder1 needs) and -C are what

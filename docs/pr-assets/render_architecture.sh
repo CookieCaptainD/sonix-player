@@ -79,7 +79,7 @@ box 710 290 960 335 'Scanned library' 'folders and tracks' ''
 box 710 430 960 505 'Playback bridge' 'UID to file' ''
 box 1070 430 1310 505 'Existing playback' 'queue, output' ''
 box 60 640 300 685 'v1.3.3 MPRIS player' 'metadata, keys' ''
-box 360 640 620 685 'Stock bluetoothd' 'fallback, toggle off' ''
+box 360 640 620 685 'Stock bluetoothd' 'flag off' ''
 
 draw_shapes=()
 for arg in "${shape_args[@]}"; do

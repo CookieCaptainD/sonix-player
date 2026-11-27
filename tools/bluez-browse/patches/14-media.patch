@@ -35,7 +35,7 @@
  	if (mp->track)
  		g_hash_table_unref(mp->track);
  
-@@ -1302,6 +1316,129 @@
+@@ -1302,6 +1316,164 @@
  	return media_player_send(mp, "Previous");
  }
  
@@ -98,6 +98,14 @@
 +	return TRUE;
 +}
 +
++static const char *tg_folder_path(struct media_player *mp)
++{
++	if (mp->folder != NULL && mp->folder[0] != '\0')
++		return mp->folder;
++
++	return MEDIA_BROWSE_ROOT_FOLDER;
++}
++
 +static uint32_t tg_get_total(uint32_t folder, void *user_data)
 +{
 +	struct media_player *mp = user_data;
@@ -105,18 +113,41 @@
 +	if (mp->browse == NULL)
 +		return 0;
 +
-+	return media_browse_count_sync(mp->browse, mp->sender, mp->path);
++	return media_browse_count_sync(mp->browse, mp->sender,
++						tg_folder_path(mp));
 +}
 +
 +static GSList *tg_list_items(uint32_t folder, uint32_t start, uint32_t end,
 +					uint32_t *total, void *user_data)
 +{
 +	struct media_player *mp = user_data;
++	const char *child;
 +
 +	if (mp->browse == NULL)
 +		return NULL;
 +
-+	media_browse_list_items(mp->browse, mp->sender, mp->path, start, end);
++	/* ChangePath is reported to the media layer through the folder UID
++	 * carried by the following GetFolderItems.  Send ChangeFolder before
++	 * ListItems so the app moves to the child first. */
++	if (folder == 0) {
++		if (mp->folder != NULL &&
++				strcmp(mp->folder, MEDIA_BROWSE_ROOT_FOLDER) != 0) {
++			g_free(mp->folder);
++			mp->folder = g_strdup(MEDIA_BROWSE_ROOT_FOLDER);
++		}
++	} else {
++		child = media_browse_uid_path(folder);
++		if (child != NULL && (mp->folder == NULL ||
++					strcmp(mp->folder, child) != 0)) {
++			media_browse_change_folder(mp->browse, mp->sender,
++					tg_folder_path(mp), folder);
++			g_free(mp->folder);
++			mp->folder = g_strdup(child);
++		}
++	}
++
++	media_browse_list_items(mp->browse, mp->sender,
++					tg_folder_path(mp), start, end);
 +
 +	return NULL;
 +}
@@ -125,14 +156,17 @@
 +								void *user_data)
 +{
 +	struct media_player *mp = user_data;
-+	char uri[64];
++	const char *path, *base;
 +
 +	if (mp->browse == NULL)
 +		return false;
 +
-+	snprintf(uri, sizeof(uri), "/org/mpris/MediaPlayer2/Track/%llu",
-+							(unsigned long long) uid);
-+	*name = g_strdup(uri);
++	path = media_browse_uid_path(uid);
++	if (path == NULL)
++		return false;
++	base = strrchr(path, '/');
++	base = base != NULL ? base + 1 : path;
++	*name = g_strdup(base);
 +	*type = TG_ITEM_SONG;
 +
 +	return true;
@@ -141,14 +175,15 @@
 +static bool tg_play_item(uint64_t uid, void *user_data)
 +{
 +	struct media_player *mp = user_data;
-+	char uri[128];
++	const char *path;
 +
 +	if (mp->browse == NULL)
 +		return false;
 +
-+	snprintf(uri, sizeof(uri), "file:///org/mpris/MediaPlayer2/Track/%llu",
-+							(unsigned long long) uid);
-+	media_browse_play(mp->browse, mp->sender, uri);
++	path = media_browse_uid_path(uid);
++	if (path == NULL)
++		return false;
++	media_browse_play(mp->browse, mp->sender, path);
 +
 +	return true;
 +}
@@ -165,7 +200,7 @@
  static struct avrcp_player_cb player_cb = {
  	.list_settings = list_settings,
  	.get_setting = get_setting,
-@@ -1319,6 +1456,11 @@
+@@ -1319,6 +1491,11 @@
  	.pause = media_pause,
  	.next = next,
  	.previous = previous,
@@ -177,7 +212,7 @@
  };
  
  static void media_player_exit(DBusConnection *connection, void *user_data)
-@@ -1673,6 +1815,35 @@
+@@ -1673,6 +1850,35 @@
  	return TRUE;
  }
  
@@ -213,7 +248,7 @@
  static gboolean set_player_property(struct media_player *mp, const char *key,
  							DBusMessageIter *entry)
  {
-@@ -1716,6 +1887,12 @@
+@@ -1716,6 +1922,12 @@
  	if (strcasecmp(key, "Identity") == 0)
  		return set_name(mp, &var);
  
@@ -226,7 +261,7 @@
  	DBG("%s not supported, ignoring", key);
  
  	return TRUE;
-@@ -1803,6 +1980,9 @@
+@@ -1803,6 +2015,9 @@
  	mp->path = g_strdup(path);
  	mp->timer = g_timer_new();
  

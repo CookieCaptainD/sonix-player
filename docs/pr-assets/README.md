@@ -8,7 +8,7 @@ Every PNG here is a render of captured text or a drawn diagram. None is a car UI
 | `harness-summary.png` | Render of `harness-summary.txt` with ImageMagick. |
 | `release-summary.txt` | Output of `release_summary.py`, fetched from the GitHub API for tag `v1.3.3`. |
 | `release-summary.png` | Render of `release-summary.txt`. |
-| `review-journey.txt` | The seven review rounds, captured verbatim from the design doc by `review_excerpt.sh`. |
+| `review-journey.txt` | The seven review rounds, captured from the design doc by `review_excerpt.sh`. |
 | `review-journey.png` | Render of `review-journey.txt`. |
 | `host-harness.txt` | Real output of six module harnesses from `tools/bluez-browse/tests` and the fallback harness from `sonix-player/tests/harness`, compiled by `capture_host_harness.sh`. |
 | `host-harness.png` | Render of `host-harness.txt`. |

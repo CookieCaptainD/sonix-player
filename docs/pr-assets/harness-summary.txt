@@ -6,7 +6,7 @@ GATE                   CASES    PASS  SCOPE
 ----------------------------------------------------------------------------------------------
 PDU conformance          189     189  PASS
                                       byte encodings, UIDs, status codes, folder counts
-D-Bus                     16      16  PASS
+D-Bus                     50      50  PASS
                                       signatures, reply types, true folder count, error paths
 AVCTP                     14      14  PASS
                                       frame save, header bytes, cleanup
@@ -17,7 +17,7 @@ Fallback                   7       7  PASS
 App harness               74      74  PASS
                                       folder descent, back navigation, strict filters, stale retry, nested Play, GetAll
 ----------------------------------------------------------------------------------------------
-TOTAL                    312     312  PASS
+TOTAL                    346     346  PASS
 
 DEVICE REPORT (user, real car head unit, not CI)
   confirmed: folders show

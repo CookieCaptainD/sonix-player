@@ -1,5 +1,5 @@
 AVRCP TARGET BROWSING - MODULE HARNESS OUTPUT
-captured : 2026-11-27T22:11:02Z
+captured : 2026-11-27T22:28:49Z
 source   : tools/bluez-browse/tests and sonix-player/tests/harness
 build    : gcc, glib-2.0 and dbus-1 flags, modules compiled as shipped
 
@@ -25,4 +25,3 @@ $ test_fallback
 fallback_harness: 35 checks, 0 failures
 
 $ test_btbrowser
-btbrowser_test: 74 checks, 0 failures

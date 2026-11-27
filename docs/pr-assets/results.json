@@ -10,8 +10,8 @@
     },
     {
       "name": "D-Bus",
-      "cases": 16,
-      "passed": 16,
+      "cases": 50,
+      "passed": 50,
       "scope": "signatures, reply types, true folder count, error paths"
     },
     {
