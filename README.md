@@ -321,8 +321,10 @@ player's update to a device that cannot survive it.
 
 Tidal, Qobuz, Podcast Index and Last.fm need application keys, and they are
 not in this repository: provide your own. For Last.fm, get an API account from
-last.fm/api. They go into the image sealed, so that unpacking it does not hand
-them out as a text file.
+last.fm/api and sign in from Music settings by scanning the QR code shown on
+the player with your phone; only the session key is kept on the device. They go
+into the image sealed, so that unpacking it does not hand them out as a text
+file.
 
 1. Copy `sonix-player/streaming-keys.ini.example` to
    `sonix-player/streaming-keys.ini` and fill it in.

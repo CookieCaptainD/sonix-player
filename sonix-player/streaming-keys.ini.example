@@ -10,6 +10,9 @@ client_secret =
 api_key =
 api_secret =
 
+; Use your own API account from last.fm/api. Sign in from Music settings ->
+; Last.fm by scanning the QR code with your phone; the session key is kept on
+; the device, the password is never entered there.
 [lastfm]
 api_key =
 api_secret =
