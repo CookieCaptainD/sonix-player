@@ -34,6 +34,14 @@ gcc -std=gnu11 -Wall -Wextra -I "$ROOT/sonix-player" \
   "$ROOT/sonix-player/tests/harness/fallback.c" \
   -o "$BUILD/test_fallback"
 
+# The app harness compiles the shipped btbrowser.c against a dbuslite stub.
+gcc -std=gnu11 -Wall -Wextra -Werror -pthread -I "$ROOT/sonix-player" \
+  "$ROOT/sonix-player/tests/btbrowser_test.c" \
+  "$ROOT/sonix-player/tests/fake_provider.c" \
+  "$ROOT/sonix-player/tests/support/dbuslite_stub.c" \
+  "$ROOT/sonix-player/src/system/bluetooth/btbrowser.c" \
+  -o "$BUILD/test_btbrowser"
+
 {
   echo "AVRCP TARGET BROWSING - MODULE HARNESS OUTPUT"
   echo "captured : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -47,6 +55,9 @@ gcc -std=gnu11 -Wall -Wextra -I "$ROOT/sonix-player" \
   done
   echo "\$ test_fallback"
   "$BUILD/test_fallback"
+  echo ""
+  echo "\$ test_btbrowser"
+  "$BUILD/test_btbrowser"
   echo ""
 } > "$OUT"
 

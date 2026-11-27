@@ -32,7 +32,7 @@ adding AVRCP 1.5 target browsing and the vendor notification socket.
 
 ```
 tests/run.sh                # 189 byte-level AVRCP checks
-tests/run-dbus-sim.sh       #  15 media-browse checks (private D-Bus)
+tests/run-dbus-sim.sh       #  50 media-browse checks (private D-Bus)
 tests/run-defer.sh          #  14 AVCTP defer checks
 tests/run-tg-pending.sh     #  12 pending-transaction checks
 tests/run-parent.sh         #   6 path checks

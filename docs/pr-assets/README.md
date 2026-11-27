@@ -10,7 +10,7 @@ Every PNG here is a render of captured text or a drawn diagram. None is a car UI
 | `release-summary.png` | Render of `release-summary.txt`. |
 | `review-journey.txt` | The seven review rounds, captured from the design doc by `review_excerpt.sh`. |
 | `review-journey.png` | Render of `review-journey.txt`. |
-| `host-harness.txt` | Real output of six module harnesses from `tools/bluez-browse/tests` and the fallback harness from `sonix-player/tests/harness`, compiled by `capture_host_harness.sh`. |
+| `host-harness.txt` | Real output of six module harnesses from `tools/bluez-browse/tests` and the fallback harness from `sonix-player/tests/harness`, compiled by `capture_host_harness.sh`, including the app harness. |
 | `host-harness.png` | Render of `host-harness.txt`. |
 | `architecture.dot` | Canonical graph description of the components and edges. |
 | `architecture.png` | The same nodes and edges drawn with ImageMagick. |
