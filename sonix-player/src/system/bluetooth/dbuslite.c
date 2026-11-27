@@ -56,6 +56,8 @@ static void w_pad(dbus_writer_t *w, size_t align) {
 	}
 }
 
+void dbus_w_pad(dbus_writer_t *w, size_t align) { w_pad(w, align ? align : 1); }
+
 static void w_raw(dbus_writer_t *w, const void *data, size_t len) {
 	if (w->used + len > sizeof(w->buf)) {
 		w->overflow = true;

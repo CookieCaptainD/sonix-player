@@ -1,0 +1,28 @@
+AVRCP TARGET BROWSING - MODULE HARNESS OUTPUT
+captured : 2026-11-27T22:11:02Z
+source   : tools/bluez-browse/tests and sonix-player/tests/harness
+build    : gcc, glib-2.0 and dbus-1 flags, modules compiled as shipped
+
+$ test_avctp_defer
+PASS avctp-defer: 14 checks
+
+$ test_change_count
+PASS change-count: 3 checks
+
+$ test_display_name
+PASS display-name: 2 checks
+
+$ test_item_type
+PASS item-type: 3 checks
+
+$ test_parent
+PASS parent: 6 checks
+
+$ test_tg_pending
+PASS tg-pending: 12 checks
+
+$ test_fallback
+fallback_harness: 35 checks, 0 failures
+
+$ test_btbrowser
+btbrowser_test: 74 checks, 0 failures

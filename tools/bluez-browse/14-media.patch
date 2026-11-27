@@ -1,0 +1,267 @@
+--- a/profiles/audio/media.c
++++ b/profiles/audio/media.c
+@@ -43,6 +43,9 @@
+ #include "src/adapter.h"
+ #include "src/device.h"
+ #include "src/dbus-common.h"
++#include "src/client.h"
++#include "media-browse.h"
++#include "avrcp-tg-browse.h"
+ #include "src/profile.h"
+ 
+ #include "src/uuid-helper.h"
+@@ -128,6 +131,13 @@
+ 	bool			previous;
+ 	bool			control;
+ 	char			*name;
++
++	/* AVRCP target browsing state */
++	bool			browsable;
++	char			*folder;
++	uint32_t		last_total;
++	struct media_browse	*browse;
++	guint			browse_watch;
+ };
+ 
+ static GSList *adapters = NULL;
+@@ -980,6 +990,11 @@
+ 	g_dbus_remove_watch(conn, mp->properties_watch);
+ 	g_dbus_remove_watch(conn, mp->seek_watch);
+ 
++	if (mp->browse_watch != 0)
++		g_source_remove(mp->browse_watch);
++	media_browse_free(mp->browse);
++	g_free(mp->folder);
++
+ 	if (mp->track)
+ 		g_hash_table_unref(mp->track);
+ 
+@@ -1265,7 +1280,7 @@
+ 	return media_player_send(mp, "Stop");
+ }
+ 
+-static bool pause(void *user_data)
++static bool media_pause(void *user_data)
+ {
+ 	struct media_player *mp = user_data;
+ 
+@@ -1301,6 +1316,129 @@
+ 	return media_player_send(mp, "Previous");
+ }
+ 
++/* ------------------------------------------------------------------ */
++/* AVRCP target browsing bridge                                         */
++/* ------------------------------------------------------------------ */
++
++static void browse_items_cb(GSList *items, uint32_t total, void *user_data)
++{
++	struct media_player *mp = user_data;
++	GSList *out = NULL, *l;
++
++	for (l = items; l != NULL; l = l->next) {
++		struct media_browse_item *src = l->data;
++		struct tg_browse_item *item;
++
++		if (src == NULL)
++			continue;
++
++		item = g_new0(struct tg_browse_item, 1);
++		item->uid = src->uid;
++		item->type = src->type;
++		item->name = g_strdup(src->name);
++		out = g_slist_prepend(out, item);
++	}
++
++	out = g_slist_reverse(out);
++	avrcp_tg_browse_done(mp->player, out, total);
++}
++
++static void browse_error_cb(unsigned id, const char *dest, const char *msg,
++								void *user_data)
++{
++	struct media_player *mp = user_data;
++
++	/* Do not roll the UIDs back on an error: the CT must keep seeing a
++	 * monotonically stable namespace. */
++	DBG("browse call %u to %s failed: %s", id, dest != NULL ? dest : "", msg);
++}
++
++static void browse_done_cb(unsigned id, bool success, void *user_data)
++{
++	struct media_player *mp = user_data;
++
++	DBG("browse call %u %s", id, success ? "done" : "failed");
++}
++
++static const struct media_browse_cb browse_cb = {
++	.items = browse_items_cb,
++	.error = browse_error_cb,
++	.done = browse_done_cb,
++};
++
++static gboolean browse_dispatch_cb(gpointer user_data)
++{
++	struct media_player *mp = user_data;
++
++	media_browse_dispatch(mp->browse, 0);
++
++	return TRUE;
++}
++
++static uint32_t tg_get_total(uint32_t folder, void *user_data)
++{
++	struct media_player *mp = user_data;
++
++	if (mp->browse == NULL)
++		return 0;
++
++	return media_browse_count_sync(mp->browse, mp->sender, mp->path);
++}
++
++static GSList *tg_list_items(uint32_t folder, uint32_t start, uint32_t end,
++					uint32_t *total, void *user_data)
++{
++	struct media_player *mp = user_data;
++
++	if (mp->browse == NULL)
++		return NULL;
++
++	media_browse_list_items(mp->browse, mp->sender, mp->path, start, end);
++
++	return NULL;
++}
++
++static bool tg_get_item(uint64_t uid, char **name, uint8_t *type,
++								void *user_data)
++{
++	struct media_player *mp = user_data;
++	char uri[64];
++
++	if (mp->browse == NULL)
++		return false;
++
++	snprintf(uri, sizeof(uri), "/org/mpris/MediaPlayer2/Track/%llu",
++							(unsigned long long) uid);
++	*name = g_strdup(uri);
++	*type = TG_ITEM_SONG;
++
++	return true;
++}
++
++static bool tg_play_item(uint64_t uid, void *user_data)
++{
++	struct media_player *mp = user_data;
++	char uri[128];
++
++	if (mp->browse == NULL)
++		return false;
++
++	snprintf(uri, sizeof(uri), "file:///org/mpris/MediaPlayer2/Track/%llu",
++							(unsigned long long) uid);
++	media_browse_play(mp->browse, mp->sender, uri);
++
++	return true;
++}
++
++static void tg_reset_browse(void *user_data)
++{
++	struct media_player *mp = user_data;
++
++	if (mp->browse != NULL)
++		media_browse_cancel_dest(mp->browse, mp->sender);
++	mp->last_total = 0;
++}
++
+ static struct avrcp_player_cb player_cb = {
+ 	.list_settings = list_settings,
+ 	.get_setting = get_setting,
+@@ -1315,9 +1453,14 @@
+ 	.set_volume = set_volume,
+ 	.play = play,
+ 	.stop = stop,
+-	.pause = pause,
++	.pause = media_pause,
+ 	.next = next,
+ 	.previous = previous,
++	.get_total = tg_get_total,
++	.list_items = tg_list_items,
++	.get_item = tg_get_item,
++	.play_item = tg_play_item,
++	.reset_browse = tg_reset_browse,
+ };
+ 
+ static void media_player_exit(DBusConnection *connection, void *user_data)
+@@ -1399,8 +1542,14 @@
+ static void set_metadata(struct media_player *mp, const char *key,
+ 							const char *value)
+ {
++	char msg[256];
++
+ 	DBG("%s=%s", key, value);
+ 	g_hash_table_replace(mp->track, g_strdup(key), g_strdup(value));
++
++	snprintf(msg, sizeof(msg), "BT:MEDIA %s: %s",
++			mp->path != NULL ? mp->path : "", value != NULL ? value : "");
++	client_send_msg_2client(msg);
+ }
+ 
+ static gboolean parse_string_metadata(struct media_player *mp, const char *key,
+@@ -1666,6 +1815,35 @@
+ 	return TRUE;
+ }
+ 
++static gboolean set_browsable(struct media_player *mp, DBusMessageIter *var)
++{
++	gboolean value;
++
++	if (dbus_message_iter_get_arg_type(var) != DBUS_TYPE_BOOLEAN)
++		return FALSE;
++
++	dbus_message_iter_get_basic(var, &value);
++	mp->browsable = value;
++
++	return TRUE;
++}
++
++static gboolean set_folder(struct media_player *mp, DBusMessageIter *var)
++{
++	const char *value;
++
++	if (dbus_message_iter_get_arg_type(var) != DBUS_TYPE_STRING)
++		return FALSE;
++
++	dbus_message_iter_get_basic(var, &value);
++
++	/* Keep the folder across ChangePath: only the UID cache survives. */
++	g_free(mp->folder);
++	mp->folder = g_strdup(value);
++
++	return TRUE;
++}
++
+ static gboolean set_player_property(struct media_player *mp, const char *key,
+ 							DBusMessageIter *entry)
+ {
+@@ -1709,6 +1887,12 @@
+ 	if (strcasecmp(key, "Identity") == 0)
+ 		return set_name(mp, &var);
+ 
++	if (strcasecmp(key, "Browsable") == 0)
++		return set_browsable(mp, &var);
++
++	if (strcasecmp(key, "Folder") == 0)
++		return set_folder(mp, &var);
++
+ 	DBG("%s not supported, ignoring", key);
+ 
+ 	return TRUE;
+@@ -1796,6 +1980,9 @@
+ 	mp->path = g_strdup(path);
+ 	mp->timer = g_timer_new();
+ 
++	mp->browse = media_browse_new(conn, &browse_cb, mp);
++	mp->browse_watch = g_idle_add(browse_dispatch_cb, mp);
++
+ 	mp->watch = g_dbus_add_disconnect_watch(conn, sender,
+ 						media_player_exit, mp,
+ 						NULL);

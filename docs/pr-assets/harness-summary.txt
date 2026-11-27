@@ -1,0 +1,29 @@
+AVRCP TARGET BROWSING - HOST GATE SUMMARY
+source : results recorded by the implementing session on 2026-11-27
+base   : c54f8e4 (Tartarus6/sonix-player v1.3.3 merge)
+
+GATE                   CASES    PASS  SCOPE
+----------------------------------------------------------------------------------------------
+PDU conformance          189     189  PASS
+                                      byte encodings, UIDs, status codes, folder counts
+D-Bus                     16      16  PASS
+                                      signatures, reply types, true folder count, error paths
+AVCTP                     14      14  PASS
+                                      frame save, header bytes, cleanup
+Pending requests          12      12  PASS
+                                      current, stale, per-player cleanup
+Fallback                   7       7  PASS
+                                      patched success, disable flag, spawn failure, kill failure, kill refusal, shared deadline, both fail
+App harness               74      74  PASS
+                                      folder descent, back navigation, strict filters, stale retry, nested Play, GetAll
+----------------------------------------------------------------------------------------------
+TOTAL                    312     312  PASS
+
+DEVICE REPORT (user, real car head unit, not CI)
+  confirmed: folders show
+  confirmed: track names show
+  confirmed: back navigation works
+  confirmed: click to play starts playback
+
+Evidence note: this is harness output and a user report.
+No device screenshot was captured or invented.

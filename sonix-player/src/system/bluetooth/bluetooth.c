@@ -24,6 +24,7 @@
 
 #include "src/system/bluetooth/airpods.h"
 #include "src/system/audio/audio.h"
+#include "src/system/bluetooth/bluetoothd_fallback.h"
 #include "src/system/bluetooth/btlog.h"
 #include "src/system/bluetooth/btreceiver.h"
 #include "src/system/bluetooth/btstack.h"
@@ -48,6 +49,11 @@
 #define BT_RFKILL "/sys/class/rfkill/rfkill0/state"
 
 #define BLUETOOTHD_BIN "/usr/libexec/bluetooth/bluetoothd"
+// The firmware's browsing build, kept beside the stock one in its own
+// directory. Both are launched as "bluetoothd" so the name-based stop path in
+// this file sees either of them.
+#define BLUETOOTHD_BROWSE_BIN "/usr/libexec/bluetooth/browse/bluetoothd"
+#define BT_DISABLE_BROWSE_FLAG "/usr/data/disable_bt_browse"
 #define BLUEALSA_BIN "/usr/bin/bluealsa"
 
 #define DBUS_DAEMON_BIN "/usr/bin/dbus-daemon"
@@ -847,6 +853,44 @@ static bool ensure_transport(void) {
 	return false;
 }
 
+// The browsing bring-up is shared between the patched and the stock daemon.
+// The wait covers two conditions with one clock: claiming org.bluez and then
+// finding a controller. Each attempt gets what is left of the same 8000 ms.
+static uint32_t daemon_wait_began;
+
+static bool daemon_wait(int timeout_ms, void *user) {
+	(void)user;
+	daemon_wait_began = now_ms();
+	if (!btstack_wait_service("org.bluez", timeout_ms)) {
+		fprintf(stderr, "bluetooth: bluetoothd did not claim org.bluez\n");
+		return false;
+	}
+	int left = timeout_ms - (int)(now_ms() - daemon_wait_began);
+	if (left < 1) {
+		return false;
+	}
+	// The name on the bus is not the same as a controller bluez can drive: the
+	// Adapter1 interface appears on /org/bluez/hci0 only once it has one.
+	if (!btstack_wait_adapter(left)) {
+		fprintf(stderr, "bluetooth: org.bluez is there but hci0 has no Adapter1\n");
+		return false;
+	}
+	return true;
+}
+
+static bool daemon_spawn(const char *path, char *const argv[], void *user) {
+	(void)user;
+	if (access(path, X_OK) != 0) {
+		return false;
+	}
+	return spawn_daemon(path, argv);
+}
+
+static bool daemon_kill(void *user) {
+	(void)user;
+	return stop_process("bluetoothd");
+}
+
 static bool ensure_bluetoothd(void) {
 	// The firmware's agent has to go before this player's can be the default
 	// one: bluez keeps exactly one, and whichever registered first answers every
@@ -856,33 +900,34 @@ static bool ensure_bluetoothd(void) {
 		stop_process("bt-agent");
 	}
 
-	if (!process_running("bluetoothd")) {
-		// -E is the experimental interface and -C the SDP compatibility one. Both
-		// are what the firmware starts it with.
-		//
-		// -d only with the Bluetooth log on (btlog.h): every debug line of
-		// bluez, from the profile state machine to the AVDTP negotiation. What
-		// bluetoothd says reaches that log through syslog, which it always
-		// writes to and the log listens on -- so nothing changes about where
-		// its output goes, and with the log off it goes nowhere, as on the
-		// firmware.
-		char *argv[5] = {(char *)"bluetoothd", (char *)"-E", (char *)"-C", NULL, NULL};
-		if (btlog_enabled()) {
-			argv[3] = (char *)"-d";
-		}
-		spawn_daemon(BLUETOOTHD_BIN, argv);
+	if (process_running("bluetoothd")) {
+		// D-Bus activation or the firmware's own init may have got there first.
+		// There is nothing to choose in that case, only a dead man's wait.
+		return daemon_wait(WAIT_BLUETOOTHD_MS, NULL);
 	}
 
-	if (!btstack_wait_service("org.bluez", WAIT_BLUETOOTHD_MS)) {
-		fprintf(stderr, "bluetooth: bluetoothd did not claim org.bluez\n");
+	// -E (experimental interfaces, which MediaFolder1 needs) and -C are what
+	// the firmware starts bluetoothd with. -d only with the Bluetooth log on:
+	// bluez writes to syslog, which that log listens to, so nothing changes
+	// about where its output goes. Both binaries keep the basename bluetoothd.
+	bt_daemon_fallback_t fallback = {
+		.patched_path = BLUETOOTHD_BROWSE_BIN,
+		.stock_path = BLUETOOTHD_BIN,
+		.disable_flag = BT_DISABLE_BROWSE_FLAG,
+		.debug = btlog_enabled(),
+		.deadline_ms = WAIT_BLUETOOTHD_MS,
+		.spawn = daemon_spawn,
+		.wait = daemon_wait,
+		.kill = daemon_kill,
+		.user = NULL,
+	};
+	bt_up_t up = bt_daemon_bring_up(&fallback);
+	if (up == BT_UP_NONE) {
+		fprintf(stderr, "bluetooth: no bluetoothd came up\n");
 		return false;
 	}
-	// The name on the bus is not the same as a controller bluez can drive: the
-	// Adapter1 interface appears on /org/bluez/hci0 only once it has one.
-	if (!btstack_wait_adapter(WAIT_BLUETOOTHD_MS)) {
-		fprintf(stderr, "bluetooth: org.bluez is there but hci0 has no Adapter1\n");
-		return false;
-	}
+	fprintf(stderr, "bluetooth: bluetoothd up (%s browsing)\n",
+			up == BT_UP_PATCHED ? "patched" : "stock");
 	return true;
 }
 

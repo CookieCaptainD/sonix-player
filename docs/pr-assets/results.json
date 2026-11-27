@@ -1,0 +1,51 @@
+{
+  "source": "results recorded by the implementing session on 2026-11-27",
+  "base_commit": "c54f8e4 (Tartarus6/sonix-player v1.3.3 merge)",
+  "gates": [
+    {
+      "name": "PDU conformance",
+      "cases": 189,
+      "passed": 189,
+      "scope": "byte encodings, UIDs, status codes, folder counts"
+    },
+    {
+      "name": "D-Bus",
+      "cases": 16,
+      "passed": 16,
+      "scope": "signatures, reply types, true folder count, error paths"
+    },
+    {
+      "name": "AVCTP",
+      "cases": 14,
+      "passed": 14,
+      "scope": "frame save, header bytes, cleanup"
+    },
+    {
+      "name": "Pending requests",
+      "cases": 12,
+      "passed": 12,
+      "scope": "current, stale, per-player cleanup"
+    },
+    {
+      "name": "Fallback",
+      "cases": 7,
+      "passed": 7,
+      "scope": "patched success, disable flag, spawn failure, kill failure, kill refusal, shared deadline, both fail"
+    },
+    {
+      "name": "App harness",
+      "cases": 74,
+      "passed": 74,
+      "scope": "folder descent, back navigation, strict filters, stale retry, nested Play, GetAll"
+    }
+  ],
+  "device": {
+    "source": "user report on a real car head unit",
+    "confirmed": [
+      "folders show",
+      "track names show",
+      "back navigation works",
+      "click to play starts playback"
+    ]
+  }
+}

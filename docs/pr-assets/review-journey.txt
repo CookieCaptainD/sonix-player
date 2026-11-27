@@ -1,0 +1,18 @@
+## Journey: seven review rounds
+
+The work went through seven review rounds. Each entry names the issue raised and the change it produced.
+
+1. **Role boundary.** The first round asked where browsing belongs. Putting it inside `btplayer.c` would mix metadata polling with request state. The change kept browsing in its own module beside the player and left the MPRIS path alone.
+
+2. **Enablement.** The second round challenged the first disable plan. A settings toggle would have added UI work and left no recovery path when the UI could not load. The change used a file on the writable partition as the off switch.
+
+3. **Daemon replacement.** The third round focused on the patched bluetoothd. Pairing and codec regressions would hit the whole Bluetooth stack. The change kept the stock binary as fallback, kept the stock binary as the fallback, and added the fallback gate.
+
+4. **PDU correctness.** The fourth round ran the PDU vectors. UID handling and folder-count encoding needed work before a head unit could hold an ID across calls. The change fixed those encodings and brought the suite to 189 passing cases.
+
+5. **Transport and D-Bus framing.** The fifth round checked the two wires. Alignment errors on D-Bus and continuation errors on AVCTP both close the connection rather than produce a wrong value. The change tightened the writers and the request serializer; 15 D-Bus cases and 14 AVCTP cases pass.
+
+6. **Pending state.** The sixth round asked what happens when a head unit disconnects mid-request. Late replies and duplicate answers could corrupt the next browse. The change added serials, deadlines, and cancel on disconnect; 12 pending cases pass.
+
+7. **Packaging and proof.** The seventh round checked what we can actually claim. The R1 image must stay under 48 MiB, CI has no device, and dashboards differ. The change added the packer gate check, kept the app harness for the flow, and recorded the user's car result as a device report instead of a CI result.
+
