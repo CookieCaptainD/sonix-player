@@ -301,7 +301,7 @@ assets/R3PII/                           (and assets/R1/, the same shape)
 │       └── sonix/
 │           ├── language/            the 12 .ini files
 │           ├── components/
-│           │   ├── streaming-keys.bin   Tidal / Qobuz / Podcast Index keys, sealed - see "Streaming keys" below.
+│           │   ├── streaming-keys.bin   Tidal / Qobuz / Podcast Index / Last.fm keys, sealed - see "Streaming keys" below.
 │           │   ├── system-info.json     required: names the player, and the packer writes to it
 │           │   └── GB*-Database.dat     the Game Boy ROM databases
 │           ├── fonts/               default.otf, bold.otf, then japanese, korean, thai, arabic and hebrew .otf, each with a -bold;
@@ -322,7 +322,8 @@ player's update to a device that cannot survive it.
 Tidal, Qobuz, Podcast Index and Last.fm need application keys, and they are
 not in this repository: provide your own. For Last.fm, get an API account from
 last.fm/api and sign in from Music settings by scanning the QR code shown on
-the player with your phone; only the session key is kept on the device. They go
+the player with your phone, then press Done on the player; only the session key
+is kept on the device. They go
 into the image sealed, so that unpacking it does not hand them out as a text
 file.
 
