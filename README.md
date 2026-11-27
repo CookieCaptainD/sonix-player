@@ -118,7 +118,7 @@ usr/
     └── sonix/
         ├── language/                    the 12 .ini files
         ├── components/
-        │   ├── streaming-keys.bin       Tidal / Qobuz / Podcast Index keys, sealed - see "Streaming keys" below.
+        │   ├── streaming-keys.bin       Tidal / Qobuz / Podcast Index / Last.fm keys, sealed - see "Streaming keys" below.
         │   └── system-info.json         its device-name picks the player the simulator plays
         ├── fonts/                       the interface faces, and ebook/ with Bookerly for the EPUB reader
         └── gui/                         some of the .png assets the UI loads at runtime - the rest are inside the binary.
@@ -129,7 +129,7 @@ The easiest way to get one is to copy `usr/resource/` out of
 next to `sonix_player_host`: the language files, the fonts, the images and the
 `system-info.json` of that player come with it.
 
-Without the language files the interface draws raw tags instead of words, and says so on the first line of the log. Without `streaming-keys.bin` everything works except Tidal, Qobuz, and Podcast Index. The simulator also reads a plain `streaming-keys.ini` in the same folder.
+Without the language files the interface draws raw tags instead of words, and says so on the first line of the log. Without `streaming-keys.bin` everything works except Tidal, Qobuz, Podcast Index, and Last.fm. The simulator also reads a plain `streaming-keys.ini` in the same folder.
 
 Fonts are looked for in `usr/resource/sonix/fonts` first and fall back to
 `assets/fonts` in the repo, so a tree without a resource folder still has text.
